@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-17T06:52:00Z`. It
+This repository is a source snapshot updated at `2026-08-17T07:17:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -64,7 +64,7 @@ commit was:
 
 The base commit and its upstream branch were synchronized when the snapshot
 was taken. The source checkout also contained eleven modified tracked files
-and 78 untracked research files. Those working-tree files are included in this
+and 97 untracked research files. Those working-tree files are included in this
 repository and committed together so a collaborator receives one coherent
 state. The machine-readable manifest records every original Git status entry.
 The publication adds this guide, a manifest generator and verifier, the
@@ -80,7 +80,7 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The exported source passed 689 tests with four skips in the local CPU-only
+The exported source passed 695 tests with four skips in the local CPU-only
 environment. The complete real-matrix zero-output-feedback control also passed
 bit equivalence before the mixed-rate experiment. Model-level KLD still needs
 the remote artifacts described below.
@@ -243,15 +243,30 @@ serialized artifact must retain a positive size margin after those costs.
 
 The completed fixed mixed-rate artifact used source-target K4 tensors for
 promoted projections. A promoted down cell therefore replaced its accepted K3
-refit. Recompute each accepted continuous down target from the captured fit
-rows and stored ridge factor, then encode that same target at both K3 and K4.
-Keep the continuous matrix outside the checkpoint after both encodes finish.
+refit. The corrective implementation is in
+[`qsrt/glm52_down_refit_rate_pool.py`](qsrt/glm52_down_refit_rate_pool.py).
+It recomputes each accepted continuous target from the captured fit rows and
+stored ridge factor. It refuses output unless the repeated K3 encode matches
+the stored refit, then encodes the same target at K4.
 
-Measure one-projection changes before allocating the twelve-promotion budget.
-The required arms are upstream-only K4, source-target down K4, and refitted-
-target down K4. Score complete experts on the frozen candidate-selection
-documents. The published reporting context may report a frozen allocation but
-must not choose rates.
+When kossel is available, synchronize this source snapshot to its indexed
+source directory. Run these commands from that directory:
+
+```bash
+bash experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh
+# Wait for all four named containers to exit zero.
+bash experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh
+bash experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh \
+  fixed-rate-preserving-down-refit-k3-k4
+bash experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh \
+  selection-data-rate-preserving-down-refit-k3-k4
+```
+
+The merged pool scores all eight K3/K4 rate tuples per expert on the frozen
+candidate-selection documents. The materializer emits the pre-registered
+EXL3-stratified control and a complete-expert selection-data allocation under
+the twelve-promotion budget. The published reporting context may measure each
+frozen allocation. It cannot select rates or refit targets.
 
 ### Confirm down refitting on multiple documents
 

@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-17T06:52:00Z",
+  "snapshot_timestamp_utc": "2026-08-17T07:17:00Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "453b4834332d2735c5a326ca57fb6a8b36e776bf",
@@ -29,6 +29,7 @@
       "?? experiments/",
       "?? qsrt/glm52_blockldlq_feedback.py",
       "?? qsrt/glm52_down_refit.py",
+      "?? qsrt/glm52_down_refit_rate_pool.py",
       "?? qsrt/glm52_downstream_curvature.py",
       "?? qsrt/glm52_engine_kld.py",
       "?? qsrt/glm52_expert_intervention.py",
@@ -48,14 +49,17 @@
       "?? scripts/benchmark_glm52_tiny_quantization.py",
       "?? scripts/benchmark_qsrt_tiny_improvements.py",
       "?? scripts/build_glm52_dense_expert_interventions.py",
+      "?? scripts/build_glm52_down_refit_rate_pool.py",
       "?? scripts/build_glm52_downstream_curvature_factors.py",
       "?? scripts/build_glm52_wikitext_corpus_plan.py",
       "?? scripts/compare_glm52_dense_intervention_identity.py",
       "?? scripts/embed_glm52_tiny_benchmark_in_infographic.py",
       "?? scripts/index_glm52_experiment_artifacts.py",
+      "?? scripts/materialize_glm52_down_refit_rate_pool_allocation.py",
       "?? scripts/materialize_glm52_fixed_mixed_k3_k4.py",
       "?? scripts/measure_synthetic_source_distortion.py",
       "?? scripts/merge_glm52_dense_expert_interventions.py",
+      "?? scripts/merge_glm52_down_refit_rate_pool.py",
       "?? scripts/merge_glm52_production_codec_results.py",
       "?? scripts/refit_glm52_reconstructed_activation_down.py",
       "?? scripts/run_glm52_blockldlq_feedback_ablation.py",
@@ -70,6 +74,7 @@
       "?? scripts/validate_two_sided_curvature_cuda.py",
       "?? tests/test_glm52_blockldlq_feedback.py",
       "?? tests/test_glm52_down_refit.py",
+      "?? tests/test_glm52_down_refit_rate_pool.py",
       "?? tests/test_glm52_downstream_curvature.py",
       "?? tests/test_glm52_engine_kld.py",
       "?? tests/test_glm52_expert_intervention.py",
@@ -119,9 +124,11 @@
       "experiments/glm52_layer3_rate_pattern_panel.json",
       "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
       "experiments/materialize_glm52_fixed_mixed_k3_k4_on_kossel.sh",
+      "experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh",
       "experiments/merge_glm52_candidate_slices_on_kossel.sh",
       "experiments/run_glm52_blockldlq_feedback_slices_on_kossel.sh",
       "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
+      "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
       "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
       "experiments/run_glm52_reporting_expert_output_comparison_on_kossel.sh",
       "experiments/run_glm52_reporting_input_capture_on_kossel.sh",
@@ -134,6 +141,7 @@
       "experiments/start_glm52_uniform_k3_model_runner_v1_container.sh",
       "qsrt/glm52_blockldlq_feedback.py",
       "qsrt/glm52_down_refit.py",
+      "qsrt/glm52_down_refit_rate_pool.py",
       "qsrt/glm52_downstream_curvature.py",
       "qsrt/glm52_engine_kld.py",
       "qsrt/glm52_expert_intervention.py",
@@ -153,14 +161,17 @@
       "scripts/benchmark_glm52_tiny_quantization.py",
       "scripts/benchmark_qsrt_tiny_improvements.py",
       "scripts/build_glm52_dense_expert_interventions.py",
+      "scripts/build_glm52_down_refit_rate_pool.py",
       "scripts/build_glm52_downstream_curvature_factors.py",
       "scripts/build_glm52_wikitext_corpus_plan.py",
       "scripts/compare_glm52_dense_intervention_identity.py",
       "scripts/embed_glm52_tiny_benchmark_in_infographic.py",
       "scripts/index_glm52_experiment_artifacts.py",
+      "scripts/materialize_glm52_down_refit_rate_pool_allocation.py",
       "scripts/materialize_glm52_fixed_mixed_k3_k4.py",
       "scripts/measure_synthetic_source_distortion.py",
       "scripts/merge_glm52_dense_expert_interventions.py",
+      "scripts/merge_glm52_down_refit_rate_pool.py",
       "scripts/merge_glm52_production_codec_results.py",
       "scripts/refit_glm52_reconstructed_activation_down.py",
       "scripts/run_glm52_blockldlq_feedback_ablation.py",
@@ -175,6 +186,7 @@
       "scripts/validate_two_sided_curvature_cuda.py",
       "tests/test_glm52_blockldlq_feedback.py",
       "tests/test_glm52_down_refit.py",
+      "tests/test_glm52_down_refit_rate_pool.py",
       "tests/test_glm52_downstream_curvature.py",
       "tests/test_glm52_engine_kld.py",
       "tests/test_glm52_expert_intervention.py",
@@ -196,7 +208,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 90
+    "untracked_file_count": 97
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -221,8 +233,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 277,
-  "total_file_bytes": 5742026,
+  "file_count": 284,
+  "total_file_bytes": 5812227,
   "files": [
     {
       "path": ".gitignore",
@@ -236,8 +248,8 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 16058,
-      "sha256": "8355bada53fc5b0b2803723a9194d370fee82d46c344d801a66a69677935b496"
+      "bytes": 16785,
+      "sha256": "e83d20cba1d45b82a6dab58e1f19858cb4f4c16f58c5002a989ec0c7d394c507"
     },
     {
       "path": "README.md",
@@ -251,13 +263,13 @@
     },
     {
       "path": "docs/glm52-experiment-journal.md",
-      "bytes": 128855,
-      "sha256": "65f586405a023053d07e51a2570f25e3ebf524e580b90bc42fbb4aec4f2166f5"
+      "bytes": 133177,
+      "sha256": "47ae89d71ccac76725191d08bb27a4e009f8fdda960c43136f3adc7992911a73"
     },
     {
       "path": "docs/glm52-layer3-kld-results.md",
-      "bytes": 12115,
-      "sha256": "9e8092d41f538dd7dcb0a1db46548a371f4a198f9dee5ecc7c7d30b2873f04d2"
+      "bytes": 12748,
+      "sha256": "53f10e196beb9f0086e7e6779d59c14af38422aaa04679d873f0e8de5b2b0fef"
     },
     {
       "path": "docs/qsrt-2bpw-codec.md",
@@ -340,6 +352,11 @@
       "sha256": "7348fce0bc3b49f10b24569b7d93b392f151754a7830c134b8e0bed2be431bbf"
     },
     {
+      "path": "experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh",
+      "bytes": 4246,
+      "sha256": "aae358eff05a07ecae6b43f7aa00204175309923d7778ebd1d7a8b71fc6c4135"
+    },
+    {
       "path": "experiments/merge_glm52_candidate_slices_on_kossel.sh",
       "bytes": 3034,
       "sha256": "51dcf56270f7d10bea0e6901f03bf4c0567931570205542b8a59c3057be8642d"
@@ -351,8 +368,13 @@
     },
     {
       "path": "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
-      "bytes": 11198,
-      "sha256": "92fb8fa2bdddb9991844a2d278ef8e904f979fab516a11adf2e7f9c4fc652c77"
+      "bytes": 11966,
+      "sha256": "78502042d825a1c90adfe3eb7ffce007e9747954018659225469b5fbe25d0635"
+    },
+    {
+      "path": "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
+      "bytes": 3731,
+      "sha256": "de4f13d737ebd4ff2b76d992f3742795add2666921241ce801bb094e284cb568"
     },
     {
       "path": "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
@@ -503,6 +525,11 @@
       "path": "qsrt/glm52_down_refit.py",
       "bytes": 22347,
       "sha256": "7829e8e2235a322298520b5fd0b82a65ebee796457f55cb66abb763d9501ad79"
+    },
+    {
+      "path": "qsrt/glm52_down_refit_rate_pool.py",
+      "bytes": 44915,
+      "sha256": "a5da2897279d0dc02673f97e3ee4f3c5109a8f2485f050586d43c23772815f0a"
     },
     {
       "path": "qsrt/glm52_downstream_curvature.py",
@@ -870,6 +897,11 @@
       "sha256": "6fb2eacdd9de89c23254b2ae3520b8bc39328c12da59fde9593c7347d9f3ecaa"
     },
     {
+      "path": "scripts/build_glm52_down_refit_rate_pool.py",
+      "bytes": 2084,
+      "sha256": "c4b182cee5dcceb6e049896a036ef8d7b9dc2485706a92e2289d7f63e392dd50"
+    },
+    {
       "path": "scripts/build_glm52_downstream_curvature_factors.py",
       "bytes": 2157,
       "sha256": "f44d712b4cb9a0e80325d1bd060173c0cc4e167594929fefb0de108ba3a57dbf"
@@ -945,6 +977,11 @@
       "sha256": "bf28515237aa798e488a52d9d749c07aefc586542c314968a74811ed0c1a4f93"
     },
     {
+      "path": "scripts/materialize_glm52_down_refit_rate_pool_allocation.py",
+      "bytes": 1075,
+      "sha256": "2cf03f605de0237511833c6384135c82bf1bbebccfe192ee1c41206f07a4009c"
+    },
+    {
       "path": "scripts/materialize_glm52_fixed_mixed_k3_k4.py",
       "bytes": 925,
       "sha256": "1a9d895cc2fa633787106d85f0d3a64420fdf43aea722299f31702dd8f0e62c7"
@@ -968,6 +1005,11 @@
       "path": "scripts/merge_glm52_dense_expert_interventions.py",
       "bytes": 1197,
       "sha256": "47c25e778c9840af45283cb09f7b0670471609cc1e0ecab4aadfd9b675481668"
+    },
+    {
+      "path": "scripts/merge_glm52_down_refit_rate_pool.py",
+      "bytes": 886,
+      "sha256": "62e13223a76c6fdacb6b189cf2a19ced52e48bfd67ddd76760abd80a283d1c24"
     },
     {
       "path": "scripts/merge_glm52_production_codec_results.py",
@@ -1273,6 +1315,11 @@
       "path": "tests/test_glm52_down_refit.py",
       "bytes": 4404,
       "sha256": "98b0b40e0f0326e24c7a4f6640ae205286f109410eceb6f45b444b9f9535c143"
+    },
+    {
+      "path": "tests/test_glm52_down_refit_rate_pool.py",
+      "bytes": 6814,
+      "sha256": "7c8fff7d86ed1c87489d7b1f5f5fe857cb25eebd56372a37817cb6d497405a1f"
     },
     {
       "path": "tests/test_glm52_downstream_curvature.py",

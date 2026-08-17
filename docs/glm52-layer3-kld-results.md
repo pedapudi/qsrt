@@ -33,8 +33,8 @@ Each candidate process reruns two controls before evaluating the candidate:
 - a direct-return intervention that returns the resident expert output.
 
 Both controls reproduced all 2,047 per-position KLD values bit for bit. They
-also reproduced all `2,048 × 78 × 8` routed expert identifiers. The resident
-EXL3 KLD vector was bitwise identical across the three candidate processes.
+also reproduced all `2,048 × 78 × 8` routed expert identifiers. Every measured
+candidate process produced the same resident EXL3 KLD vector bit for bit.
 
 ## Results
 
@@ -141,6 +141,13 @@ test must rank complete-expert candidates on the frozen selection documents
 and encode accepted down-refit targets at both K3 and K4 before comparing
 rates.
 
+The corrective mixed-rate implementation is locally validated. It recomputes
+each accepted continuous down target, requires its repeated K3 encode to equal
+the stored refit, and encodes the same target at K4. It then scores all eight
+K3/K4 rate tuples for each complete expert on the frozen selection documents.
+The four-GPU host was unreachable after the implementation passed all 695 CPU
+tests, so no corrective candidate or KLD measurement exists yet.
+
 ## Logical byte comparison
 
 The eight selected experts contain 24 gate, up, and down matrices. Their
@@ -158,11 +165,12 @@ bytes. This leaves a 1,273,856-byte margin below EXL3 before a complete
 serialized container charges headers, directories, alignment, and padding.
 The KLD regression rejects the candidate regardless of that logical margin.
 
-Uniform K3 saves 20,148,224 logical bytes across the panel. The three QSRT
-candidates use the same K3 payload size. A frozen GLM QSRT container does not
-yet exist, so headers, alignment, padding, directories, non-expert weights, and
-serving caches are absent from this calculation. The numbers do not establish
-complete serialized model size.
+Uniform K3 saves 20,148,224 logical bytes across the panel. Uniform K3,
+one-sided curvature, and down refitting use the same K3 payload size. The
+mixed-rate candidate uses the larger total stated above. A frozen GLM QSRT
+container does not yet exist, so headers, alignment, padding, directories,
+non-expert weights, and serving caches are absent from this calculation. The
+numbers do not establish complete serialized model size.
 
 ## Authoritative artifacts
 
@@ -192,15 +200,16 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 
 ## Next admissible experiments
 
-1. Acquire or produce BF16 reference logits for multiple document-disjoint
+1. Run the prepared rate-preserving K3/K4 pool when the four-GPU host is
+   available. Materialize both the frozen EXL3-stratified allocation and the
+   allocation selected by complete-expert output error. Measure each frozen
+   candidate against EXL3, uniform K3, and K3 down refitting.
+2. Acquire or produce BF16 reference logits for multiple document-disjoint
    contexts without downloading the full BF16 checkpoint, then repeat uniform
    K3 and down refitting with clustered document-level uncertainty.
-2. Add bounded output-gradient capture, build expert-local two-sided factors,
+3. Add bounded output-gradient capture, build expert-local two-sided factors,
    and test whether their score predicts held-out KLD better than routed
    squared error before accepting any changed path.
-3. If down refitting repeats across documents, encode each accepted refit
-   target at K3 and K4. Select mixed-rate complete-expert candidates only from
-   the frozen candidate-selection documents.
 4. Extend a confirmed panel across early, middle, and late mixture layers
    before building a complete candidate.
 5. Freeze a GLM QSRT container and count every serialized byte before making a

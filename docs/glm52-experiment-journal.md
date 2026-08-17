@@ -7,7 +7,7 @@ measurements used to test the Quantile-Stratified Rate-shifted Trellis codec
 (QSRT) on GLM-5.2. It provides the provenance needed to reproduce the
 experiments and to remove their artifacts safely.
 
-Status at 2026-08-16: execution is active. No GLM-5.2 QSRT result in this
+Status at 2026-08-17: execution is active. No GLM-5.2 QSRT result in this
 journal qualifies a checkpoint until a complete candidate passes the paired,
 document-disjoint forward-KLD and serialized-byte gates defined below.
 
@@ -362,6 +362,8 @@ and traces remain outside the Git repository.
 | 2026-08-17 06:24–06:33 UTC | Determined that the one-sided-curvature inversion occurs downstream of the complete expert | The sealed reporting input, all 24 official BF16 matrices from the four-shard source window, uniform-K3 and one-sided-curvature endpoints, and their controlled full-model KLD reports | `results/glm52-layer3-frozen8-uniform-versus-routed-input-curvature-reporting-output-comparison/report.json`; named exited r34 container and matching launch records | The report SHA-256 is `fd0cd04a7b12fdf355f7c1b1a8afbfa5061a225075669f77ac3bdc61dda585f4`. One-sided curvature reduced the selected panel's route-weighted complete-expert relative SSE from `0.01675199948` to `0.001062500442`, a 93.6575% reduction, and won for all eight experts. Full-model KLD nevertheless preferred uniform K3: `0.06237828077` versus `0.06384126628`. Log, completed-inspection, and exit-code SHA-256 values are `e55eaf5ee1e64bc5fde396d2de5510e1e9abc3e8865eaee12bd2eed887afdc20`, `a369551f67c5256af7854c6de62b3512b1a10d0f4931fb6180b4dee33b8ec205`, and `9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa` | The scorer rehashed all four allowed BF16 shards, both artifacts, the capture, and both KLD contracts before evaluating complete SwiGLU experts. The result rejects per-matrix aggregation as the primary explanation for the observed inversion and supports capturing sensitivity at the expert-output or residual-stream boundary. It remains one reporting context and cannot select a later candidate. Network was disabled; no complete BF16 checkpoint, model, image, or raster file was downloaded or produced. |
 | 2026-08-17 06:33 UTC | Froze the mixed-K3/K4 panel allocation rules before K4 measurement | The immutable EXL3 rate map, down-refitted K3 base, frozen expert panel, logical byte ledger, and document-disjoint selection contract | `experiments/glm52_layer3_k3_k4_allocation_pre_registration.json`, its regression test, and the README index entry | Pre-registration SHA-256 `60c3c72a7aae6f5f679d3d1027410137e5822b629885e540db7b807a58e73d44`; test SHA-256 `3c23aa58f0c26c2dc673621a56aa0ad824298974c50511d8be2eb6234acb59a9`; three tests passed | The fixed control names all twelve K4 projections without candidate measurements. The data-dependent control freezes an eight-tuple complete-expert objective on the eight selection windows and prohibits the reporting context. Twelve promotions occupy 132,517,888 charged logical bytes, 1,273,856 below EXL3; serialized headers, directories, alignment, padding, scales, and the reconstruction table remain a mandatory strict-smaller gate. |
 | 2026-08-17 06:37–06:52 UTC | Encoded, materialized, and measured the pre-registered fixed mixed-K3/K4 allocation | The layer-3 BF16 source window, immutable EXL3 checkpoint, reconstructed-activation K3 down-refit base, twelve fixed K4 projection cells, and published BF16 reference logits | `results/glm52-layer3-frozen8-uniform-k4-source-target-merged/`, `results/glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit/`, and the corresponding paired-KLD result directory | K4 pool manifest and report SHA-256 values are `a4b4b6f9b91dcfbd19483553b38be2ed67dc46012d78966ff085049ab67ac0ea` and `8e98a33869ca90020a1c48b139420ad39263c5cd41f3e07e80973805ea57ac0b`. Mixed artifact manifest and report SHA-256 values are `ba681f36a07e9602059427ecf408d5c3da4ffa075a9c701fe4c83d024ea64e2e` and `4498812bed388bc75c56875f56ffd926eb9856d8ea9262b5dec49d286a6fd82a`. KLD report SHA-256 is `c366b25f8e3c4e1f231b0018dba241b25602dea98ad37ae337136756185f34c4`. | Four network-disabled K4 workers exited zero. Promoted down projections used source-target K4 and therefore replaced their K3 refits. Repeatability and direct-return identity controls passed. Mean KLD was `0.06596340158`: 8.0051% worse than EXL3, 5.7474% worse than uniform K3, and 7.7152% worse than the down-refitted K3 base. The result rejects this fixed allocation and target combination. It does not reject selection-data allocation or K4 encoding of a refitted down target. The terminal container exited zero, all GPUs returned to 2 MiB used, and no QSRT container remained running. Small reports and receipts were copied to `/tmp/qsrt-kossel-stopping-point-20260817/` before kossel shutdown. |
+| 2026-08-17 06:59 UTC | Published the measured mixed-rate result and continuation materials | The validated source export at `/tmp/qsrt-github-export-20260816-z5d86H` | Public GitHub repository `pedapudi/qsrt`, branch `main`, commit `78e63fcd3d95d29ca4c17c2c1b6b2793d8ea4ef2` | The source manifest covers 277 non-self files occupying 5,742,026 bytes and has SHA-256 `fbd98f8dee1a67532428168f7f25ac40f0e99c5a4e22056fb21dba392dcec55f`. The exported suite passed 689 tests with four skips. | The public snapshot contains source, tests, documentation, launchers, runtime patches, provenance, and the negative mixed-rate KLD result. It excludes checkpoints, tensors, captures, logits, Hessians, container payloads, credentials, and generated remote artifacts. |
+| 2026-08-17 07:17 UTC | Prepared and validated a K3/K4 pool that preserves accepted down-refit targets | The immutable K3 artifact, accepted K3 down-refit artifact, reusable source-target K4 pool, bounded BF16 source window, and frozen fit and candidate-selection captures | Eight source-controlled files listed in the rate-pool file map below | All shell launchers passed `bash -n`; the complete CPU suite passed 695 tests with four skips in 22.00 seconds. | The builder recomputes each accepted continuous down target and refuses output unless its K3 re-encode equals the stored refit. It encodes the same target at K4, scores all eight complete-expert K3/K4 tuples on candidate-selection documents, and closes every tensor and metric by hash and schema. No GPU candidate, container, model, capture, result, or image was produced because `kossel.lan` timed out on port 22. |
 
 ## Evidence sequence and present status
 
@@ -405,15 +407,43 @@ and traces remain outside the Git repository.
     EXL3, but mean KLD became 8.0051% worse than EXL3. Promoted down
     projections replaced their K3 refits, so this result does not test K4
     encoding of the refitted target.
-11. **Completed for the frozen K3 panel:** held every scale and codec setting
+11. **Implemented and locally validated; GPU execution pending:** prepared a
+    K3/K4 rate pool that recomputes each accepted continuous down-refit target,
+    proves its K3 reconstruction is unchanged, and encodes the same target at
+    K4. The pool scores all eight rate tuples per expert on frozen selection
+    documents. Kossel was unreachable when the source and launch sequence
+    passed the complete CPU suite, so no candidate measurement exists yet.
+12. **Completed for the frozen K3 panel:** held every scale and codec setting
     fixed while disabling BlockLDLQ feedback. The floating-point targets
     changed, but all 24 paths and eight complete expert files remained
     byte-identical to uniform K3. The result does not cover K2 or a dense
     captured metric.
-12. **Incomplete:** repeat accepted candidates on multiple document-disjoint
+13. **Incomplete:** repeat accepted candidates on multiple document-disjoint
     reference contexts and count complete serialized checkpoint bytes. The
     available BF16 reference contains one published 2,048-token context, so it
     cannot provide document-level replication.
+
+## Files prepared for the rate-preserving down-refit experiment
+
+The following files define the experiment that retains accepted down refits
+when a down projection moves from K3 to K4. All paths are relative to the
+repository root on localhost. None of these files has produced a GPU artifact.
+
+| Path | Role | SHA-256 |
+|---|---|---|
+| `qsrt/glm52_down_refit_rate_pool.py` | Recompute refit targets, encode K3 and K4 candidates, score rate tuples, validate the pool, allocate rates, and materialize intervention artifacts | `a5da2897279d0dc02673f97e3ee4f3c5109a8f2485f050586d43c23772815f0a` |
+| `scripts/build_glm52_down_refit_rate_pool.py` | Build one two-expert GPU slice | `c4b182cee5dcceb6e049896a036ef8d7b9dc2485706a92e2289d7f63e392dd50` |
+| `scripts/merge_glm52_down_refit_rate_pool.py` | Merge four disjoint slices without changing tensor bytes | `62e13223a76c6fdacb6b189cf2a19ced52e48bfd67ddd76760abd80a283d1c24` |
+| `scripts/materialize_glm52_down_refit_rate_pool_allocation.py` | Materialize the frozen allocation or the selection-data allocation | `2cf03f605de0237511833c6384135c82bf1bbebccfe192ee1c41206f07a4009c` |
+| `tests/test_glm52_down_refit_rate_pool.py` | Test route weighting, global allocation, tensor schemas, hashes, and metric closure | `7c8fff7d86ed1c87489d7b1f5f5fe857cb25eebd56372a37817cb6d497405a1f` |
+| `experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh` | Launch four network-disabled GPU workers on disjoint expert pairs | `de4f13d737ebd4ff2b76d992f3742795add2666921241ce801bb094e284cb568` |
+| `experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh` | Merge the slices and create both allocation artifacts | `aae358eff05a07ecae6b43f7aa00204175309923d7778ebd1d7a8b71fc6c4135` |
+| `experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh` | Add paired-KLD methods for both materialized allocations | `78502042d825a1c90adfe3eb7ffce007e9747954018659225469b5fbe25d0635` |
+
+The implementation step downloaded no file, copied no remote artifact, and
+created no container or raster image. The next remote run must append every
+slice, merged pool, materialized artifact, launch record, log, and KLD file to
+the kossel `ARTIFACT_INDEX.json` inventory.
 
 ## Results
 

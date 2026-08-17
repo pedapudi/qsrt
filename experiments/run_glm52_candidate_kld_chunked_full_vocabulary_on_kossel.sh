@@ -10,7 +10,7 @@ set -euo pipefail
 # bitwise repeatable before the complete selected panel is evaluated.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|fixed-mixed-k3-k4-down-refit}" >&2
+  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
   exit 2
 fi
 
@@ -34,6 +34,17 @@ case "${method}" in
   fixed-mixed-k3-k4-down-refit)
     artifact_name="glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit"
     expected_experiment="qsrt_glm52_fixed_mixed_k3_k4_down_refit_v1"
+    expected_allocation_kind=""
+    ;;
+  fixed-rate-preserving-down-refit-k3-k4)
+    artifact_name="glm52-layer3-frozen8-fixed-rate-preserving-down-refit-k3-k4"
+    expected_experiment="qsrt_glm52_mixed_k3_k4_rate_preserving_down_refit_v1"
+    expected_allocation_kind="fixed_rate_stratified"
+    ;;
+  selection-data-rate-preserving-down-refit-k3-k4)
+    artifact_name="glm52-layer3-frozen8-selection-data-rate-preserving-down-refit-k3-k4"
+    expected_experiment="qsrt_glm52_mixed_k3_k4_rate_preserving_down_refit_v1"
+    expected_allocation_kind="selection_data_complete_expert"
     ;;
   *)
     echo "unknown candidate method: ${method}" >&2
@@ -90,8 +101,10 @@ if sys.argv[2] == "uniform-k3-base-artifact":
     assert report["manifest_sha256"] == "11e26125921be272992ef07c7430e234309e4b2f6b20146a224598a59c7a7af9"
 else:
     assert report["experiment"] == sys.argv[2]
+if sys.argv[3]:
+    assert report["allocation_kind"] == sys.argv[3]
 print(report["manifest_sha256"])
-' "${artifact_root}/report.json" "${expected_experiment}"
+' "${artifact_root}/report.json" "${expected_experiment}" "${expected_allocation_kind:-}"
 )"
 test "${#artifact_manifest_sha256}" -eq 64
 
