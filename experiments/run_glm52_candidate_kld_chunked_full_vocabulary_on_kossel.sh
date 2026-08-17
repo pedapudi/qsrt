@@ -10,7 +10,7 @@ set -euo pipefail
 # bitwise repeatable before the complete selected panel is evaluated.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit}" >&2
+  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|fixed-mixed-k3-k4-down-refit}" >&2
   exit 2
 fi
 
@@ -30,6 +30,10 @@ case "${method}" in
   reconstructed-activation-down-refit)
     artifact_name="glm52-layer3-frozen8-reconstructed-activation-down-refit-merged"
     expected_experiment="qsrt_glm52_reconstructed_activation_down_refit_v1"
+    ;;
+  fixed-mixed-k3-k4-down-refit)
+    artifact_name="glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit"
+    expected_experiment="qsrt_glm52_fixed_mixed_k3_k4_down_refit_v1"
     ;;
   *)
     echo "unknown candidate method: ${method}" >&2

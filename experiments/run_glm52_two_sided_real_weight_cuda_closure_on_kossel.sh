@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # Exercise the two-sided K3 encoder on one complete real GLM-5.2 gate matrix.
-# The identity output metric checks dimensions, transformations, memory use,
-# frozen-scale replay, and CUDA traversal. It does not measure downstream KLD.
+# Source-basis identity output curvature checks dimensions, transformations,
+# memory use, frozen-scale replay, and CUDA traversal. A separate zero-output-
+# feedback traversal control must reproduce ordinary BlockLDLQ bit for bit.
+# Neither arm measures downstream KLD.
 
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 source_root="/home/sunil/usb-mnt/zai-org/GLM-5.2-b4734de-layer003-source-window"
@@ -12,7 +14,7 @@ source_copy="${experiment_root}/source/qsrt-working-tree"
 input_artifact="${experiment_root}/results/glm52-layer3-frozen8-dense-endpoints-r7-closure-merged-v2"
 dependency_root="${experiment_root}/dependencies/exllamav3-v0.0.43-source"
 results_root="${experiment_root}/results"
-result_name="glm52-layer3-expert64-gate-two-sided-identity-curvature-complete-matrix-canonical-loss-cuda-closure"
+result_name="glm52-layer3-expert64-gate-source-identity-and-zero-output-feedback-bit-equivalence-after-scalar-identity-preservation"
 destination="${results_root}/${result_name}.json"
 record_root="${experiment_root}/launch-records/${result_name}"
 container_name="qsrt-${result_name}"

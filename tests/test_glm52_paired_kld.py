@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import numpy as np
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 import pytest
 import torch
+
+from qsrt.glm52_expert_intervention_runtime import _capture_layer_input
 
 from qsrt.glm52_paired_kld import (
     forward_kld_per_position,
@@ -55,6 +61,7 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert args.gpu_memory_utilization == 0.95
     assert args.kld_device == "cpu"
     assert args.source_sparse_index_topk is None
+    assert args.reporting_activation_capture_dir is None
     assert args.omit_individual_expert_arms is False
     assert args.measurement_controls_only is False
     assert "does not provide document-level replication" in (
@@ -66,6 +73,93 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert "has not been established separately" in (
         runner.PAIRED_KLD_EVIDENCE_BOUNDARY
     )
+
+
+def test_reporting_capture_is_hash_bound_and_selection_forbidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load_runner()
+    token_ids = [11, 12, 13, 14]
+    reference_manifest_path = tmp_path / "reference-manifest.json"
+    reference_manifest_path.write_text(
+        json.dumps({"context_length": len(token_ids), "token_first16": token_ids})
+    )
+    reference_sha256 = hashlib.sha256(
+        reference_manifest_path.read_bytes()
+    ).hexdigest()
+    corpus_plan_path = tmp_path / "corpus-plan.json"
+    corpus_plan_path.write_text(
+        json.dumps(
+            {
+                "schema": "qsrt_glm52_document_disjoint_corpus_plan",
+                "schema_version": 1,
+                "context_length": len(token_ids),
+                "published_bf16_reference": {
+                    "manifest_sha256": reference_sha256,
+                    "token_first16": token_ids,
+                    "role": "untouched BF16-reference reporting context",
+                },
+                "separation": {
+                    "fit_selection_row_overlap": 0,
+                    "reference_fit_row_overlap": 0,
+                    "reference_selection_row_overlap": 0,
+                    "unit": "WikiText article delimited by a top-level heading",
+                },
+            }
+        )
+    )
+    capture_dir = tmp_path / "reporting-capture"
+    control_path = tmp_path / "control.json"
+    plan_sha256 = hashlib.sha256(corpus_plan_path.read_bytes()).hexdigest()
+    monkeypatch.setenv("QSRT_GLM52_ACTIVATION_CAPTURE_DIR", str(capture_dir))
+    monkeypatch.setenv(
+        "QSRT_GLM52_ACTIVATION_CAPTURE_PLAN_SHA256", plan_sha256
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        SimpleNamespace(SamplingParams=lambda **kwargs: kwargs),
+    )
+
+    routes = np.zeros((len(token_ids), 78, 8), dtype=np.int64)
+    routes[:, 3, :] = np.array([64, 208, 1, 2, 3, 4, 5, 6])
+
+    class FakeLlm:
+        def generate(self, prompts: object, sampling_params: object) -> list[object]:
+            del prompts, sampling_params
+            generation = json.loads(control_path.read_text())["generation"]
+            _capture_layer_input(
+                root=capture_dir,
+                x=torch.zeros((len(token_ids), 6144), dtype=torch.bfloat16),
+                topk_weights=torch.full((len(token_ids), 8), 0.125),
+                topk_ids=torch.tensor(routes[:, 3, :]),
+                generation=generation,
+                plan_sha256=plan_sha256,
+            )
+            return [
+                SimpleNamespace(
+                    outputs=[SimpleNamespace(routed_experts=routes)]
+                )
+            ]
+
+    manifest = runner._capture_reporting_layer_input(
+        FakeLlm(),
+        token_ids=token_ids,
+        corpus_plan_path=corpus_plan_path,
+        reference_manifest_path=reference_manifest_path,
+        capture_dir=capture_dir,
+        control_path=control_path,
+        artifact_manifest_sha256="a" * 64,
+        selected_experts=[64, 208],
+    )
+
+    assert manifest["status"] == "complete"
+    assert manifest["collections"] == {"untouched_reporting_context": 1}
+    assert manifest["reference_manifest_sha256"] == reference_sha256
+    assert "must not select paths" in manifest["reuse_policy"]
+    assert manifest["records"][0]["route_support"]["selected_route_count"] == 8
+    assert json.loads(control_path.read_text())["capture_enabled"] is False
+    assert (capture_dir / "manifest.json").is_file()
 
 
 def test_runner_defines_individual_and_complete_panel_arms() -> None:
@@ -83,10 +177,10 @@ def test_runner_defines_individual_and_complete_panel_arms() -> None:
         ("dense_resident_identity", "dense_resident_identity", None),
     ]
     assert arms[3:-1] == [
-        (f"selected_qsrt_k3_expert_{expert:03d}", "qsrt_k3", [expert])
+        (f"selected_candidate_expert_{expert:03d}", "candidate", [expert])
         for expert in expert_ids
     ]
-    assert arms[-1] == ("selected_qsrt_k3", "qsrt_k3", None)
+    assert arms[-1] == ("selected_candidate", "candidate", None)
 
     aggregate_only = runner.intervention_arm_definitions(
         expert_ids, omit_individual_expert_arms=True

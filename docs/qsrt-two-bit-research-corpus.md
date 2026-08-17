@@ -350,8 +350,12 @@ must record the output gradients needed by the curvature estimator.
 1. **Model-loss-aware scalar path selection.** The two-sided recurrence,
    output-metric factorization, bounded factor format, and frozen-scale scalar
    encoder are implemented. Synthetic and complete real-matrix CUDA closures
-   pass. The remaining experiment must capture output gradients, build real
-   expert-local factors, and test whether the resulting score predicts
+   pass. The complete real-matrix identity audit first exposed and then removed
+   numerical path drift from `1e-8` Hadamard-congruence terms. Source-basis
+   scalar identity and explicit zero output feedback now reproduce ordinary K3
+   bit for bit. The remaining experiment must capture residual-stream output
+   gradients, retain matched input/gradient samples, test the Kronecker
+   independence approximation, and determine whether the score predicts
    document-disjoint forward KL better than routed expert squared error.
 2. **Reconstructed-activation down target.** Re-encoding a down target fitted
    against reconstructed gate/up activations reduced mean KLD by 1.8269%
@@ -623,16 +627,22 @@ emission, transition geometry, local objective, or downstream accumulation.
 The scalar encoder path is implemented. It accepts input and output metrics,
 applies the two-sided anti-diagonal recurrence, freezes the ordinary K3 scale
 plane, and emits an ordinary scalar payload. A complete `2,048 × 6,144` GLM
-gate-matrix closure changed its path with about 1.57 GiB of peak allocated GPU
-memory. Identity output curvature changed source-space SSE by only 0.000039%,
-so that run establishes implementation closure rather than downstream quality.
+gate-matrix audit used about 1.57 GiB of peak allocated GPU memory. An initial
+source-identity run changed its path because `1.1e-8` transform round-off
+created a nonzero output factor. Preserving algebraic scalar identity removed
+that drift. Source identity and explicit zero output feedback now reproduce
+the ordinary trellis, scales, and dense reconstruction bit for bit. The audit
+establishes implementation closure rather than downstream quality.
 
-Capture teacher output gradients on document-disjoint fit data. Compare the
-existing one-sided dense-input objective with gradient-diagonal, low-rank
-output, and Kronecker two-sided objectives while keeping the scalar format and
-rate fixed. The selected approximation must predict held-out forward KL better
+Capture teacher residual-stream gradients on document-disjoint fit data. Save
+matched input, gradient, router-weight, expert, token, and document identities.
+Compare the matched per-sample quadratic score with gradient-diagonal, low-rank
+output, and Kronecker-factored objectives on actual K3, K4, and refitted error
+matrices. The selected approximation must predict held-out forward KL better
 than routed expert squared error and must preserve the expert-local down basis.
-This experiment isolates the objective change from the pair representation.
+Complete-expert reconstructed propagation remains the acceptance boundary
+because separate matrix scores omit gate/up cross terms. This experiment
+isolates the objective change from the pair representation.
 
 ### Test a payload-matched gate/up pair trellis
 

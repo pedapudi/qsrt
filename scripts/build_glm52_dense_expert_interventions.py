@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("experiments/glm52_layer3_rate_pattern_panel.json"),
     )
     parser.add_argument("--layer", type=int, default=3)
+    parser.add_argument("--candidate-bits", type=int, choices=(3, 4), default=3)
     parser.add_argument("--experts", type=int, default=8)
     parser.add_argument("--panel-offset", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
@@ -50,6 +51,7 @@ def main() -> None:
         resume=args.resume,
         verify_source_shard_hashes=not args.skip_source_shard_hashes,
         verify_exl3_shard_hash=not args.skip_exl3_shard_hash,
+        candidate_bits=args.candidate_bits,
     )
     print(
         json.dumps(

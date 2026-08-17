@@ -2088,6 +2088,47 @@ def factor_output_hessian(
         float(quant_args.get("sigma_reg", 0.025)) * diagonal_mean
     )
 
+    # When the canonical metric is a scalar identity and every persisted
+    # output scale has the same magnitude, the output Hadamard congruence is
+    # algebraically another scalar identity. Preserve that result directly.
+    # Materializing the two Hadamard products in FP32 introduces tiny
+    # off-diagonal terms; hard trellis choices can amplify those round-off
+    # terms into different paths even though the mathematical factor is zero.
+    canonical_diagonal = canonical.diagonal()
+    canonical_is_scalar_identity = (
+        int(torch.count_nonzero(canonical).item()) == output_dimension
+        and torch.equal(
+            canonical_diagonal,
+            canonical_diagonal[:1].expand_as(canonical_diagonal),
+        )
+    )
+    sv_magnitude = sv.abs()
+    uniform_output_scale_magnitude = torch.equal(
+        sv_magnitude, sv_magnitude[:, :1].expand_as(sv_magnitude)
+    )
+    if canonical_is_scalar_identity and uniform_output_scale_magnitude:
+        transformed_diagonal_value = (
+            canonical_diagonal[0] * sv_magnitude[0, 0].square()
+        )
+        factor = torch.zeros_like(canonical)
+        transformed = torch.eye(
+            output_dimension, dtype=canonical.dtype, device=canonical.device
+        ).mul_(transformed_diagonal_value)
+        return factor, transformed.cpu(), {
+            "canonical_diagonal_mean": float(diagonal_mean.item()),
+            "output_dimension": int(output_dimension),
+            "sigma_reg": float(quant_args.get("sigma_reg", 0.025)),
+            "algebraic_scalar_identity_shortcut": True,
+            "strict_factor_nonzero_count": 0,
+            "transformed_diagonal_min": float(
+                transformed_diagonal_value.item()
+            ),
+            "transformed_diagonal_max": float(
+                transformed_diagonal_value.item()
+            ),
+            "transformed_off_diagonal_abs_max": 0.0,
+        }
+
     # In source orientation, decoded error is
     # D_sv H_output E_work H_input D_su. The output-coordinate work metric is
     # therefore H_output D_sv H_capture D_sv H_output.
@@ -2116,6 +2157,7 @@ def factor_output_hessian(
         "canonical_diagonal_mean": float(diagonal_mean.item()),
         "output_dimension": int(output_dimension),
         "sigma_reg": float(quant_args.get("sigma_reg", 0.025)),
+        "algebraic_scalar_identity_shortcut": False,
         "strict_factor_nonzero_count": factor_nonzero_count,
         "transformed_diagonal_min": float(transformed_diagonal.min().item()),
         "transformed_diagonal_max": float(transformed_diagonal.max().item()),

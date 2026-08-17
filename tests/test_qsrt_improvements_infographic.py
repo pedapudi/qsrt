@@ -646,7 +646,8 @@ def test_model_loss_scene_uses_a_scalable_additive_curvature_cost() -> None:
     assert "two_sided_quadratic_error" in visible
     assert "same Viterbi algorithm, model-aware additive edge cost" in visible
     assert "production-sized CUDA traversal are implemented" in visible
-    assert "improved source-space SSE by 0.000039%" in visible
+    assert "Source-identity and explicit zero-output-feedback controls now reproduce" in visible
+    assert "does not estimate downstream quality" in visible
 
 
 def test_experiment_order_and_measurement_gate_match_the_research_charter() -> None:
@@ -657,7 +658,7 @@ def test_experiment_order_and_measurement_gate_match_the_research_charter() -> N
     assert loss_link < down_link
     assert 'data-scene="table"' not in visible
     assert "Repeatable KLD and feedback controls" in visible
-    assert "One-sided curvature rejected; two-sided plumbing passes" in visible
+    assert "One-sided curvature rejected; two-sided identity audit passes" in visible
     assert "Down refit retained" in visible
     assert "output-gradient capture remains missing" in visible
     assert "changed none of 24 trellis paths" in visible

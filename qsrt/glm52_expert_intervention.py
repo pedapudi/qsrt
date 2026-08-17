@@ -61,6 +61,14 @@ INTERVENTION_BITS = 3
 TAILBITE_CONTEXT = 128
 
 
+def candidate_tensor_prefix(bits: int) -> str:
+    """Return the self-descriptive dense-tensor prefix for one SQG rate."""
+
+    if isinstance(bits, bool) or not isinstance(bits, int) or bits not in (3, 4):
+        raise ValueError("dense GLM-5.2 SQG endpoints support K3 or K4")
+    return f"qsrt_k{bits}"
+
+
 def _shared_scale_key(layer: int, projection: str) -> str:
     prefix = f"model.layers.{layer}.mlp.experts.r7_shared"
     if projection in ("gate_proj", "up_proj"):
@@ -214,8 +222,9 @@ def build_expert_endpoints(
     dest: Path,
     expected_roundtrip_sha256: Mapping[str, str],
     permutation_new_to_old: Sequence[int],
+    candidate_bits: int = INTERVENTION_BITS,
 ) -> dict[str, Any]:
-    """Build one selected expert's dense EXL3 and uniform-K3 QSRT endpoints."""
+    """Build one selected expert's dense EXL3 and uniform-rate QSRT endpoints."""
 
     rates = tuple(int(value) for value in exl3_rates)
     if len(rates) != len(PROJECTIONS) or any(rate not in (3, 4, 5) for rate in rates):
@@ -228,6 +237,7 @@ def build_expert_endpoints(
     ):
         raise ValueError("R7 expert permutation must contain each coordinate 0..2047")
     inverse_permutation = torch.argsort(permutation)
+    candidate_prefix = candidate_tensor_prefix(candidate_bits)
 
     tensors: dict[str, torch.Tensor] = {}
     projections: dict[str, Any] = {}
@@ -262,7 +272,7 @@ def build_expert_endpoints(
         input_seed, output_seed = _transform_seeds(layer, spec)
         encoded = encode_uniform_candidate(
             source_weight,
-            bits=INTERVENTION_BITS,
+            bits=candidate_bits,
             codebook=CODEBOOK_SQG_XOR_CHEB_T12,
             device=device,
             quantizer_module=quantizer_module,
@@ -300,7 +310,7 @@ def build_expert_endpoints(
             torch.sum((source_float - qsrt_weight.float()).double().square()).item()
         )
         tensors[f"exl3.{spec.name}"] = exl3_weight.half()
-        tensors[f"qsrt_k3.{spec.name}"] = qsrt_weight.half()
+        tensors[f"{candidate_prefix}.{spec.name}"] = qsrt_weight.half()
         projections[spec.name] = {
             "source_tensor": source_name,
             "source_dtype": "BF16",
@@ -312,7 +322,7 @@ def build_expert_endpoints(
                 "stored_coordinate_basis": "sealed_R7_permuted_middle_coordinates",
                 "source_metric_basis": "official_unpermuted_middle_coordinates",
             },
-            "qsrt_k3": {
+            candidate_prefix: {
                 "payload": encoded["payload"],
                 "dense_tensor_sha256": tensor_sha256(qsrt_weight.half()),
                 "source_relative_sse": qsrt_sse / source_energy,
@@ -346,10 +356,12 @@ def build_expert_endpoints(
         "aggregate": {
             "source_energy": total_source_energy,
             "exl3_sse": total_exl3_sse,
-            "qsrt_k3_sse": total_qsrt_sse,
+            f"{candidate_prefix}_sse": total_qsrt_sse,
             "exl3_source_relative_sse": total_exl3_sse / total_source_energy,
-            "qsrt_k3_source_relative_sse": total_qsrt_sse / total_source_energy,
-            "qsrt_k3_over_exl3_sse": total_qsrt_sse / total_exl3_sse,
+            f"{candidate_prefix}_source_relative_sse": (
+                total_qsrt_sse / total_source_energy
+            ),
+            f"{candidate_prefix}_over_exl3_sse": total_qsrt_sse / total_exl3_sse,
         },
     }
 
@@ -369,9 +381,11 @@ def build_dense_intervention_artifacts(
     resume: bool = False,
     verify_source_shard_hashes: bool = True,
     verify_exl3_shard_hash: bool = True,
+    candidate_bits: int = INTERVENTION_BITS,
 ) -> dict[str, Any]:
     """Build a resumable dense endpoint panel from bounded existing inputs."""
 
+    candidate_prefix = candidate_tensor_prefix(candidate_bits)
     frozen_panel = load_frozen_real_weight_panel(panel_manifest_path, layer=layer)
     experts = select_frozen_panel_slice(
         frozen_panel, offset=panel_offset, expert_count=expert_count
@@ -418,7 +432,8 @@ def build_dense_intervention_artifacts(
         "candidate": {
             "profile": "qsrt_sqg_e4m3",
             "codebook": CODEBOOK_SQG_XOR_CHEB_T12,
-            "uniform_rate": INTERVENTION_BITS,
+            "uniform_rate": candidate_bits,
+            "tensor_prefix": candidate_prefix,
             "endpoint_dtype": "FP16",
         },
         "resident_endpoint_dtype": "FP16",
@@ -477,13 +492,15 @@ def build_dense_intervention_artifacts(
                         for spec in PROJECTIONS
                     },
                     permutation_new_to_old=permutations[str(expert)]["new_to_old"],
+                    candidate_bits=candidate_bits,
                 )
                 record["wall_seconds"] = time.monotonic() - started
                 atomic_write_json(receipt_path, record)
             records.append(record)
             print(
                 f"[{index:02d}/{len(experts)}] layer {layer} expert {expert}: "
-                f"QSRT-K3/EXL3 SSE={record['aggregate']['qsrt_k3_over_exl3_sse']:.6f}",
+                f"QSRT-K{candidate_bits}/EXL3 SSE="
+                f"{record['aggregate'][f'{candidate_prefix}_over_exl3_sse']:.6f}",
                 flush=True,
             )
 

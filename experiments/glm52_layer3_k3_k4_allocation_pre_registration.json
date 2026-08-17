@@ -1,0 +1,102 @@
+{
+  "schema": "qsrt_glm52_layer3_k3_k4_allocation_pre_registration",
+  "schema_version": 1,
+  "status": "frozen_before_k4_candidate_measurement",
+  "objective": "Measure whether a down-refitted mixed-K3/K4 QSRT expert panel can reduce forward KLD while retaining a strictly smaller representation than the immutable 3.5-bpw EXL3 comparison panel.",
+  "comparison_checkpoint": {
+    "model_id": "brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78",
+    "revision": "9ab9579774cc432df91567a36f6e9e863e0d4c9f",
+    "root_manifest_sha256": "c81f3129e418683b6e37c17b8198681c11324f3918fdbd844c1be346114c387b"
+  },
+  "source_weights": {
+    "model_id": "zai-org/GLM-5.2",
+    "revision": "4d67f66cc64d3219133b767c253b2ad1425c6c88",
+    "scope": "the existing four-shard layer-3 BF16 source window",
+    "complete_checkpoint_required": false
+  },
+  "expert_panel": {
+    "path": "experiments/glm52_layer3_rate_pattern_panel.json",
+    "sha256": "046945e916482b45062e880d46d14efc3d35021376e1f07113f38df87d631179",
+    "layer": 3,
+    "expert_order": [64, 208, 106, 204, 89, 212, 96, 103],
+    "selection_status": "frozen_before_candidate_measurement"
+  },
+  "selection_inputs": {
+    "corpus_plan_path": "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
+    "corpus_plan_sha256": "b694ac0a1aeb09f7c61a20b5f72289f3e791d616ff7471b5894d857f8c363b55",
+    "routed_input_capture_manifest_sha256": "9f7c616a551b885c0cf5274522b08b6886b516a1d12cadda85b7258b709f343f",
+    "fit_window_count": 32,
+    "candidate_selection_window_count": 8,
+    "candidate_selection_role": "the only inputs permitted to choose a data-dependent K3/K4 allocation"
+  },
+  "reporting_context": {
+    "reference_manifest_sha256": "985120136741037918bcd4dc8da9813c1f6268b35a730302f99cf6b3eebb7606",
+    "use": "report a frozen allocation only",
+    "prohibited_uses": [
+      "select a K3 or K4 rate",
+      "select a trellis path",
+      "select or fit a down target",
+      "select a shrinkage setting",
+      "select an allocation"
+    ]
+  },
+  "base_representation": {
+    "description": "K3 gate and up encodes plus the already-frozen reconstructed-activation down refit, with the ordinary source-target K3 down encode retained wherever the refit was rejected",
+    "artifact_relative_path": "results/glm52-layer3-frozen8-reconstructed-activation-down-refit-merged",
+    "artifact_manifest_file_sha256": "ccd18d2cb811b387afcd590b3c43f24a25b028fe297dcc2d33129cc24ef5204f",
+    "artifact_report_file_sha256": "a19bfde336047c5186816ddfb05ad09e607f6c0ef3a4abdd225399156513d312",
+    "logical_bytes": 113643520
+  },
+  "rate_contract": {
+    "allowed_rates": [3, 4],
+    "projection_order": ["gate_proj", "up_proj", "down_proj"],
+    "candidate_tuples_per_expert": [
+      [3, 3, 3],
+      [3, 3, 4],
+      [3, 4, 3],
+      [3, 4, 4],
+      [4, 3, 3],
+      [4, 3, 4],
+      [4, 4, 3],
+      [4, 4, 4]
+    ],
+    "k4_projection_increment_bytes": 1572864,
+    "maximum_k4_projection_count": 12
+  },
+  "logical_byte_gate": {
+    "comparison_exl3_bytes": 133791744,
+    "mixed_qsrt_bytes_at_twelve_k4_projections": 132517888,
+    "logical_margin_bytes": 1273856,
+    "thirteen_k4_projection_bytes": 134090752,
+    "serialized_gate": "The allocation is not acceptable until a materialized GLM QSRT container charges headers, format directories, alignment, padding, scales, and the shared reconstruction table and remains strictly smaller than the comparison checkpoint."
+  },
+  "fixed_exl3_rate_stratified_allocation": {
+    "description": "Promote every panel projection whose immutable EXL3 rate is at least four, cap the two EXL3 five-bit projections at K4, then spend the one remaining promotion in frozen expert and projection order.",
+    "k4_projections": [
+      {"expert": 64, "projection": "gate_proj", "reason": "first remaining projection in frozen expert and projection order"},
+      {"expert": 64, "projection": "down_proj", "reason": "EXL3 rate four"},
+      {"expert": 106, "projection": "gate_proj", "reason": "EXL3 rate four"},
+      {"expert": 106, "projection": "up_proj", "reason": "EXL3 rate four"},
+      {"expert": 106, "projection": "down_proj", "reason": "EXL3 rate four"},
+      {"expert": 204, "projection": "gate_proj", "reason": "EXL3 rate four"},
+      {"expert": 204, "projection": "up_proj", "reason": "EXL3 rate four"},
+      {"expert": 204, "projection": "down_proj", "reason": "EXL3 rate five capped at K4"},
+      {"expert": 89, "projection": "down_proj", "reason": "EXL3 rate five capped at K4"},
+      {"expert": 212, "projection": "up_proj", "reason": "EXL3 rate four"},
+      {"expert": 212, "projection": "down_proj", "reason": "EXL3 rate four"},
+      {"expert": 96, "projection": "down_proj", "reason": "EXL3 rate four"}
+    ],
+    "candidate_measurements_used": false
+  },
+  "complete_expert_selection_allocation": {
+    "description": "Encode every K4 projection once, assemble all eight legal K3/K4 tuples for every expert, and minimize pooled route-weighted complete-expert output squared error on the eight candidate-selection windows under the twelve-promotion budget.",
+    "objective_boundary": "The score evaluates the complete SwiGLU expert so gate, up, and down errors interact. It does not use per-matrix weight error as the acceptance objective.",
+    "tie_break": "For equal pooled objective values, choose the lexicographically earliest sequence of per-expert rate tuples in the frozen expert order and gate, up, down projection order.",
+    "reporting_context_used": false
+  },
+  "acceptance": {
+    "required_model_quality_measurement": "paired forward KL divergence from the immutable BF16 teacher to each frozen candidate on document-disjoint reporting inputs",
+    "required_size_measurement": "complete serialized bytes",
+    "primary_claim_boundary": "A layer-3 expert panel is a mechanism screen; it cannot establish complete-checkpoint dominance."
+  }
+}

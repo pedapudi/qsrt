@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot taken at `2026-08-17T05:40:11Z`. It
+This repository is a source snapshot updated at `2026-08-17T06:52:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -80,12 +80,10 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The exported source passed 678 tests with four skips in the local CPU-only
-environment. The preceding synchronized source state passed 677 tests with
-four skips inside a network-disabled container on the GPU host. The explicit
-zero-output-feedback control was added after that remote run, so it still needs
-the real-matrix CUDA closure described below. Model-level KLD also needs the
-remote artifacts described below.
+The exported source passed 689 tests with four skips in the local CPU-only
+environment. The complete real-matrix zero-output-feedback control also passed
+bit equivalence before the mixed-rate experiment. Model-level KLD still needs
+the remote artifacts described below.
 
 Verify the published source files before using them:
 
@@ -189,6 +187,7 @@ generalization.
 | Uniform K3 with feedback disabled at frozen scales | `0.0623782807651` | `0.0000%` | Byte-identical control |
 | K3 selected with routed-input covariance | `0.0638412662800` | `+2.3453%` | Rejected |
 | K3 with reconstructed-activation down refit | `0.0612386895257` | `-1.8269%` | Confirm on more documents |
+| Fixed twelve-promotion mixed K3/K4 over the down-refit base | `0.0659634015775` | `+5.7474%` | Rejected |
 
 The down refit trains the down-projection target against activations rebuilt
 from quantized gate and up projections. It recovered 87.3960 percent of
@@ -197,6 +196,13 @@ EXL3. It improved 1,004 positions and regressed 1,043 positions. Confirmation
 must therefore report mean KLD and a tail measure such as the ninety-ninth
 percentile or the mean loss among the worst-scoring positions, known as
 conditional value at risk.
+
+The fixed mixed-rate candidate copied twelve promotion priorities from EXL3.
+It was 8.0051 percent worse than EXL3 and 7.7152 percent worse than the
+down-refitted K3 base. Promoted down projections used ordinary source-target
+K4 tensors and therefore replaced their K3 refits. This result rejects the
+fixed allocation and target combination. It does not test K4 encoding of the
+refitted down target or an allocation selected by complete-expert output error.
 
 Three other findings constrain the next experiments:
 
@@ -231,66 +237,37 @@ The GLM-5.2 QSRT container format does not exist yet, so headers, alignment,
 padding, and serving-directory overhead remain unmeasured. A complete
 serialized artifact must retain a positive size margin after those costs.
 
-## Work that should proceed immediately
+## Work that should proceed when the GPU host returns
 
-### Close zero-output-feedback equivalence on a real matrix
+### Preserve the down-refit target across rate changes
 
-Zero strict output feedback reduces the two-sided recurrence to ordinary
-BlockLDLQ. It must reproduce the ordinary path and reconstruction bit for bit.
-Source-basis identity curvature does not provide this control because the
-output Hadamard transform and nonuniform persisted output scales map it to a
-nonidentity metric in the encoder's work basis.
+The completed fixed mixed-rate artifact used source-target K4 tensors for
+promoted projections. A promoted down cell therefore replaced its accepted K3
+refit. Recompute each accepted continuous down target from the captured fit
+rows and stored ridge factor, then encode that same target at both K3 and K4.
+Keep the continuous matrix outside the checkpoint after both encodes finish.
 
-The snapshot adds an explicit zero-output-feedback traversal control. The
-backend delegates this algebraic special case to the established ordinary
-implementation so floating-point accumulation order cannot perturb hard
-trellis decisions. Unit tests cover its API contract. Rerun the complete real
-GLM gate-matrix CUDA closure and require equal scale planes, trellis hashes,
-and reconstructed tensors before using a nonzero output factor. The relevant
-implementation and tests are:
+Measure one-projection changes before allocating the twelve-promotion budget.
+The required arms are upstream-only K4, source-target down K4, and refitted-
+target down K4. Score complete experts on the frozen candidate-selection
+documents. The published reporting context may report a frozen allocation but
+must not choose rates.
 
-- [`qsrt/two_sided_ldlq.py`](qsrt/two_sided_ldlq.py)
-- [`qsrt/exl3_encoder_backend.py`](qsrt/exl3_encoder_backend.py)
-- [`qsrt/glm52_two_sided_curvature.py`](qsrt/glm52_two_sided_curvature.py)
-- [`scripts/validate_glm52_two_sided_real_weight_cuda.py`](scripts/validate_glm52_two_sided_real_weight_cuda.py)
-- [`tests/test_two_sided_ldlq.py`](tests/test_two_sided_ldlq.py)
-- [`tests/test_glm52_two_sided_curvature.py`](tests/test_glm52_two_sided_curvature.py)
+### Confirm down refitting on multiple documents
 
-Do not validate the selector against KLD until the real-matrix control proves
-zero-output-feedback equivalence. A failure would mix the intended objective
-change with implementation drift.
+The K3 down refit reduced mean KLD relative to uniform K3 but remained 0.2691
+percent worse than EXL3 on one context. Obtain additional reference logits
+without downloading the complete BF16 checkpoint. Report paired per-document
+differences and tail loss before extending the method to more experts or
+layers.
 
-### Run the byte-matched K3 and K4 panel
+### Use the complete-expert inversion to place output curvature
 
-The panel comparison need not wait for output-gradient capture. Generate K3
-and K4 candidates for every gate, up, and down matrix in the eight frozen
-experts. Apply reconstructed-activation down refitting to the candidates that
-use it. Pre-register one or more crude allocation rules before observing the
-new KLD values, and spend at most twelve K4 promotions under the logical-byte
-ledger.
-
-Useful pre-registered controls include an allocation projected from EXL3's
-immutable rate map, a down-heavy allocation, and an upstream-shifted allocation
-that tests whether reconstructed-activation down refitting reduces the value
-of extra down-projection bits. Keep the non-expert tensors and all runtime
-settings identical. Run unchanged-model and direct-return identity controls in
-every process.
-
-Treat this measurement as a panel mechanism screen. Qualification still needs
-complete serialized bytes and multiple document-disjoint reference contexts.
-
-### Determine where the one-sided ranking failed
-
-Re-score the rejected routed-input-curvature candidate and uniform K3 under
-the existing whole-expert routed-output metric with reconstructed propagation.
-If that whole-expert metric also prefers the rejected candidate, the missing
-sensitivity lies downstream of the expert boundary. If the whole-expert metric
-prefers uniform K3, the per-matrix aggregation caused the inversion and the
-existing expert-level acceptance path should be corrected first.
-
-This comparison discriminates between two programs without requiring another
-model load. Record the source rows, reconstructed expert endpoints, weighting,
-and paired per-row differences.
+The one-sided routed-input candidate reduced complete-expert routed output
+squared error by 93.6575 percent and still worsened full-model KLD. The missing
+sensitivity therefore lies downstream of the complete expert on the measured
+context. Capture gradients at the expert-output or residual-stream boundary
+before building per-matrix output factors.
 
 ### Capture gradients at the residual-stream boundary
 

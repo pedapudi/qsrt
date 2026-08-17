@@ -137,6 +137,20 @@ def main() -> None:
     traversal_control_reconstruction_exact = torch.equal(
         ordinary["reconstruction"], traversal_control["reconstruction"]
     )
+    source_identity_factor_record = two_sided["payload"][
+        "output_hessian_factorization"
+    ]
+    source_identity_factor_exact_zero = (
+        source_identity_factor_record["algebraic_scalar_identity_shortcut"]
+        and source_identity_factor_record["strict_factor_nonzero_count"] == 0
+    )
+    source_identity_path_exact = (
+        ordinary["payload"]["trellis_sha256"]
+        == two_sided["payload"]["trellis_sha256"]
+    )
+    source_identity_reconstruction_exact = torch.equal(
+        ordinary["reconstruction"], two_sided["reconstruction"]
+    )
     source_float = source.float()
     source_energy = float(
         torch.sum(source_float.square(), dtype=torch.float64).item()
@@ -167,10 +181,10 @@ def main() -> None:
         "source_sha256": tensor_sha256(source),
         "input_metric": "identity_control",
         "output_metric": "source_basis_identity_control",
-        "source_basis_identity_output_metric_maps_to_work_basis": (
-            "output Hadamard and persisted nonuniform output scales apply a "
-            "congruence transform, so source-basis identity is generally not "
-            "the ordinary encoder's zero-output-feedback metric"
+        "source_basis_identity_output_metric_mapping": (
+            "uniform persisted output-scale magnitudes preserve a scalar "
+            "identity under the output Hadamard congruence; the factorizer "
+            "must keep its strict feedback factor exactly zero"
         ),
         "frozen_global_scale": global_scale,
         "ordinary_replay_exact": True,
@@ -178,6 +192,11 @@ def main() -> None:
         "path_changed": (
             ordinary["payload"]["trellis_sha256"]
             != two_sided["payload"]["trellis_sha256"]
+        ),
+        "source_identity_factor_exact_zero": source_identity_factor_exact_zero,
+        "source_identity_path_exact": source_identity_path_exact,
+        "source_identity_reconstruction_exact": (
+            source_identity_reconstruction_exact
         ),
         "ordinary_dense_tensor_sha256": tensor_sha256(
             ordinary["reconstruction"]
@@ -231,6 +250,17 @@ def main() -> None:
         atomic_write_json(args.dest, report)
         raise RuntimeError("two-sided real-weight scale closure failed")
     if not (
+        source_identity_factor_exact_zero
+        and source_identity_path_exact
+        and source_identity_reconstruction_exact
+    ):
+        report["status"] = "failed"
+        atomic_write_json(args.dest, report)
+        raise RuntimeError(
+            "source-basis identity output curvature did not reproduce "
+            "ordinary BlockLDLQ"
+        )
+    if not (
         traversal_control_scale_closed
         and traversal_control_path_exact
         and traversal_control_reconstruction_exact
@@ -252,6 +282,9 @@ def main() -> None:
                     "ordinary_replay_exact",
                     "scale_plane_closed",
                     "path_changed",
+                    "source_identity_factor_exact_zero",
+                    "source_identity_path_exact",
+                    "source_identity_reconstruction_exact",
                     "ordinary_proxy_relative_error",
                     "two_sided_proxy_relative_error",
                     "ordinary_source_relative_sse",

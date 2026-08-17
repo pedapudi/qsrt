@@ -29,6 +29,7 @@ from qsrt.glm52_engine_kld import (
     engine_kld_from_prompt_logprobs,
 )
 from qsrt.glm52_expert_intervention_runtime import (
+    CANDIDATE_MODE,
     FORCE_PER_EXPERT_EXL3_MOE_ENV,
     atomic_write_control,
     validate_dense_intervention_artifact,
@@ -340,6 +341,139 @@ def _capture_planned_layer_inputs(
     return capture_manifest
 
 
+def _capture_reporting_layer_input(
+    llm: Any,
+    *,
+    token_ids: list[int],
+    corpus_plan_path: Path,
+    reference_manifest_path: Path,
+    capture_dir: Path,
+    control_path: Path,
+    artifact_manifest_sha256: str,
+    selected_experts: list[int] | tuple[int, ...],
+) -> dict[str, Any]:
+    """Store one reporting-context input without making selection decisions."""
+
+    from safetensors import safe_open
+    from vllm import SamplingParams
+
+    plan_sha256 = sha256_file(corpus_plan_path)
+    reference_manifest_sha256 = sha256_file(reference_manifest_path)
+    configured_dir = os.getenv("QSRT_GLM52_ACTIVATION_CAPTURE_DIR")
+    configured_plan = os.getenv("QSRT_GLM52_ACTIVATION_CAPTURE_PLAN_SHA256")
+    if configured_dir != str(capture_dir) or configured_plan != plan_sha256:
+        raise RuntimeError(
+            "reporting-input capture environment does not match the requested "
+            "directory and corpus-plan SHA-256"
+        )
+    if capture_dir.exists():
+        raise FileExistsError(capture_dir)
+    plan = json.loads(corpus_plan_path.read_text())
+    reporting = plan.get("published_bf16_reference")
+    if (
+        plan.get("schema") != "qsrt_glm52_document_disjoint_corpus_plan"
+        or plan.get("schema_version") != 1
+        or plan.get("context_length") != len(token_ids)
+        or plan.get("separation")
+        != {
+            "fit_selection_row_overlap": 0,
+            "reference_fit_row_overlap": 0,
+            "reference_selection_row_overlap": 0,
+            "unit": "WikiText article delimited by a top-level heading",
+        }
+        or not isinstance(reporting, dict)
+        or reporting.get("manifest_sha256") != reference_manifest_sha256
+        or reporting.get("token_first16") != token_ids[:16]
+        or reporting.get("role") != "untouched BF16-reference reporting context"
+    ):
+        raise ValueError("reporting corpus plan or reference identity is invalid")
+
+    generation = 900_001
+    atomic_write_control(
+        control_path,
+        mode="off",
+        artifact_manifest_sha256=artifact_manifest_sha256,
+        generation=generation,
+        capture_enabled=True,
+    )
+    output = llm.generate(
+        [{"prompt_token_ids": token_ids}],
+        sampling_params=SamplingParams(
+            max_tokens=1,
+            routed_experts_prompt_start=0,
+            detokenize=False,
+        ),
+    )[0]
+    routed_experts = output.outputs[0].routed_experts
+    if routed_experts is None:
+        raise RuntimeError("vLLM returned no routed experts during reporting capture")
+    layer_routes = target_layer_routes(
+        np.asarray(routed_experts),
+        model_layer=3,
+        total_decoder_layers=78,
+        first_moe_layer=3,
+    )
+    matches: list[Path] = []
+    for path in capture_dir.glob("layer-003-input-chunk-*.safetensors"):
+        with safe_open(path, framework="pt", device="cpu") as handle:
+            metadata = handle.metadata() or {}
+            if metadata.get("control_generation") == str(generation):
+                hidden_shape = tuple(handle.get_slice("hidden_states").get_shape())
+                if hidden_shape != (len(token_ids), 6144):
+                    raise ValueError(
+                        f"reporting capture {path.name} has hidden shape {hidden_shape}"
+                    )
+                matches.append(path)
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"reporting generation {generation} produced {len(matches)} captures"
+        )
+    path = matches[0]
+    atomic_write_control(
+        control_path,
+        mode="off",
+        artifact_manifest_sha256=artifact_manifest_sha256,
+        generation=generation + 1,
+        capture_enabled=False,
+    )
+    record = {
+        "collection": "untouched_reporting_context",
+        "window_id": "published_bf16_reference_context_000",
+        "token_count": len(token_ids),
+        "control_generation": generation,
+        "capture_file": path.name,
+        "capture_file_bytes": path.stat().st_size,
+        "capture_file_sha256": sha256_file(path),
+        "route_support": route_support_summary(
+            layer_routes, selected_experts=selected_experts
+        ),
+    }
+    capture_manifest = {
+        "schema": "qsrt_glm52_reporting_layer_input_capture_manifest",
+        "schema_version": 1,
+        "status": "complete",
+        "model_layer": 3,
+        "corpus_plan_path": str(corpus_plan_path),
+        "corpus_plan_sha256": plan_sha256,
+        "reference_manifest_path": str(reference_manifest_path),
+        "reference_manifest_sha256": reference_manifest_sha256,
+        "intervention_artifact_manifest_sha256": artifact_manifest_sha256,
+        "records": [record],
+        "collections": {"untouched_reporting_context": 1},
+        "reuse_policy": (
+            "reporting analysis only; this context must not select paths, "
+            "rates, refits, shrinkage, or allocation settings"
+        ),
+        "evidence_boundary": (
+            "resident-EXL3 layer-3 inputs, route IDs, and applied route weights "
+            "for the single published BF16-reference context; this capture can "
+            "diagnose a frozen candidate but cannot train or select one"
+        ),
+    }
+    atomic_write_json(capture_dir / "manifest.json", capture_manifest)
+    return capture_manifest
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
@@ -349,6 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dest", type=Path, required=True)
     parser.add_argument("--corpus-plan", type=Path)
     parser.add_argument("--activation-capture-dir", type=Path)
+    parser.add_argument("--reporting-activation-capture-dir", type=Path)
     parser.add_argument("--context-length", type=int, default=2048)
     parser.add_argument(
         "--source-sparse-index-topk",
@@ -423,10 +558,10 @@ def intervention_arm_definitions(
         return definitions
     if not omit_individual_expert_arms:
         definitions.extend(
-            (f"selected_qsrt_k3_expert_{expert:03d}", "qsrt_k3", [expert])
+            (f"selected_candidate_expert_{expert:03d}", CANDIDATE_MODE, [expert])
             for expert in experts
         )
-    definitions.append(("selected_qsrt_k3", "qsrt_k3", None))
+    definitions.append(("selected_candidate", CANDIDATE_MODE, None))
     return definitions
 
 
@@ -567,15 +702,42 @@ def main() -> None:
     load_seconds = time.monotonic() - started
 
     activation_capture = None
-    if bool(args.corpus_plan) != bool(args.activation_capture_dir):
+    reporting_activation_capture = None
+    capture_directory_count = sum(
+        value is not None
+        for value in (
+            args.activation_capture_dir,
+            args.reporting_activation_capture_dir,
+        )
+    )
+    if capture_directory_count > 1:
         raise ValueError(
-            "--corpus-plan and --activation-capture-dir must be supplied together"
+            "fit/selection and reporting input captures require separate model runs"
+        )
+    if bool(args.corpus_plan) != bool(capture_directory_count):
+        raise ValueError(
+            "--corpus-plan and one activation-capture directory must be supplied "
+            "together"
         )
     if args.corpus_plan is not None and args.activation_capture_dir is not None:
         activation_capture = _capture_planned_layer_inputs(
             llm,
             corpus_plan_path=args.corpus_plan,
             capture_dir=args.activation_capture_dir,
+            control_path=args.control,
+            artifact_manifest_sha256=artifact["manifest_sha256"],
+            selected_experts=artifact["expert_ids"],
+        )
+    if (
+        args.corpus_plan is not None
+        and args.reporting_activation_capture_dir is not None
+    ):
+        reporting_activation_capture = _capture_reporting_layer_input(
+            llm,
+            token_ids=token_ids,
+            corpus_plan_path=args.corpus_plan,
+            reference_manifest_path=manifest_path,
+            capture_dir=args.reporting_activation_capture_dir,
             control_path=args.control,
             artifact_manifest_sha256=artifact["manifest_sha256"],
             selected_experts=artifact["expert_ids"],
@@ -663,7 +825,7 @@ def main() -> None:
                 f"layer-3 routing changed before the {arm!r} intervention"
             )
     controls = measurement_control_summary(klds, routes)
-    candidate_measured = "selected_qsrt_k3" in klds
+    candidate_measured = "selected_candidate" in klds
     report = {
         "schema": "qsrt_glm52_paired_expert_intervention_kld",
         "schema_version": 2,
@@ -725,9 +887,26 @@ def main() -> None:
             if activation_capture is not None
             else None
         ),
+        "reporting_activation_capture": (
+            {
+                "manifest_path": str(
+                    args.reporting_activation_capture_dir / "manifest.json"
+                ),
+                "corpus_plan_sha256": reporting_activation_capture[
+                    "corpus_plan_sha256"
+                ],
+                "reference_manifest_sha256": reporting_activation_capture[
+                    "reference_manifest_sha256"
+                ],
+                "collections": reporting_activation_capture["collections"],
+                "reuse_policy": reporting_activation_capture["reuse_policy"],
+            }
+            if reporting_activation_capture is not None
+            else None
+        ),
         "paired": (
             paired_kld_summary(
-                klds["resident_exl3"], klds["selected_qsrt_k3"]
+                klds["resident_exl3"], klds["selected_candidate"]
             )
             if candidate_measured
             else None
@@ -741,10 +920,10 @@ def main() -> None:
         ],
         "individual_expert_paired": {
             str(expert): {
-                "arm": f"selected_qsrt_k3_expert_{expert:03d}",
+                "arm": f"selected_candidate_expert_{expert:03d}",
                 "paired": paired_kld_summary(
                     klds["resident_exl3"],
-                    klds[f"selected_qsrt_k3_expert_{expert:03d}"],
+                    klds[f"selected_candidate_expert_{expert:03d}"],
                 ),
                 "layer_3_route_support": route_support_summary(
                     baseline_layer_routes, selected_experts=[expert]

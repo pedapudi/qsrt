@@ -119,7 +119,7 @@ def test_control_is_atomic_and_identity_bound(tmp_path: Path) -> None:
     digest = "a" * 64
     atomic_write_control(
         path,
-        mode="qsrt_k3",
+        mode="candidate",
         artifact_manifest_sha256=digest,
         generation=2,
         capture_enabled=True,
@@ -127,7 +127,7 @@ def test_control_is_atomic_and_identity_bound(tmp_path: Path) -> None:
 
     assert read_control(path, expected_manifest_sha256=digest) == {
         "schema": CONTROL_SCHEMA,
-        "mode": "qsrt_k3",
+        "mode": "candidate",
         "artifact_manifest_sha256": digest,
         "generation": 2,
         "capture_enabled": True,

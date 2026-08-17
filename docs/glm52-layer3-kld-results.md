@@ -45,11 +45,20 @@ EXL3 KLD vector was bitwise identical across the three candidate processes.
 | Uniform K3 with BlockLDLQ feedback disabled at frozen scales | 0.0623782807651 | +2.1350% | 0.0000% | Byte-identical to uniform K3 |
 | K3 selected with one-sided routed-input covariance | 0.0638412662800 | +4.5304% | +2.3453% | Reject |
 | K3 with reconstructed-activation down refit | 0.0612386895257 | +0.2691% | −1.8269% | Confirm on more documents |
+| Fixed twelve-promotion mixed K3/K4 over the down-refit base | 0.0659634015775 | +8.0051% | +5.7474% | Reject |
 
 The down refit recovered 87.3960% of uniform K3's excess mean KLD above EXL3.
 It did not beat EXL3. Its position-level changes were also heavy-tailed: 1,004
 positions improved and 1,043 regressed relative to uniform K3, even though the
 mean improved.
+
+The fixed mixed-rate candidate was 7.7152% worse than the down-refitted K3
+base. Its twelve promoted projections came from an allocation frozen from
+EXL3 rates before candidate measurement. Source-target K4 tensors replaced the
+base tensor in each promoted cell. A promoted down projection therefore did
+not retain the K3 refit's continuous target. The result rejects that fixed
+allocation and target combination. It does not test selection-data allocation
+or K4 encoding of the reconstructed-activation down target.
 
 ## Interpretation by mechanism
 
@@ -64,9 +73,12 @@ error by 0.00175%. A shared production table has less freedom than that oracle.
 ### One-sided routed-input covariance
 
 Reject one-sided input covariance as a path-selection objective. It produced
-large held-out local expert-output squared-error reductions and then made
-full-model KLD worse than both EXL3 and uniform K3. The inversion shows that
-local routed squared error cannot safely promote candidates.
+large complete-expert output squared-error reductions on the separate
+candidate-selection documents and then made full-model KLD worse than both
+EXL3 and uniform K3. The candidate-selection rows were held out from covariance
+fitting, but they chose the stored candidate and therefore do not constitute an
+untouched reporting set. The inversion shows that local routed squared error
+cannot safely promote candidates.
 
 The rejection does not test two-sided downstream-loss curvature. That method
 also needs output gradients and an output-side metric. The repository now
@@ -75,6 +87,16 @@ format, and frozen-scale GLM candidate encoder. Synthetic and complete
 real-matrix CUDA closures pass. The bounded output-gradient capture needed to
 construct real GLM factors remains unavailable, so no two-sided KLD result
 exists.
+
+The complete-matrix identity audit found and corrected one numerical failure.
+For the tested gate matrix, source-basis identity output curvature is
+algebraically a scalar identity after the output transform. FP32 Hadamard
+round-off first introduced off-diagonal terms up to `1.12593e-8`. The block
+factorization turned them into 114,688 nonzero feedback entries, and the hard
+trellis path changed. The factorizer now preserves algebraic scalar identity
+directly. Both source-basis identity and an explicit zero-output-feedback
+control reproduce the ordinary K3 trellis, scales, and dense reconstruction
+bit for bit on the complete `2,048 × 6,144` matrix.
 
 ### BlockLDLQ feedback removal
 
@@ -103,6 +125,22 @@ stored representation remains an ordinary K3 down matrix. The one-context gain
 is large enough to justify more reference documents, but it is not evidence for
 a complete checkpoint.
 
+### Fixed mixed K3/K4 allocation
+
+Reject the pre-registered fixed rate-stratified allocation. It promoted twelve
+projections selected from EXL3's immutable rate map and did not inspect QSRT
+candidate measurements. The complete candidate remained 1,273,856 charged
+logical bytes smaller than EXL3 across the panel, but its mean KLD was 8.0051%
+worse.
+
+The negative result has two narrower boundaries. First, the fixed map copied
+EXL3 rate priorities even though QSRT conditions its down target on
+reconstructed upstream activations. Second, a promoted down cell used a
+source-target K4 tensor and replaced the accepted K3 refit. A later mixed-rate
+test must rank complete-expert candidates on the frozen selection documents
+and encode accepted down-refit targets at both K3 and K4 before comparing
+rates.
+
 ## Logical byte comparison
 
 The eight selected experts contain 24 gate, up, and down matrices. Their
@@ -114,6 +152,11 @@ charged logical representation is:
 | Expert or matrix scales | 98,304 | 393,216 |
 | Shared QSRT reconstruction table | 0 | 4,096 |
 | Total | 133,791,744 | 113,643,520 |
+
+The twelve-promotion mixed candidate occupies 132,517,888 charged logical
+bytes. This leaves a 1,273,856-byte margin below EXL3 before a complete
+serialized container charges headers, directories, alignment, and padding.
+The KLD regression rejects the candidate regardless of that logical margin.
 
 Uniform K3 saves 20,148,224 logical bytes across the panel. The three QSRT
 candidates use the same K3 payload size. A frozen GLM QSRT container does not
@@ -131,13 +174,15 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | Uniform K3 | `results/glm52-layer3-frozen8-dense-endpoints-r7-closure-merged-v2-paired-bf16-reference-kld-engine-per-expert-correctness/` | `59dc890d56e1a48814b971836bf1544a86f79d0114043149a607564de8eada6b` |
 | One-sided routed-input covariance | `results/glm52-layer3-frozen8-routed-input-curvature-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `dc4df5478363582faa7ebca5d088e1d43a85a06d7e600d49c4cefc7c32ee373e` |
 | Reconstructed-activation down refit | `results/glm52-layer3-frozen8-reconstructed-activation-down-refit-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `d54093ec11d88664419039afa58bb7703a244ec8e0c0aa597db42a5c17cef21a` |
+| Fixed mixed K3/K4 over the down-refit base | `results/glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit-paired-bf16-reference-kld-engine-per-expert-correctness/` | `c366b25f8e3c4e1f231b0018dba241b25602dea98ad37ae337136756185f34c4` |
 
 The codec-mechanism reports below do not contain new model KLD vectors.
 
 | Codec mechanism | Report path | Report SHA-256 |
 |---|---|---|
 | Frozen-scale K3 with BlockLDLQ feedback disabled | `results/glm52-layer3-frozen8-blockldlq-no-feedback-frozen-k3-scale-identity-comparison/report.json` | `026369914fe0e1e9bf868cc21a77d9df19b07a1afb6358545432876661a10153` |
-| Two-sided complete GLM gate-matrix CUDA closure | `results/glm52-layer3-expert64-gate-two-sided-identity-curvature-complete-matrix-canonical-loss-cuda-closure.json` | `98b0f5a7cf383e33a3b09f5f9b9377a25d75bac6f6cfba924d5e7d8881385706` |
+| Source-identity numerical-drift failure | `results/glm52-layer3-expert64-gate-source-identity-curvature-and-zero-output-feedback-bit-equivalence-cuda-closure.json` | `20a6b2a6fce197f6d22cff2a291abced722cb83e9d1e3ee6b2c55a5b8a2ff204` |
+| Source-identity and zero-output-feedback bit-equivalence closure | `results/glm52-layer3-expert64-gate-source-identity-and-zero-output-feedback-bit-equivalence-after-scalar-identity-preservation.json` | `c0dc90c21da6c2105ffcb89eff8f8053a23da5785ef4a28b6d2bd9b621d5c398` |
 
 Each result directory contains `report.json`, `measurement-controls.json`, one
 per-position KLD tensor for every arm, and complete route arrays for the
@@ -153,7 +198,10 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 2. Add bounded output-gradient capture, build expert-local two-sided factors,
    and test whether their score predicts held-out KLD better than routed
    squared error before accepting any changed path.
-3. If down refitting repeats across documents, extend the frozen panel across
-   early, middle, and late mixture layers before building a complete candidate.
-4. Freeze a GLM QSRT container and count every serialized byte before making a
+3. If down refitting repeats across documents, encode each accepted refit
+   target at K3 and K4. Select mixed-rate complete-expert candidates only from
+   the frozen candidate-selection documents.
+4. Extend a confirmed panel across early, middle, and late mixture layers
+   before building a complete candidate.
+5. Freeze a GLM QSRT container and count every serialized byte before making a
    model-size comparison.

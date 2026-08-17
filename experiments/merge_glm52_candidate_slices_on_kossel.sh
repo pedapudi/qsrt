@@ -5,7 +5,7 @@ set -euo pipefail
 # bytes. Accepted method names map to fixed, descriptive artifact paths.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {routed-input-curvature|reconstructed-activation-down-refit|blockldlq-no-feedback-frozen-k3-scale}" >&2
+  echo "usage: $0 {routed-input-curvature|reconstructed-activation-down-refit|blockldlq-no-feedback-frozen-k3-scale|uniform-k4-source-target}" >&2
   exit 2
 fi
 
@@ -27,6 +27,10 @@ case "${method}" in
   blockldlq-no-feedback-frozen-k3-scale)
     slice_stem="glm52-layer3-frozen8-blockldlq-no-feedback-frozen-k3-scale-slice"
     merged_name="glm52-layer3-frozen8-blockldlq-no-feedback-frozen-k3-scale-merged"
+    ;;
+  uniform-k4-source-target)
+    slice_stem="glm52-layer3-frozen8-uniform-k4-source-target-slice"
+    merged_name="glm52-layer3-frozen8-uniform-k4-source-target-merged"
     ;;
   *)
     echo "unknown candidate method: ${method}" >&2

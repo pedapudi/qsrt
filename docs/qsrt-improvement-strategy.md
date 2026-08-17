@@ -67,9 +67,12 @@ format-preserving ideas deserved equal implementation priority.
   by 0.00175%. A shared production table has less freedom, so the observed
   headroom does not justify an alternating table-training implementation.
 - **One-sided input-covariance path selection is rejected.** It produced large
-  held-out local expert-output SSE reductions, then increased one-context mean
-  full-model KLD by 2.3453% relative to uniform K3. The inversion demonstrates
-  that the local proxy is unsafe for candidate promotion.
+  complete-expert output SSE reductions on the candidate-selection documents,
+  then increased one-context mean full-model KLD by 2.3453% relative to uniform
+  K3. Those output rows were separate from the covariance-fit documents, but
+  they selected the candidate and therefore were not an untouched reporting
+  set. The inversion demonstrates that the local proxy is unsafe for candidate
+  promotion.
 - **Reconstructed-activation down refitting remains active.** Seven of eight
   experts accepted re-encoded K3 down targets. On the scored context, the panel
   reduced mean KLD from `0.0623782807651` for uniform K3 to
@@ -79,12 +82,15 @@ format-preserving ideas deserved equal implementation priority.
 - **Two-sided downstream-loss curvature is implemented but lacks a real GLM
   loss metric.** A synthetic 128-by-128 CUDA closure changed the trellis path
   and reduced its supplied Kronecker proxy. A complete `2,048 × 6,144` GLM
-  gate-matrix closure then reproduced the ordinary K3 endpoint, held every
-  stored scale fixed, and changed the path with about 1.57 GiB of peak allocated
-  GPU memory. Identity output curvature reduced source-space relative SSE by
-  only 0.000039%. These closures validate the implementation and dimensions.
-  They do not test downstream-loss prediction because the required GLM output
-  gradients have not been captured.
+  gate-matrix audit exposed numerical drift when an algebraic scalar-identity
+  output metric acquired `1.1e-8` off-diagonal terms during its Hadamard
+  congruence transform. The factorizer now preserves that scalar identity
+  directly. Source-basis identity curvature and an explicit zero-output-
+  feedback traversal control both reproduce the ordinary K3 trellis, scales,
+  and dense reconstruction bit for bit. The real-matrix audit used about 1.57
+  GiB of peak allocated GPU memory. These closures validate identity,
+  dimensions, and dispatch. They do not test downstream-loss prediction
+  because the required GLM output gradients have not been captured.
 - **Removing BlockLDLQ feedback was neutral in the frozen-scale K3 control.**
   Setting the feedback multiplier to zero changed the numerical targets that
   reached Viterbi but changed none of the 24 gate, up, or down paths. All eight
@@ -287,7 +293,7 @@ metric.
 
 ## Mechanisms and decisions
 
-### Two-sided model-loss curvature — implement after gradient capture
+### Validate two-sided model-loss curvature with residual-stream gradients
 
 The existing scalar SQG format, QSRT's scalar trellis reconstruction law, is
 retained. Fit data supplies both an input metric
@@ -297,6 +303,34 @@ cost remains additive, so the production dynamic program and stored branch
 format remain usable. The first experiment compares raw scalar error, routed
 expert output error, and the two-sided curvature objective by how well they
 predict held-out forward KLD.
+
+Capture the loss gradient at the mixture layer's residual-stream output. The
+same residual gradient serves every expert routed for that token. Multiplying
+it by each router coefficient gives the gradient of the loss with respect to
+that routed expert's output. This boundary avoids a separate backward capture
+inside every expert while retaining the downstream sensitivity that the
+one-sided objective omitted.
+
+The Kronecker score is an approximation. The true sample-averaged weight
+curvature contains matched input and output-gradient pairs,
+`E[(g g.T) ⊗ (x x.T)]`. A factored score replaces it with
+`E[g g.T] ⊗ E[x x.T]`. Routing correlates `x`, `g`, and the router coefficient,
+so the capture must preserve a bounded matched sample reservoir. Before using
+the factored score, compare its predictions with the matched per-sample
+quadratic score on real K3, K4, and refitted error matrices. Reject the
+factorization when its disagreement is comparable to the candidate gaps.
+
+Per-matrix curvature also omits interactions between gate and up errors in the
+coordinatewise product. Use it to generate and rank projections. Accept only a
+complete expert after reconstructed propagation through gate, up, and down.
+The validation uses full-size encode errors because a second-order model can
+mis-rank the non-infinitesimal perturbations produced at K3.
+
+Gradient factors require route-support-aware shrinkage. Freeze the shrinkage
+rule and identity fallback before candidate errors are visible. Include
+low-support experts in the validation panel. When support is insufficient,
+retain the incumbent candidate rather than silently using the rejected
+one-sided selector.
 
 This is the first priority because it changes the offline objective without
 changing checkpoint bytes or runtime decoding. It must use expert-local output
@@ -311,11 +345,14 @@ rank held-out forward KLD better than routed squared error across experts and
 layers.
 
 The rate name K3 means three stored trellis branch bits per weight; K4 means
-four. The same validated predictor becomes the damage score for exact-byte
-allocation. It must score K3, mixed K3/K4, and any later residual candidate
-under one common metric. If curvature does not improve held-out KLD prediction,
-reject it as an allocation score. Down refitting retains its separate measured
-KLD rationale and does not depend on curvature for its fitted target.
+four. A validated predictor becomes the damage score for checkpoint-scale
+exact-byte allocation. It must score K3, mixed K3/K4, and any later residual
+candidate under one common metric. If curvature does not improve held-out KLD
+prediction, reject it as an allocation score. Down refitting retains its
+separate measured KLD rationale and does not depend on curvature for its fitted
+target. The bounded eight-expert K3/K4 panel can proceed earlier with
+pre-registered EXL3-derived and complete-expert routed-output controls because
+it is a mechanism screen rather than a checkpoint allocator.
 
 ### Reconstruction values trained on production residuals — rejected
 
@@ -371,15 +408,32 @@ GLM-5.2 uses BF16 source weights, so Kimi-K3's exact MXFP4 endpoint, X4T, does
 not transfer. The first GLM-5.2 high-quality experiment uses per-matrix scalar
 rates. The GLM codec driver encodes gate, up, and down separately. It
 does not apply the interleaved gate/up Hadamard transform. The per-matrix panel
-can therefore construct seven gate, up, and down rate tuples:
+can therefore construct all eight K3/K4 gate, up, and down rate tuples:
 
 - all three matrices at K3: `(K3, K3, K3)`;
 - K3 gate and up with K4 down: `(K3, K3, K4)`;
+- K3 gate and down with K4 up: `(K3, K4, K3)`;
+- K3 gate with K4 up and down: `(K3, K4, K4)`;
 - K4 gate with K3 up and down: `(K4, K3, K3)`;
 - K4 gate and down with K3 up: `(K4, K3, K4)`;
 - K4 gate and up with K3 down: `(K4, K4, K3)`;
-- all three matrices at K4: `(K4, K4, K4)`; and
-- K4 gate and up with the rare K5 down diagnostic: `(K4, K4, K5)`.
+- all three matrices at K4: `(K4, K4, K4)`.
+
+Encode every K4 projection once, then assemble two allocation controls over the
+down-refitted K3 base. The EXL3-derived control promotes every panel projection
+whose EXL3 rate is at least K4, caps its two K5 projections at K4, and assigns
+the remaining byte allowance by frozen expert and projection order. The
+complete-expert control chooses among all eight tuples using routed-output SSE
+on the candidate-selection documents. Neither control may inspect the reporting
+context.
+
+The eight-expert logical ledger allows twelve K3-to-K4 promotions while
+remaining smaller than EXL3. Uniform K3 occupies 113,643,520 charged logical
+bytes. Each complete matrix promotion adds 1,572,864 bytes. Twelve promotions
+occupy 132,517,888 bytes, which is 1,273,856 bytes below EXL3's 133,791,744
+bytes. A thirteenth promotion would occupy 134,090,752 bytes and exceed the
+comparison. Serialized headers, directories, alignment, and padding remain a
+separate container gate.
 
 The implemented GLM selection policy shares one gate/up mode, so this experiment
 must explicitly add independent per-matrix candidate selection. Score each
@@ -401,7 +455,7 @@ K5, but the rate-specific production quantizer accepts only K2, K3, and K4. The
 high-rate evidence also found that the finite E4M3 reconstruction alphabet
 became the limiting error at K5: the E4M3 candidate lost to MCG, while a
 research-only FP16 reconstruction endpoint won on all seven measured experts.
-The `(K4, K4, K5)` diagnostic must therefore use that FP16 high-rate research
+Any K5 diagnostic must therefore use that FP16 high-rate research
 path and charge its table and scale representation. Running K5 with the
 production E4M3 endpoint would repeat an established negative control.
 

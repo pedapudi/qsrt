@@ -34,9 +34,15 @@ from qsrt.glm52_pilot import HIDDEN_SIZE, INTERMEDIATE_SIZE, TP_RANKS
 
 CONTROL_SCHEMA = "qsrt_glm52_expert_intervention_control_v2"
 TARGET_LAYER_NAME = "model.layers.3.mlp.experts"
-CANDIDATE_MODE = "qsrt_k3"
+CANDIDATE_MODE = "candidate"
+LEGACY_K3_CANDIDATE_MODE = "qsrt_k3"
 IDENTITY_CONTROL_MODE = "dense_resident_identity"
-SUPPORTED_MODES = ("off", IDENTITY_CONTROL_MODE, CANDIDATE_MODE)
+SUPPORTED_MODES = (
+    "off",
+    IDENTITY_CONTROL_MODE,
+    CANDIDATE_MODE,
+    LEGACY_K3_CANDIDATE_MODE,
+)
 RANK_INTERMEDIATE_SIZE = INTERMEDIATE_SIZE // TP_RANKS
 FORCE_PER_EXPERT_EXL3_MOE_ENV = "QSRT_GLM52_FORCE_PER_EXPERT_EXL3_MOE"
 
@@ -151,6 +157,16 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
                 f"dense intervention report field {field!r} is "
                 f"{report.get(field)!r}, expected {expected!r}"
             )
+    candidate = manifest.get("candidate")
+    if not isinstance(candidate, dict):
+        raise TypeError("dense intervention manifest candidate must be an object")
+    tensor_prefix = candidate.get("tensor_prefix", LEGACY_K3_CANDIDATE_MODE)
+    if (
+        not isinstance(tensor_prefix, str)
+        or not tensor_prefix
+        or any(not (character.isalnum() or character == "_") for character in tensor_prefix)
+    ):
+        raise ValueError("dense intervention candidate tensor prefix is unsafe")
     experts = report.get("experts")
     if not isinstance(experts, list) or not experts:
         raise ValueError("dense intervention report has no experts")
@@ -189,6 +205,7 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
         "expert_ids": tuple(sorted(seen)),
         "expert_count": len(seen),
         "dense_endpoint_bytes": total_bytes,
+        "candidate_tensor_prefix": tensor_prefix,
         "report": report,
     }
 
@@ -292,6 +309,12 @@ class DenseEndpointStore:
         manifest = json.loads((self.root / "manifest.json").read_text())
         if _canonical_json_sha256(manifest) != expected_manifest_sha256:
             raise ValueError("runtime intervention manifest identity mismatch")
+        candidate = manifest.get("candidate")
+        if not isinstance(candidate, dict):
+            raise TypeError("runtime intervention candidate must be an object")
+        self.candidate_tensor_prefix = candidate.get(
+            "tensor_prefix", LEGACY_K3_CANDIDATE_MODE
+        )
         report = json.loads((self.root / "report.json").read_text())
         if (
             report.get("kind") != INTERVENTION_ARTIFACT_KIND
@@ -345,9 +368,15 @@ class DenseEndpointStore:
                 exl3_gate=load_slice(handle, "exl3", "gate_proj"),
                 exl3_up=load_slice(handle, "exl3", "up_proj"),
                 exl3_down=load_slice(handle, "exl3", "down_proj"),
-                candidate_gate=load_slice(handle, CANDIDATE_MODE, "gate_proj"),
-                candidate_up=load_slice(handle, CANDIDATE_MODE, "up_proj"),
-                candidate_down=load_slice(handle, CANDIDATE_MODE, "down_proj"),
+                candidate_gate=load_slice(
+                    handle, self.candidate_tensor_prefix, "gate_proj"
+                ),
+                candidate_up=load_slice(
+                    handle, self.candidate_tensor_prefix, "up_proj"
+                ),
+                candidate_down=load_slice(
+                    handle, self.candidate_tensor_prefix, "down_proj"
+                ),
             )
 
     def selected_slices(self) -> Mapping[int, DenseExpertSlice]:
@@ -650,6 +679,7 @@ __all__ = [
     "DenseExpertSlice",
     "CANDIDATE_MODE",
     "IDENTITY_CONTROL_MODE",
+    "LEGACY_K3_CANDIDATE_MODE",
     "SUPPORTED_MODES",
     "atomic_write_control",
     "evaluate_expert",
