@@ -1,0 +1,36 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local credentials and environment overrides never belong in a snapshot.
+.env
+.env.*
+*.pem
+*.key
+
+# Model, capture, and generated tensor formats remain outside Git.
+*.bin
+*.gguf
+*.kqcapture
+*.kqhess
+*.kqsamples
+*.kqstats
+*.logits
+*.logits.*
+*.pt
+*.pth
+*.safetensors
+
+# Container and package caches are reproducible external state.
+*.tar
+*.tar.gz
+*.tgz
+*.oci
+docker-cache/
+runtime-cache/
+
+# Local research output includes captures, profiles, and model traces and can
+# be many GiB.  Durable checkpoint payloads live outside the repository.
+out/
