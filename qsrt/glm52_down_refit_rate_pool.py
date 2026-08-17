@@ -67,6 +67,9 @@ from qsrt.sqg_quantizer import install_sqg_quantizer
 
 DOWN_REFIT_RATE_POOL_KIND = "qsrt_glm52_down_refit_k3_k4_rate_pool_v1"
 DOWN_REFIT_RATE_POOL_TENSOR_PREFIXES = ("qsrt_k3", "qsrt_k4")
+RATE_PRESERVING_PRE_REGISTRATION_SHA256 = (
+    "d9f34c83e1d152018ae9305cc6f9835c3efd0e380ed43e99d81a7c6490d0aa3b"
+)
 RATE_TUPLES = tuple(itertools.product((3, 4), repeat=3))
 PROJECTION_NAMES = tuple(spec.name for spec in PROJECTIONS)
 
@@ -850,8 +853,8 @@ def materialize_down_refit_rate_pool_allocation(
         raise ValueError("allocation kind must name the fixed or selection-data rule")
     pool = validate_down_refit_rate_pool(rate_pool_root)
     pre_registration = _read_json(pre_registration_path)
-    if sha256_file(pre_registration_path) != "60c3c72a7aae6f5f679d3d1027410137e5822b629885e540db7b807a58e73d44":
-        raise ValueError("mixed-rate pre-registration SHA-256 mismatch")
+    if sha256_file(pre_registration_path) != RATE_PRESERVING_PRE_REGISTRATION_SHA256:
+        raise ValueError("rate-preserving down-refit pre-registration SHA-256 mismatch")
     expert_order = tuple(int(expert) for expert in pre_registration["expert_panel"]["expert_order"])
     if set(expert_order) != set(pool["expert_ids"]):
         raise ValueError("rate pool does not cover the pre-registered panel")
@@ -1004,6 +1007,7 @@ def materialize_down_refit_rate_pool_allocation(
 
 __all__ = [
     "DOWN_REFIT_RATE_POOL_KIND",
+    "RATE_PRESERVING_PRE_REGISTRATION_SHA256",
     "RATE_TUPLES",
     "build_down_refit_rate_pool_slice",
     "materialize_down_refit_rate_pool_allocation",

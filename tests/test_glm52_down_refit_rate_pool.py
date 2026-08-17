@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ import torch
 
 import qsrt.glm52_down_refit_rate_pool as rate_pool
 from qsrt.glm52_down_refit_rate_pool import (
+    RATE_PRESERVING_PRE_REGISTRATION_SHA256,
     RATE_TUPLES,
     select_pooled_rate_allocation,
     validate_down_refit_rate_pool,
@@ -19,6 +21,15 @@ from qsrt.glm52_pilot import _expert_path, atomic_write_json
 
 def _flat_metrics(value: float) -> dict[tuple[int, int, int], float]:
     return {rates: value for rates in RATE_TUPLES}
+
+
+def test_rate_preserving_pre_registration_hash_is_frozen() -> None:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json"
+    )
+
+    assert rate_pool.sha256_file(path) == RATE_PRESERVING_PRE_REGISTRATION_SHA256
 
 
 def test_weighted_error_sums_apply_route_weights_before_squaring() -> None:

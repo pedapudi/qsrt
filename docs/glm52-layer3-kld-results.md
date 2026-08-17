@@ -21,6 +21,15 @@ reject a large regression and compare candidates within the context. They
 cannot establish complete-checkpoint quality or generalization to other
 documents, layers, experts, or serving kernels.
 
+The bounded source tensors and published reporting logits name different
+GLM-5.2 revisions. The five-shard source window and sealed tensor inventory
+name revision `b4734de4facf877f85769a911abafc5283eab3d9`. The published
+reference-logit manifest names teacher revision
+`4d67f66cc64d3219133b767c253b2ad1425c6c88`. Every candidate and EXL3 use the
+same source lineage and the same reporting teacher, so their panel comparison
+remains paired. The available evidence does not prove that the two official
+revisions contain byte-identical weights.
+
 The measurement uses vLLM's eager, dense-attention, per-expert EXL3 correctness
 path on four RTX Pro 6000 GPUs. It does not use the production fused mixture-of-
 experts kernel. An engine-side hook computes `KL(BF16 reference || candidate)`
@@ -145,8 +154,9 @@ The corrective mixed-rate implementation is locally validated. It recomputes
 each accepted continuous down target, requires its repeated K3 encode to equal
 the stored refit, and encodes the same target at K4. It then scores all eight
 K3/K4 rate tuples for each complete expert on the frozen selection documents.
-The four-GPU host was unreachable after the implementation passed all 695 CPU
-tests, so no corrective candidate or KLD measurement exists yet.
+Its immutable registration records the source and reporting-teacher revisions
+separately. The four-GPU host was unreachable after the implementation passed
+all 697 CPU tests, so no corrective candidate or KLD measurement exists yet.
 
 ## Logical byte comparison
 

@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-17T07:17:00Z`. It
+This repository is a source snapshot updated at `2026-08-17T07:28:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -64,7 +64,7 @@ commit was:
 
 The base commit and its upstream branch were synchronized when the snapshot
 was taken. The source checkout also contained eleven modified tracked files
-and 97 untracked research files. Those working-tree files are included in this
+and 99 untracked research files. Those working-tree files are included in this
 repository and committed together so a collaborator receives one coherent
 state. The machine-readable manifest records every original Git status entry.
 The publication adds this guide, a manifest generator and verifier, the
@@ -80,7 +80,7 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The exported source passed 695 tests with four skips in the local CPU-only
+The exported source passed 697 tests with four skips in the local CPU-only
 environment. The complete real-matrix zero-output-feedback control also passed
 bit equivalence before the mixed-rate experiment. Model-level KLD still needs
 the remote artifacts described below.
@@ -180,6 +180,15 @@ and four bits per weight. The published BF16 reference contains one
 These results can screen mechanisms, but they cannot establish document-level
 generalization.
 
+The bounded BF16 source window names revision
+`b4734de4facf877f85769a911abafc5283eab3d9`. The published reporting-logit
+manifest names teacher revision
+`4d67f66cc64d3219133b767c253b2ad1425c6c88`. EXL3 and every candidate use the
+same source lineage and reporting teacher. The available files do not prove
+that the two official revisions have byte-identical weights. The immutable
+rate-preserving experiment registration records both roles at
+[`experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json`](experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json).
+
 | Eight-expert representation | Mean forward KLD | Change from uniform K3 | Decision |
 |---|---:|---:|---|
 | Resident EXL3 | `0.0610743407031` | `-2.0904%` | Comparison checkpoint |
@@ -249,8 +258,14 @@ It recomputes each accepted continuous target from the captured fit rows and
 stored ridge factor. It refuses output unless the repeated K3 encode matches
 the stored refit, then encodes the same target at K4.
 
-When kossel is available, synchronize this source snapshot to its indexed
-source directory. Run these commands from that directory:
+When kossel is available, synchronize the bounded file set from a local clone:
+
+```bash
+bash experiments/sync_glm52_rate_preserving_down_refit_source_to_kossel.sh
+```
+
+The sync launcher deletes no remote file and checks every copied SHA-256.
+Then run these commands in kossel's indexed source directory:
 
 ```bash
 bash experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh

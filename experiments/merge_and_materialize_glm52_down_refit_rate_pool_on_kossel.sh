@@ -11,7 +11,7 @@ record_root="${experiment_root}/launch-records/glm52-layer3-down-refit-k3-k4-rat
 image="sha256:820181fbbc975cd5291c411cda9771d58fecee1636d916f508f47230df20592b"
 pool_name="glm52-layer3-frozen8-down-refit-k3-k4-rate-pool-merged"
 pool_destination="${results_root}/${pool_name}"
-pre_registration="/workspace/qsrt/experiments/glm52_layer3_k3_k4_allocation_pre_registration.json"
+pre_registration="/workspace/qsrt/experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json"
 inputs=(
   /results/glm52-layer3-frozen8-down-refit-k3-k4-rate-pool-slice-00-01
   /results/glm52-layer3-frozen8-down-refit-k3-k4-rate-pool-slice-02-03

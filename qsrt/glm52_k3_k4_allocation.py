@@ -30,6 +30,14 @@ from qsrt.qsrt_codec_pilot import tensor_sha256
 
 
 MIXED_ALLOCATION_EXPERIMENT = "qsrt_glm52_fixed_mixed_k3_k4_down_refit_v1"
+ALLOCATION_PRE_REGISTRATION_IDENTITIES = {
+    "qsrt_glm52_layer3_k3_k4_allocation_pre_registration": (
+        "frozen_before_k4_candidate_measurement"
+    ),
+    "qsrt_glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration": (
+        "frozen_before_rate_preserving_k4_candidate_measurement"
+    ),
+}
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -42,10 +50,11 @@ def _read_json(path: Path) -> dict[str, Any]:
 def frozen_k4_rate_map(pre_registration: Mapping[str, Any]) -> dict[int, set[str]]:
     """Return the immutable fixed allocation as expert-to-projection sets."""
 
+    schema = pre_registration.get("schema")
     if (
-        pre_registration.get("schema")
-        != "qsrt_glm52_layer3_k3_k4_allocation_pre_registration"
-        or pre_registration.get("status") != "frozen_before_k4_candidate_measurement"
+        schema not in ALLOCATION_PRE_REGISTRATION_IDENTITIES
+        or pre_registration.get("status")
+        != ALLOCATION_PRE_REGISTRATION_IDENTITIES[schema]
     ):
         raise ValueError("mixed-rate pre-registration identity mismatch")
     allocation = pre_registration.get("fixed_exl3_rate_stratified_allocation")
