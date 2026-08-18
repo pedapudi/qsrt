@@ -63,6 +63,7 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert args.source_sparse_index_topk is None
     assert args.reporting_activation_capture_dir is None
     assert args.omit_individual_expert_arms is False
+    assert args.candidate_expert_subsets_json == "{}"
     assert args.measurement_controls_only is False
     assert "does not provide document-level replication" in (
         runner.PAIRED_KLD_EVIDENCE_BOUNDARY
@@ -201,6 +202,43 @@ def test_runner_rejects_invalid_intervention_expert_ids() -> None:
         with pytest.raises(ValueError, match="unique values from 0 to 255"):
             runner.intervention_arm_definitions(
                 invalid, omit_individual_expert_arms=False
+            )
+
+
+def test_runner_validates_and_defines_named_candidate_subsets() -> None:
+    runner = _load_runner()
+    expert_ids = [64, 208, 106]
+    subsets = runner.parse_candidate_expert_subsets(
+        '{"locally_helpful_experts":[64,106],"strongest_expert":[64]}',
+        artifact_expert_ids=expert_ids,
+    )
+    arms = runner.intervention_arm_definitions(
+        expert_ids,
+        omit_individual_expert_arms=True,
+        candidate_expert_subsets=subsets,
+    )
+
+    assert arms[-3:] == [
+        (
+            "selected_candidate_subset_locally_helpful_experts",
+            "candidate",
+            [64, 106],
+        ),
+        ("selected_candidate_subset_strongest_expert", "candidate", [64]),
+        ("selected_candidate", "candidate", None),
+    ]
+
+    invalid_values = (
+        "[]",
+        '{"opaque-label":[64]}',
+        '{"missing_expert":[89]}',
+        '{"repeated":[64,64]}',
+        '{"empty":[]}',
+    )
+    for value in invalid_values:
+        with pytest.raises((TypeError, ValueError)):
+            runner.parse_candidate_expert_subsets(
+                value, artifact_expert_ids=expert_ids
             )
 
 

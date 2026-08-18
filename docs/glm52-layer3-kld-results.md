@@ -58,6 +58,9 @@ candidate process produced the same resident EXL3 KLD vector bit for bit.
 | Uniform K3 with BlockLDLQ feedback disabled at frozen scales | 0.0623782807651 | +2.1350% | 0.0000% | Byte-identical to uniform K3 |
 | K3 selected with one-sided routed-input covariance | 0.0638412662800 | +4.5304% | +2.3453% | Reject |
 | K3 with reconstructed-activation down refit | 0.0612386895257 | +0.2691% | −1.8269% | Confirm on more documents |
+| Down refit with BF16 rank-two corrections on all eight experts | 0.0652326383334 | +6.8086% | +4.5759% | Reject the all-expert local selector |
+| Down refit with BF16 rank-two corrections on experts 89 and 103 | 0.0601683116025 | −1.4835% | −3.5429% | Exploratory; expert identities came from this reporting context |
+| Down refit with a BF16 rank-four correction on expert 103 | 0.0582574646070 | −4.6122% | −6.6062% | Below 0.059 on one context; requires document-disjoint confirmation |
 | K3 down encoded with reconstructed-input covariance and source weights | 0.0658519849381 | +7.8227% | +5.5688% | Reject |
 | K3 with a locally selected identity-metric down refit | 0.0641342908893 | +5.0102% | +2.8151% | Reject the local selection rule |
 | K3 with reconstructed-input covariance and locally selected down refits | 0.0638195014718 | +4.4948% | +2.3105% | Reject |
@@ -134,6 +137,75 @@ ridge and fallback decisions. Every continuous target candidate had the same
 hash under both metric policies, which closes target generation. The selected
 materialized target can still differ after metric-specific encoding and local
 selection.
+
+## Activation-weighted low-rank down corrections
+
+The low-rank construction starts from the earlier reconstructed-activation
+down-refit artifact. It holds each quantized gate and up matrix fixed, derives
+the hidden rows that those matrices produce, and fits a small additive
+correction to the down matrix. The fit minimizes complete-expert output error
+on activation-fit documents. A disjoint candidate-selection split chooses the
+ridge coefficient. The model-KLD context does not enter factor fitting.
+
+Rank two stores 32,768 logical BF16 factor bytes per corrected expert. Rank
+four stores 65,536 bytes. The bounded runtime screen multiplies the rounded
+factors together and adds their product to the dense down endpoint. A
+factor-aware QSRT container and two-matrix serving branch remain unimplemented.
+The byte counts describe the proposed stored factors rather than the dense
+screening artifact.
+
+Across all eight experts, rank two reduced pooled routed complete-expert error
+by 67.6456% on candidate-selection rows. Rank four reduced the same error by
+70.7994%. Applying every rank-two correction made model mean KLD 6.8086% worse
+than EXL3. Local complete-expert error therefore failed again as a model-level
+selection rule.
+
+The pre-specified individual rank-two arms separated three helpful experts
+from five harmful experts on the reporting context:
+
+| Corrected expert | Mean forward KLD | Change from EXL3 |
+|---:|---:|---:|
+| 89 | 0.0601812335253 | −1.4623% |
+| 103 | 0.0609060687529 | −0.2755% |
+| 208 | 0.0603366874259 | −1.2078% |
+
+Combining the three rank-two corrections was not additive. Experts 89 and 103
+produced the best rank-two combination at 0.0601683116025. Adding expert 208
+raised mean KLD to 0.0634722584106. The pair containing experts 89 and 208
+also regressed to 0.0636328828564.
+
+The rank-four screen reused the three identities selected by rank-two KLD.
+Rank four on expert 103 produced mean KLD 0.0582574646070, which is 4.6122%
+lower than EXL3 and below the numerical target of 0.059. Rank four on expert
+208 reached 0.0591001769552. Rank four on expert 89 regressed to
+0.0679760778071. The expert-103 candidate improved the measured tail as well
+as the mean:
+
+| Representation | p99 forward KLD | CVaR1% forward KLD | Maximum forward KLD |
+|---|---:|---:|---:|
+| Resident EXL3 | 1.0996727300 | 1.9557645264 | 5.5796093941 |
+| Rank-four correction on expert 103 | 0.9685485280 | 1.8109366610 | 4.3553042412 |
+
+Seventeen of the 21 worst-scoring positions were common to both
+representations. Four positions entered and four left the candidate's worst
+one percent. The expert-103 intervention preserved every layer-3 route and
+changed downstream routes beginning at layer 4. It changed 284,052 routed
+expert identifiers across the complete `2,048 × 78 × 8` route array.
+
+The 0.0582574646070 result is a mechanism screen. The rank-four expert set was
+restricted after inspecting rank-two KLD on the same reporting context. The
+one available context cannot estimate document-level uncertainty or correct
+this selection bias. A valid promotion requires frozen expert 103, the same
+rank, factor dtype, ridge, and construction to repeat on document-disjoint
+selection and confirmation contexts. The shipped artifact must also execute
+serialized factors rather than the materialized dense product used here.
+
+The exact candidate is frozen in
+`experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`.
+The registration records both factor hashes, ridge `0.001`, the base artifact,
+the materialized endpoint hash, the logical byte screen, and the independent
+confirmation rule. Changing any registered field creates a different
+candidate and requires a separate sealed confirmation set.
 
 ## Interpretation by mechanism
 
@@ -279,6 +351,13 @@ container does not yet exist, so headers, alignment, padding, directories,
 non-expert weights, and serving caches are absent from this calculation. The
 numbers do not establish complete serialized model size.
 
+A BF16 rank-four down correction on one expert adds 65,536 logical factor
+bytes. Charged against the uniform-K3 panel and its zero-payload down refit,
+the candidate totals 113,709,056 logical bytes. This remains 20,082,688 bytes
+below the panel's EXL3 representation. Headers, factor scales, alignment,
+directories, and the serving implementation remain uncharged until the GLM
+container exists.
+
 ## Authoritative artifacts
 
 Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
@@ -295,6 +374,9 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | Fixed mixed K3/K4 over the down-refit base | `results/glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit-paired-bf16-reference-kld-engine-per-expert-correctness/` | `c366b25f8e3c4e1f231b0018dba241b25602dea98ad37ae337136756185f34c4` |
 | Ten-promotion selection-data rate-pool control | `results/glm52-layer3-frozen8-selection-data-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `99a447ed2f0243679b24a98414b632a39c7830010d1b9fc96e8ca90f6d32d07e` |
 | Fixed twelve-promotion rate-pool control | `results/glm52-layer3-frozen8-fixed-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `41ef7cf67ff0e9fc6bd977ead289c057ec2917fe35ff98cc4f5f41bca3aee6b9` |
+| Rank-two low-rank individual attribution | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged-per-expert-attribution-paired-bf16-reference-kld-engine-per-expert-correctness/` | `f40d7a595535ff983de30316de181ec51da5f95a65af8eda006828bfb47a3ac3` |
+| Rank-two attribution-selected combinations | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/` | `2151734be97fdb6f28d9424b296c8fa4f16c8999965f218266fe0d373c77c078` |
+| Rank-four attribution-selected singletons and combinations | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/` | `8cf9d7a7f7332a16ac8accebde102f892dd9bc5e193145b677a12f6e30e0b39b` |
 
 The codec-mechanism reports below do not contain new model KLD vectors.
 
@@ -313,8 +395,8 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 ## Next admissible experiments
 
 1. Acquire or produce BF16 reference logits for multiple document-disjoint
-   contexts without downloading the full BF16 checkpoint, then repeat uniform
-   K3 and down refitting with clustered document-level uncertainty.
+   contexts without downloading the full BF16 checkpoint. Evaluate the
+   registered rank-four expert-103 correction without changing it.
 2. Use at least eight selection contexts to choose between the source target,
    the earlier fixed refit, and a bounded set of hard-encoded ridge/fallback
    policies. Complete-expert error may prune candidates but cannot choose the

@@ -62,6 +62,7 @@ worst one percent.
 | Uniform QSRT K3 | 0.06237828 | 1.18850 | 2.04973 | 4.91117 |
 | Input-covariance-selected K3 | 0.06384127 | 1.23571 | 2.09884 | 4.79991 |
 | K3 with reconstructed-activation down refit | 0.06123869 | 1.05916 | 2.09531 | 5.91416 |
+| Down refit with one BF16 rank-four correction on expert 103 | 0.05825746 | 0.96855 | 1.81094 | 4.35530 |
 | Down source target encoded with reconstructed-input covariance | 0.06585198 | 1.31937 | 2.20897 | 6.36043 |
 | Locally selected identity-metric down refit | 0.06413429 | 1.12366 | 2.18651 | 5.57959 |
 | Reconstructed-input covariance with locally selected down refits | 0.06381950 | 1.09715 | 2.02186 | 4.58844 |
@@ -100,6 +101,14 @@ These values establish four mechanism decisions.
   also changed none of the reconstructed tensor bytes. This result covers
   eight layer-3 experts at K3. It does not establish the result at K2 or under
   a captured dense metric.
+- **An activation-weighted low-rank down correction is the first mechanism to
+  cross the numerical KLD target.** A BF16 rank-four correction on layer-3
+  expert 103 reduced mean KLD to 0.05825746. It also improved p99, CVaR1%, and
+  maximum KLD relative to EXL3 on the available context. The rank and expert
+  were chosen after inspecting other KLD arms on that same context. The result
+  is therefore a mechanism screen and supplies no document-replicated
+  evidence. The executed endpoint also materialized the factor product as a dense matrix;
+  a factor-aware container and serving branch remain unimplemented.
 
 The logical eight-expert ledger charges 133,791,744 bytes for EXL3 and
 113,643,520 bytes for uniform QSRT K3. This 20,148,224-byte margin is large
@@ -124,6 +133,13 @@ The later pool still reused a target fitted from K3/K3 upstream activations
 when gate or up changed rate. It therefore does not test the coherent
 rate-conditioned construction specified below. That experiment remains the
 first admissible mixed-rate test.
+
+The rank-four expert-103 intervention adds 65,536 logical BF16 factor bytes to
+the 113,643,520-byte uniform-K3/down-refit panel. Its resulting logical total
+is 113,709,056 bytes, which is 20,082,688 bytes below the panel's EXL3 tensors.
+This ledger excludes factor headers, alignment, directories, scales, and the
+serving implementation. It supports a panel-size screen and cannot establish a
+serialized checkpoint-size claim.
 
 ## Governing acceptance rule
 
@@ -262,6 +278,38 @@ dense Llama models. Its result motivates this experiment but does not establish
 performance for a routed SQG trellis, GLM-5.2 experts, rank-two factors, or the
 KLD acceptance rule used here.
 
+### Measured one-context result
+
+The completed bolt-on screen fitted BF16 rank-two and rank-four corrections to
+the down matrices of the eight layer-3 experts. It used each candidate's own
+quantized gate and up outputs as down inputs. Rank two reduced pooled routed
+complete-expert error by 67.6456% on candidate-selection rows. Rank four
+reduced it by 70.7994%.
+
+Those local gains did not predict model quality. Applying rank-two corrections
+to all eight experts raised mean KLD to 0.06523264, which is 6.8086% worse than
+EXL3. Individual rank-two KLD attribution identified experts 89, 103, and 208
+as helpful in isolation, yet their combined correction regressed to
+0.06347226. The interactions are not additive.
+
+A later rank-four screen was restricted to those three expert identities.
+Expert 103 alone reached mean KLD 0.05825746, 4.6122% below EXL3 and below the
+numerical target of 0.059. Its p99 fell from 1.09967 to 0.96855, CVaR1% fell
+from 1.95576 to 1.81094, and maximum KLD fell from 5.57961 to 4.35530. Layer-3
+routes remained unchanged; downstream routes first changed at layer 4.
+
+The same reporting context influenced the expert and rank restriction. Freeze
+expert 103, rank four, BF16 storage, ridge choice, factor hashes, and the
+bolt-on construction before opening another context. If no choice changes,
+the frozen candidate can proceed directly to the 32-document confirmation
+set. If any choice changes after an eight-context screen, the changed candidate
+requires a separate sealed confirmation set.
+
+The KLD runtime added the rounded factor product to a dense endpoint. It did
+not load serialized factors through a QSRT container. A checkpoint claim
+therefore requires deterministic factor serialization, exact byte accounting,
+and a factor-aware inference path that reproduces the screened endpoint.
+
 ### Use activations from the artifact being corrected
 
 Fit factors against naturally routed rows from the exact checkpoint that will
@@ -283,17 +331,17 @@ activation-fit documents. Rank, regularization, factor dtype, expert fallback,
 and any alternation decision use candidate-selection documents. Confirmation
 documents remain sealed until the complete panel configuration is frozen.
 
-Measure the singular-value recovery curve on the eight layer-3 experts before
-choosing a rank. Replicate the selected rank at early, middle, and late mixture
+The layer-3 screen has measured down-only ranks two and four. Replicate the
+frozen rank-four construction at error-blind early, middle, and late mixture
 layers before adopting a model-wide policy. Freeze support-stratified expert
 lists before candidate errors are available. Low-rank concentration measured
 on another model or another layer supplies a prior for GLM; it does not supply
 GLM evidence.
 
-Start with down-only rank two and rank four. Test gate and up only after the
-down-only candidate establishes useful KLD per byte. Gate and up factors must
-pass a complete-expert functional gate because their errors interact through
-the coordinatewise activation and multiplication.
+Do not add gate or up factors until the frozen down-only candidate repeats on
+document-disjoint contexts. Gate and up factors must pass a complete-expert
+functional gate because their errors interact through the coordinatewise
+activation and multiplication.
 
 The bounded low-rank candidates correct uniform K3 and remain separate from the
 mixed K3/K4 candidates. If a later candidate combines an upstream K4 matrix
@@ -314,11 +362,12 @@ Q1 = QSRT(W - B0 A0^T)
 B1 A1^T = activation_weighted_rank_r(W - Q1)
 ```
 
-Pre-register the null prediction that the alternating candidate will not
+Retain the pre-registered null prediction that the alternating candidate will not
 improve materially over the bolt-on candidate. Direct Viterbi minimizes
 transformed coefficient error, while the factor fit minimizes error after
-projection through routed activations. GLM has no measured evidence yet that
-the trellis can exploit the activation-space structure removed by the factor.
+projection through routed activations. The completed GLM screen measures only
+the bolt-on construction; it supplies no evidence that residual re-encoding
+can exploit the activation-space structure removed by the factor.
 
 The prediction does not remove the experiment. Hard trellis decisions can
 change after a small structured target shift. Record five observables:
@@ -424,16 +473,18 @@ to their stored dtype and loaded through the packed serving path.
 
 ### Execute the GLM low-rank comparison in a frozen order
 
-| Order | Work | Advance or stop rule |
+| Order | Work | Recorded state or advance rule |
 |---:|---|---|
-| 1 | Fit BF16 down-only rank-two and rank-four factors for the frozen eight-expert panel | Continue only when activation-weighted recovery holds on candidate-selection rows |
-| 2 | Measure bolt-on factors through complete-expert reconstruction | Establish functional recovery and panel KLD per charged logical byte |
-| 3 | Run frozen-scale re-encoding, closure checks, and one guarded full alternation | Retain alternation only when it improves over the bolt-on candidate on selection documents |
-| 4 | Test eight-bit factors, then conditionally four-bit factors | Retain a smaller dtype only when it passes functional, KLD, tail, and byte gates |
-| 5 | Compare low-rank and coherent K3/K4 panel configurations | Freeze one configuration using the eight KLD selection contexts |
-| 6 | Evaluate once on at least 32 confirmation contexts | The frozen candidate beats EXL3 in paired mean KLD, satisfies CVaR1% non-inferiority, and remains smaller |
-| 7 | Replicate the selected construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
-| 8 | Train factors only if the closed-form result leaves a material, plausibly recoverable deficit | Training must beat its serialized closed-form initialization on disjoint data |
+| 1 | Fit BF16 down-only rank-two and rank-four factors for the frozen eight-expert panel | Complete: both ranks improved activation-weighted error on candidate-selection rows |
+| 2 | Measure bolt-on factors through complete-expert reconstruction and one-context model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached KLD 0.05825746 |
+| 3 | Freeze the exact rank-four expert-103 candidate | Complete in `experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`; no candidate field may change before confirmation |
+| 4 | Evaluate once on at least 32 document-disjoint confirmation contexts | Advance only if paired mean KLD beats EXL3, CVaR1% is non-inferior, and the logical byte advantage survives exact serialization |
+| 5 | Implement deterministic factor serialization and a factor-aware inference path | The loaded factors reproduce the screened dense endpoint within a frozen numerical tolerance, and the exact byte ledger remains smaller |
+| 6 | Replicate the frozen construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
+| 7 | Compare against coherent K3/K4 configurations at matched exact bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
+| 8 | Run frozen-scale re-encoding and one guarded alternation only if confirmation leaves material headroom | Retain alternation only when it improves over the bolt-on candidate on separate selection documents |
+| 9 | Test eight-bit factors, then conditionally four-bit factors | Retain a smaller dtype only when it passes functional, KLD, tail, and byte gates on separate selection documents |
+| 10 | Train factors only if the closed-form result leaves a material, plausibly recoverable deficit | Training must beat its serialized closed-form initialization on disjoint data |
 
 The small expert panel selects the factor rank, dtype, and bolt-on or
 alternating construction. It cannot establish a checkpoint win. Only the
@@ -444,9 +495,11 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 
 | Work | Result required before advancement |
 |---|---|
-| Verify model identity and prepare reference logits | Source and teacher revisions reconciled; eight selection contexts and at least 32 sealed confirmation contexts available |
+| Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for the frozen rank-four expert-103 candidate |
 | Freeze the down-construction rule | Reconstructed-input covariance excluded; one identity-metric target, ridge, and fallback rule frozen by measured KLD on eight selection contexts |
-| Build coherent rate-conditioned and down-only low-rank candidates | Every upstream rate pair has its own down construction; each low-rank factor uses native reconstructed activations |
+| Confirm the frozen low-rank candidate | The registered rank-four expert-103 correction beats EXL3 mean KLD and satisfies CVaR1% non-inferiority on at least 32 document-disjoint contexts |
+| Serialize and execute low-rank factors | Factor-aware loading reproduces the screened endpoint; exact serialized bytes remain below EXL3 |
+| Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
 | Test transfer across layers | The selected construction repeats across error-blind panels from independently chosen layers |
 | Build the complete checkpoint | Serialized bytes, forward KLD, task quality, and production-serving checks all pass |
@@ -821,17 +874,19 @@ Do not run every branch after a failure. Each added experiment must answer the
 specific unresolved cause and must retain the same data-separation and
 acceptance contract.
 
-The immediate blocking input is a set of eight KLD selection contexts and at
-least 32 sealed confirmation contexts. The complete BF16 checkpoint must not
-be downloaded to produce them. While an authorized teacher host produces the
-references, the implementation may build a down-only activation-weighted
-low-rank panel and finish the bounded source windows for transfer tests. It may
-also construct coherent rate-conditioned candidates, but it must not freeze a
-rate allocation until selection-context KLD has frozen the identity-metric
-down rule. Every upstream rate pair gets a separately reconstructed down input
-and target. Every low-rank factor is fitted against the uniform-K3 activations
-that it will see at execution. At least 32 untouched contexts determine
-whether a frozen candidate advances.
+The immediate blocking input for the registered rank-four expert-103 candidate
+is at least 32 sealed confirmation contexts. The complete BF16 checkpoint must
+not be downloaded to produce them. An authorized host that already holds the
+teacher must generate the references. While that work proceeds, kossel may
+finish the bounded source windows, implement factor-aware serialization and
+execution, and construct unselected coherent rate-conditioned candidates.
+
+Do not change the registered correction after opening a confirmation context.
+A different rank, expert, dtype, ridge, factor value, base representation, or
+construction creates a different candidate and requires a separate sealed
+confirmation set. Any future rate allocation must wait for selection-context
+KLD to freeze its identity-metric down rule. Every upstream rate pair gets a
+separately reconstructed down input and target.
 
 ## Authority and evidence records
 

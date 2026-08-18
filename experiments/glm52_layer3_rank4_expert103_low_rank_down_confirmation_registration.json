@@ -1,0 +1,94 @@
+{
+  "schema": "qsrt_glm52_low_rank_down_confirmation_registration",
+  "schema_version": 1,
+  "status": "frozen_before_document_disjoint_confirmation",
+  "objective": "Determine whether the exact layer-3 expert-103 rank-four down correction repeats its one-context KLD improvement on document-disjoint GLM-5.2 references while remaining smaller than the comparison tensors.",
+  "evidence_boundary": "The registered candidate crossed the numerical KLD target on one context after its expert identity and rank were informed by that context. The registration freezes the candidate before independent evaluation; it does not claim document-level generalization, serialized checkpoint size, or production-runtime support.",
+  "source_weights": {
+    "model_id": "zai-org/GLM-5.2",
+    "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "complete_checkpoint_required_on_kossel": false
+  },
+  "comparison_checkpoint": {
+    "model_id": "brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78",
+    "revision": "9ab9579774cc432df91567a36f6e9e863e0d4c9f",
+    "layer3_panel_logical_bytes": 133791744
+  },
+  "base_representation": {
+    "description": "K3 gate and up encodes plus the earlier reconstructed-activation down refit, with source-target K3 down retained wherever that refit fell back",
+    "artifact_relative_path": "results/glm52-layer3-frozen8-reconstructed-activation-down-refit-merged",
+    "manifest_file_sha256": "ccd18d2cb811b387afcd590b3c43f24a25b028fe297dcc2d33129cc24ef5204f",
+    "report_file_sha256": "a19bfde336047c5186816ddfb05ad09e607f6c0ef3a4abdd225399156513d312",
+    "layer3_panel_logical_bytes": 113643520
+  },
+  "frozen_correction": {
+    "layer": 3,
+    "expert": 103,
+    "matrix": "down_proj",
+    "construction": "activation_weighted_bolt_on_correction",
+    "rank": 4,
+    "factor_dtype": "BF16",
+    "selected_ridge_factor": 0.001,
+    "factor_a_shape": [2048, 4],
+    "factor_b_shape": [6144, 4],
+    "factor_a_sha256": "e3e4e38f66b63c6de4d6b8964f01a972fe968312037415e6003dea14cdd750d0",
+    "factor_b_sha256": "c217d59c62ddbe4357332159a085a14a5a67061fc8cdd43b3eccad39d03f4247",
+    "logical_factor_bytes": 65536,
+    "materialized_down_sha256": "cc327d9edb3b3c5f338a052985708ecdcbf8092480e999e930af551fa28f328c",
+    "dense_endpoint_file_sha256": "5f935188cd39547eb150d2629bd122a15c04c5330fcf46feb6eb59dfea97fca2",
+    "merged_artifact_manifest_file_sha256": "b6cf153872ce2f768bb39f833cf03ad898a8bb7a40cdd7eefb1d06730ec44be3",
+    "merged_artifact_report_file_sha256": "58b6c6181edcff9ddaea6f630536d4449850c7957cbb39ec75b3516ffbddd95d"
+  },
+  "logical_byte_screen": {
+    "candidate_panel_bytes": 113709056,
+    "comparison_panel_bytes": 133791744,
+    "candidate_margin_bytes": 20082688,
+    "excluded_until_serialization": [
+      "factor headers",
+      "factor scales",
+      "alignment and padding",
+      "format directories",
+      "shared reconstruction table",
+      "factor-aware runtime metadata"
+    ]
+  },
+  "one_context_measurement": {
+    "report_relative_path": "results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/report.json",
+    "report_sha256": "8cf9d7a7f7332a16ac8accebde102f892dd9bc5e193145b677a12f6e30e0b39b",
+    "reference_manifest_sha256": "985120136741037918bcd4dc8da9813c1f6268b35a730302f99cf6b3eebb7606",
+    "resident_exl3_mean_kld": 0.06107434070309714,
+    "candidate_mean_kld": 0.05825746460698554,
+    "candidate_p99_kld": 0.9685485279560084,
+    "candidate_cvar1_kld": 1.8109366609936668,
+    "candidate_max_kld": 4.35530424118042,
+    "first_route_change_layer": 4,
+    "changed_route_identifier_count": 284052,
+    "changed_token_layer_row_count": 97301,
+    "selection_bias": "Rank four was tested on three expert identities chosen after rank-two KLD attribution on the same context. This context cannot be reused as independent confirmation evidence."
+  },
+  "confirmation_contract": {
+    "minimum_document_count": 32,
+    "context_tokens": 2048,
+    "documents_disjoint_from": [
+      "activation fitting",
+      "ridge selection",
+      "rank-two attribution",
+      "rank-four attribution",
+      "candidate selection"
+    ],
+    "frozen_before_access": [
+      "layer",
+      "expert",
+      "matrix role",
+      "rank",
+      "factor dtype",
+      "ridge factor",
+      "factor hashes",
+      "base representation",
+      "bolt-on construction"
+    ],
+    "required_quality_decision": "The 95% paired-bootstrap upper bound for candidate-minus-EXL3 document-mean KLD is below zero, and document-level CVaR1% is non-inferior within a margin frozen before access.",
+    "required_size_decision": "A factor-aware serialized panel and complete checkpoint remain strictly smaller than the immutable EXL3 comparators after every stored byte is charged.",
+    "candidate_changes_after_registration": "Any change creates a different candidate and requires a separate sealed confirmation set."
+  }
+}

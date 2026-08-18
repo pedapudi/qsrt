@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-18T18:50:45Z`. It
+This repository is a source snapshot updated at `2026-08-18T19:45:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -79,14 +79,13 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The GLM down-construction, down-refit rate-pool, paired-KLD,
-intervention-runtime, and reconstructed-activation refit tests pass. The local
-CPU-only environment completed 52 focused tests in 0.54 seconds.
-Repository-wide collection requires the optional Triton and InstantTensor
-packages used by upstream recovery code. It also exposes API mismatches in
-upstream recovery tests. A run that excluded those collection blockers passed
-849 tests, skipped 21, and found one unrelated artifact-fixture failure because
-the fixture lacked `candidate_codebook`.
+The GLM low-rank, paired-KLD, intervention-runtime, and intervention tests
+pass. The local CPU-only environment completed 36 focused tests in 0.11
+seconds. Repository-wide collection requires the optional Triton and
+InstantTensor packages used by upstream recovery code. It also exposes API
+mismatches in upstream recovery tests. A run that excluded the eleven
+collection blockers passed 856 tests, skipped 21, and found one unrelated
+artifact-fixture failure because the fixture lacked `candidate_codebook`.
 Install the optional dependencies or reconcile those imports before treating
 a repository-wide result as authoritative; do not hide the collection errors
 by deleting tests.
@@ -218,6 +217,9 @@ immutable rate-preserving experiment registration records both roles at
 | Uniform K3 with feedback disabled at frozen scales | `0.0623782807651` | `0.0000%` | Byte-identical control |
 | K3 selected with routed-input covariance | `0.0638412662800` | `+2.3453%` | Rejected |
 | K3 with reconstructed-activation down refit | `0.0612386895257` | `-1.8269%` | Confirm on more documents |
+| Down refit with BF16 rank-two corrections on all eight experts | `0.0652326383334` | `+4.5759%` | Rejected all-expert local selector |
+| Down refit with BF16 rank-two corrections on experts 89 and 103 | `0.0601683116025` | `-3.5429%` | Exploratory; identities came from the reporting context |
+| Down refit with one BF16 rank-four correction on expert 103 | `0.0582574646070` | `-6.6062%` | Below 0.059 on one context; frozen for independent confirmation |
 | K3 down encoded with reconstructed-input covariance and source weights | `0.0658519849381` | `+5.5688%` | Rejected |
 | K3 with a locally selected identity-metric down refit | `0.0641342908893` | `+2.8151%` | Rejected selection rule |
 | K3 with reconstructed-input covariance and locally selected down refits | `0.0638195014718` | `+2.3105%` | Rejected |
@@ -261,6 +263,27 @@ reversed the model-level outcome. Reject reconstructed-input covariance for
 this panel and reject local complete-expert mean plus local row-tail loss as a
 refit selector.
 
+The activation-weighted low-rank experiment fitted a small additive correction
+to each down-refit residual. Candidate-specific quantized gate and up outputs
+supplied the down inputs. Rank two reduced pooled candidate-selection
+complete-expert error by 67.6456 percent, yet applying it to all eight experts
+made model KLD 6.8086 percent worse than EXL3. Local error did not select a
+safe model intervention.
+
+Individual model-KLD attribution identified three helpful rank-two experts,
+but their combined effects were not additive. A rank-four correction on expert
+103 reached mean KLD `0.0582574646070`. Its p99, CVaR1%, and maximum KLD also
+improved relative to EXL3 on the available context. The rank and expert were
+chosen after inspecting arms on that same context, so this is a mechanism
+screen. It is not document-replicated qualification.
+
+The exact candidate is frozen in
+[`experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`](experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json).
+The registration binds both factor hashes, BF16 storage, rank four, expert
+103, ridge `0.001`, the base representation, the materialized endpoint, and
+the confirmation rule. Changing a bound field creates a different candidate
+and requires a separate sealed confirmation set.
+
 Three other findings constrain the next experiments:
 
 - Finite-E4M3 reconstruction-table fitting reduced pooled fixed-path squared
@@ -294,6 +317,12 @@ The GLM-5.2 QSRT container format does not exist yet, so headers, alignment,
 padding, and serving-directory overhead remain unmeasured. A complete
 serialized artifact must retain a positive size margin after those costs.
 
+The frozen expert-103 correction adds 65,536 logical BF16 factor bytes to the
+113,643,520-byte K3/down-refit panel. The candidate panel therefore occupies
+113,709,056 logical bytes, 20,082,688 below EXL3. Factor headers, scales,
+alignment, directories, and runtime metadata remain uncharged until a
+factor-aware GLM container exists.
+
 ## Active GLM-5.2 work
 
 ### Obtain document-disjoint BF16 reference logits
@@ -306,6 +335,21 @@ documents, tokenizer, chat template, teacher revision, runtime configuration,
 and output hashes must be recorded. The documents must be disjoint from fit
 and candidate-construction data. Do not download the complete BF16 checkpoint
 to kossel or to a developer workstation.
+
+### Confirm the frozen rank-four expert-103 correction
+
+The exact registered candidate may proceed directly to at least 32 sealed
+confirmation documents because its fields are already frozen. Evaluate it
+without changing the rank, expert, dtype, ridge, factor values, base artifact,
+or bolt-on construction. Require the paired-bootstrap upper bound for
+candidate-minus-EXL3 document-mean KLD to fall below zero. Apply the frozen
+document-level CVaR1% non-inferiority rule as a safety gate.
+
+The existing KLD screen materializes the factor product into a dense endpoint.
+In parallel with reference generation, implement deterministic factor
+serialization and a factor-aware runtime. The loaded factors must reproduce
+the screened endpoint within a frozen numerical tolerance, and the complete
+serialized byte ledger must remain below EXL3.
 
 ### Select the down-refit rule with model KLD
 

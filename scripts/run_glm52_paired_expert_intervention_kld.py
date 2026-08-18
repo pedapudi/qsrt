@@ -14,6 +14,7 @@ import argparse
 import inspect
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -519,6 +520,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--candidate-expert-subsets-json",
+        default="{}",
+        help=(
+            "JSON object mapping self-descriptive arm names to nonempty expert-ID "
+            "subsets from the intervention artifact"
+        ),
+    )
+    parser.add_argument(
         "--measurement-controls-only",
         action="store_true",
         help=(
@@ -529,11 +538,52 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def parse_candidate_expert_subsets(
+    value: str,
+    *,
+    artifact_expert_ids: list[int] | tuple[int, ...],
+) -> dict[str, list[int]]:
+    """Validate named model-level combinations of intervention experts."""
+
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise TypeError("candidate expert subsets must be a JSON object")
+    available = set(artifact_expert_ids)
+    subsets: dict[str, list[int]] = {}
+    for name, experts in parsed.items():
+        if not isinstance(name, str) or re.fullmatch(r"[a-z][a-z0-9_]*", name) is None:
+            raise ValueError(
+                "candidate expert subset names must use descriptive lowercase "
+                "letters, digits, and underscores"
+            )
+        if name in {"expert", "selected_candidate"}:
+            raise ValueError("candidate expert subset name is reserved")
+        if not isinstance(experts, list):
+            raise TypeError("each candidate expert subset must be a JSON list")
+        if (
+            not experts
+            or len(set(experts)) != len(experts)
+            or any(
+                isinstance(expert, bool)
+                or not isinstance(expert, int)
+                or expert not in available
+                for expert in experts
+            )
+        ):
+            raise ValueError(
+                "candidate expert subsets must contain unique expert IDs from "
+                "the intervention artifact"
+            )
+        subsets[name] = list(experts)
+    return subsets
+
+
 def intervention_arm_definitions(
     expert_ids: list[int] | tuple[int, ...],
     *,
     omit_individual_expert_arms: bool,
     measurement_controls_only: bool = False,
+    candidate_expert_subsets: dict[str, list[int]] | None = None,
 ) -> list[tuple[str, str, list[int] | None]]:
     """Describe repeatability, wiring, individual, and complete-panel arms."""
 
@@ -561,6 +611,10 @@ def intervention_arm_definitions(
             (f"selected_candidate_expert_{expert:03d}", CANDIDATE_MODE, [expert])
             for expert in experts
         )
+    definitions.extend(
+        (f"selected_candidate_subset_{name}", CANDIDATE_MODE, subset)
+        for name, subset in (candidate_expert_subsets or {}).items()
+    )
     definitions.append(("selected_candidate", CANDIDATE_MODE, None))
     return definitions
 
@@ -634,6 +688,10 @@ def main() -> None:
             )
     args.dest.mkdir(parents=True, exist_ok=False)
     artifact = validate_dense_intervention_artifact(args.intervention_artifact)
+    candidate_expert_subsets = parse_candidate_expert_subsets(
+        args.candidate_expert_subsets_json,
+        artifact_expert_ids=artifact["expert_ids"],
+    )
     manifest_path = args.reference_logits / "manifest.json"
     reference_manifest = json.loads(manifest_path.read_text())
     if args.context_length != int(reference_manifest["context_length"]):
@@ -750,6 +808,7 @@ def main() -> None:
         artifact["expert_ids"],
         omit_individual_expert_arms=args.omit_individual_expert_arms,
         measurement_controls_only=args.measurement_controls_only,
+        candidate_expert_subsets=candidate_expert_subsets,
     )
     for generation, (arm, mode, selected_experts) in enumerate(
         arm_definitions, start=1
@@ -932,6 +991,22 @@ def main() -> None:
             for expert in artifact["expert_ids"]
         }
         if candidate_measured and not args.omit_individual_expert_arms
+        else None,
+        "candidate_expert_subset_paired": {
+            name: {
+                "arm": f"selected_candidate_subset_{name}",
+                "selected_experts": experts,
+                "paired": paired_kld_summary(
+                    klds["resident_exl3"],
+                    klds[f"selected_candidate_subset_{name}"],
+                ),
+                "layer_3_route_support": route_support_summary(
+                    baseline_layer_routes, selected_experts=experts
+                ),
+            }
+            for name, experts in candidate_expert_subsets.items()
+        }
+        if candidate_measured and candidate_expert_subsets
         else None,
         "layer_3_route_support": route_support_summary(
             baseline_layer_routes, selected_experts=artifact["expert_ids"]

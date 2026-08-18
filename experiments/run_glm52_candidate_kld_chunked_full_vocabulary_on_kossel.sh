@@ -10,13 +10,16 @@ set -euo pipefail
 # bitwise repeatable before the complete selected panel is evaluated.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|down-covariance-source-target|down-identity-refit-target|down-covariance-refit-target|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
+  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|low-rank-down-refit-r2|low-rank-down-refit-r2-per-expert-attribution|low-rank-down-refit-r2-attribution-selected-subsets|low-rank-down-refit-r4|low-rank-down-refit-r4-attribution-selected-subsets|low-rank-uniform-k3-r2|low-rank-uniform-k3-r4|down-covariance-source-target|down-identity-refit-target|down-covariance-refit-target|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
   exit 2
 fi
 
 method="$1"
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 results_root="${experiment_root}/results"
+result_suffix=""
+individual_arm_arguments=(--omit-individual-expert-arms)
+candidate_subset_arguments=()
 
 case "${method}" in
   uniform-k3)
@@ -30,6 +33,46 @@ case "${method}" in
   reconstructed-activation-down-refit)
     artifact_name="glm52-layer3-frozen8-reconstructed-activation-down-refit-merged"
     expected_experiment="qsrt_glm52_reconstructed_activation_down_refit_v1"
+    ;;
+  low-rank-down-refit-r2)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    ;;
+  low-rank-down-refit-r2-per-expert-attribution)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    result_suffix="-per-expert-attribution"
+    individual_arm_arguments=()
+    ;;
+  low-rank-down-refit-r2-attribution-selected-subsets)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    result_suffix="-attribution-selected-subsets"
+    candidate_subset_arguments=(
+      --candidate-expert-subsets-json
+      '{"all_individually_improving_experts":[89,103,208],"strongest_pair":[89,208],"expert_89_and_103":[89,103],"expert_103_and_208":[103,208]}'
+    )
+    ;;
+  low-rank-down-refit-r4)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    ;;
+  low-rank-down-refit-r4-attribution-selected-subsets)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    result_suffix="-attribution-selected-subsets"
+    candidate_subset_arguments=(
+      --candidate-expert-subsets-json
+      '{"rank2_helpful_expert_89":[89],"rank2_helpful_expert_103":[103],"rank2_helpful_expert_208":[208],"all_rank2_individually_improving_experts":[89,103,208],"strongest_rank2_pair":[89,208],"expert_89_and_103":[89,103],"expert_103_and_208":[103,208]}'
+    )
+    ;;
+  low-rank-uniform-k3-r2)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-uniform_k3-bf16-rank-2-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    ;;
+  low-rank-uniform-k3-r4)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-uniform_k3-bf16-rank-4-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
     ;;
   down-covariance-source-target)
     artifact_name="glm52-layer3-frozen8-down-construction-reconstructed_input_covariance__source_weights-merged"
@@ -65,9 +108,9 @@ case "${method}" in
 esac
 
 artifact_root="${results_root}/${artifact_name}"
-result_name="${artifact_name}-paired-bf16-reference-kld-engine-per-expert-correctness"
+result_name="${artifact_name}${result_suffix}-paired-bf16-reference-kld-engine-per-expert-correctness"
 result_path="${results_root}/${result_name}"
-control_root="${experiment_root}/runtime-control/${artifact_name}-per-expert-correctness"
+control_root="${experiment_root}/runtime-control/${artifact_name}${result_suffix}-per-expert-correctness"
 record_root="${experiment_root}/launch-records/${result_name}"
 container_name="qsrt-${result_name}"
 validation_report="${experiment_root}/preflight/glm52-exl3-host-local-copy/validation.json"
@@ -201,7 +244,8 @@ docker create \
   --max-num-batched-tokens 2048 \
   --kld-chunk-rows 4 \
   --kld-device cuda:0 \
-  --omit-individual-expert-arms \
+  "${candidate_subset_arguments[@]}" \
+  "${individual_arm_arguments[@]}" \
   --hf-overrides '{"index_topk":0,"use_index_cache":false}' \
   --llm-extra-json '{"decode_context_parallel_size":1,"moe_backend":"b12x","enforce_eager":true,"disable_custom_all_reduce":true,"async_scheduling":false}'
 
