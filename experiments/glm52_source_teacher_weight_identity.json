@@ -1,0 +1,24 @@
+{
+  "schema": "qsrt_glm52_source_teacher_weight_identity",
+  "schema_version": 1,
+  "status": "verified_from_hugging_face_content_metadata",
+  "checked_at_utc": "2026-08-18T20:45:00Z",
+  "model_id": "zai-org/GLM-5.2",
+  "source_revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+  "teacher_revision": "4d67f66cc64d3219133b767c253b2ad1425c6c88",
+  "comparison": {
+    "safetensors_path_sets_equal": true,
+    "safetensors_file_count_per_revision": 282,
+    "safetensors_lfs_object_ids_equal": true,
+    "safetensors_file_sizes_equal": true,
+    "safetensors_file_bytes_per_revision": 1506667387408,
+    "tensor_index_files_byte_equal": true,
+    "tensor_index_sha256": "5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e",
+    "tensor_count": 59585,
+    "tensor_index_shard_count": 282,
+    "tensor_payload_bytes_from_index": 1506659919872
+  },
+  "method": "Enumerate each pinned revision through the Hugging Face model-tree API with recursive LFS expansion. Compare every safetensors path, LFS SHA-256 object ID, and byte count. Download and compare the small model.safetensors.index.json files separately.",
+  "conclusion": "The bounded QSRT source revision and the published BF16-reference teacher revision contain byte-identical model-weight shards and byte-identical tensor indexes. Non-weight repository files differ between the revisions and are outside this weight-identity claim.",
+  "full_model_weights_downloaded": false
+}

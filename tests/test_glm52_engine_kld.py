@@ -12,6 +12,7 @@ from qsrt.glm52_engine_kld import (
     ENGINE_KLD_CHUNK_ROWS_ENV,
     ENGINE_KLD_REFERENCE_KEY_ENV,
     ENGINE_KLD_REFERENCE_PATH_ENV,
+    ENGINE_KLD_REFERENCE_REPRESENTATION_ENV,
     _engine_kld_configuration,
     _kld_logprobs_tensors,
     engine_kld_from_prompt_logprobs,
@@ -63,6 +64,42 @@ def test_engine_kld_rejects_shape_and_key_mismatches(tmp_path: Path) -> None:
         )
 
 
+def test_engine_kld_accepts_published_singleton_batch_logprobs(
+    tmp_path: Path,
+) -> None:
+    reference_logits = torch.tensor(
+        [[1.0, -0.5, 0.25], [-0.75, 0.5, 1.25]], dtype=torch.float32
+    )
+    reference_logprobs = reference_logits.log_softmax(dim=-1)
+    reference_logprobs[0, 1] = float("-inf")
+    reference_logprobs[0] -= torch.logsumexp(reference_logprobs[0], dim=-1)
+    model_logits = torch.tensor(
+        [[0.8, -0.1, 0.4], [-0.4, 0.2, 1.0]], dtype=torch.float32
+    )
+    model_logprobs = model_logits.log_softmax(dim=-1)
+    path = tmp_path / "reference-logprobs.safetensors"
+    save_file({"logprobs": reference_logprobs.unsqueeze(0)}, path)
+
+    actual = forward_kld_from_model_logprobs(
+        model_logprobs,
+        reference_path=path,
+        reference_key="logprobs",
+        chunk_rows=1,
+        reference_representation="logprobs",
+    )
+    masked_model_logprobs = model_logprobs.clone()
+    masked_model_logprobs[0, 1] = float("-inf")
+    masked_model_logprobs[0] -= torch.logsumexp(
+        masked_model_logprobs[0], dim=-1
+    )
+    probability = reference_logprobs.exp()
+    expected = torch.where(
+        torch.isfinite(reference_logprobs),
+        probability * (reference_logprobs - masked_model_logprobs),
+        torch.zeros_like(reference_logprobs),
+    ).sum(dim=-1)
+
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=2e-7)
 def test_engine_kld_configuration_requires_one_complete_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -78,7 +115,14 @@ def test_engine_kld_configuration_requires_one_complete_contract(
         _engine_kld_configuration()
 
     monkeypatch.setenv(ENGINE_KLD_CHUNK_ROWS_ENV, "4")
-    assert _engine_kld_configuration() == (path, "logits", 4)
+    assert _engine_kld_configuration() == (path, "logits", 4, "logits")
+
+    monkeypatch.setenv(ENGINE_KLD_REFERENCE_REPRESENTATION_ENV, "logprobs")
+    assert _engine_kld_configuration() == (path, "logits", 4, "logprobs")
+
+    monkeypatch.setenv(ENGINE_KLD_REFERENCE_REPRESENTATION_ENV, "probabilities")
+    with pytest.raises(RuntimeError, match="representation"):
+        _engine_kld_configuration()
 
 
 @dataclass

@@ -1,0 +1,86 @@
+{
+  "schema": "qsrt_glm52_low_rank_down_public_reference_auxiliary_result",
+  "schema_version": 1,
+  "status": "paired_improvement_not_statistically_established",
+  "objective": "Test whether the frozen layer-3 expert-103 rank-four down correction retains its paired KLD improvement on public reference documents that did not participate in fitting, candidate selection, or the original one-context screen.",
+  "evidence_boundary": "The public cache supplied 16 eligible untouched documents with one 512-token chunk per document. This auxiliary result is independent of candidate construction, but it does not satisfy the registered qualification requirement of at least 32 documents with 2,048 tokens each.",
+  "registered_candidate": {
+    "confirmation_registration": "experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json",
+    "layer": 3,
+    "expert": 103,
+    "rank": 4,
+    "factor_dtype": "BF16",
+    "logical_factor_bytes": 65536,
+    "factor_a_sha256": "e3e4e38f66b63c6de4d6b8964f01a972fe968312037415e6003dea14cdd750d0",
+    "factor_b_sha256": "c217d59c62ddbe4357332159a085a14a5a67061fc8cdd43b3eccad39d03f4247",
+    "materialized_down_sha256": "cc327d9edb3b3c5f338a052985708ecdcbf8092480e999e930af551fa28f328c"
+  },
+  "reference_set": {
+    "repository": "festr2/GLM-5.2-Unsloth-Style-KLD-Refs-20260707",
+    "revision": "874f0395c003133260fa6898df32638512e6de0a",
+    "teacher_model": "zai-org/GLM-5.2",
+    "teacher_revision": "4d67f66cc64d3219133b767c253b2ad1425c6c88",
+    "selection_plan": "experiments/glm52_public_reference_auxiliary_plan.json",
+    "selection_plan_sha256": "91484042ccd375993129d7d41d15dfeb457d48d69bef2cd5077882c418c9f24c",
+    "document_count": 16,
+    "tokens_per_document": 512,
+    "scored_position_count": 8176,
+    "downloaded_reference_bytes": 5065263616
+  },
+  "paired_result": {
+    "resident_exl3_equal_document_mean_forward_kld": 0.09279618845586937,
+    "candidate_equal_document_mean_forward_kld": 0.09263510767174923,
+    "candidate_minus_resident_mean_forward_kld": -0.00016108078412014866,
+    "relative_forward_kld_reduction": 0.0017358556078709286,
+    "candidate_better_document_count": 9,
+    "candidate_worse_document_count": 7,
+    "paired_document_bootstrap_difference_lower_95_percentile": -0.003332554162652976,
+    "paired_document_bootstrap_difference_upper_95_percentile": 0.002636722739363274,
+    "paired_document_bootstrap_difference_upper_one_sided_95_percentile": 0.0022115201720139797,
+    "bootstrap_resamples": 20000,
+    "bootstrap_seed": 0,
+    "statistically_established_improvement": false,
+    "candidate_below_absolute_0_059_target": false
+  },
+  "position_tail_metrics": {
+    "resident_exl3": {
+      "p99": 1.1297104358673096,
+      "cvar1_percent": 1.9760016377379255,
+      "maximum": 5.988030910491943
+    },
+    "candidate": {
+      "p99": 1.1271333396434784,
+      "cvar1_percent": 1.9171453394540927,
+      "maximum": 4.583719253540039
+    },
+    "candidate_better_position_count": 4099,
+    "candidate_worse_position_count": 4077
+  },
+  "routing": {
+    "layer_3_routes_preserved": true,
+    "layer_3_expert_103_selected_route_count": 84,
+    "downstream_changed_route_identifier_count": 1287227,
+    "downstream_changed_token_layer_row_count": 424676
+  },
+  "measurement_controls": {
+    "resident_repeat_bitwise_equal": true,
+    "direct_return_identity_bitwise_equal": true,
+    "final_resident_bracket_bitwise_equal": true,
+    "complete_route_controls_equal": true,
+    "passed": true
+  },
+  "runtime": {
+    "host": "kossel.lan",
+    "gpu_count": 4,
+    "container_image": "verdictai/glm52-exl3-sparkinfer:v39-r28-r7fused-broadcast-cu132-sm120a",
+    "network_disabled": true,
+    "model_downloads_performed": false,
+    "external_disk_modified": false,
+    "reference_and_result_filesystem": "/dev/nvme0n1p2"
+  },
+  "remote_result": {
+    "report_path": "/home/sunil/qsrt-glm52-experiments/results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-document-disjoint-public-reference-auxiliary/report.json",
+    "report_sha256": "e15e7989b82ba0953ef31c2616580596b37a541b63b448d783a8723b71c142b8"
+  },
+  "decision": "Retain the low-rank correction as a research candidate because its paired point estimate and all three pooled tail statistics improved, but do not call it a replicated KLD gain. The document-bootstrap interval includes both improvement and regression, and the absolute KLD target belongs to a different reference suite. The registered 32-document, 2048-token qualification remains unmet."
+}

@@ -380,6 +380,9 @@ and traces remain outside the Git repository.
 | 2026-08-18 20:02–20:09 UTC | Rejected two-GEMM inference for the frozen low-rank correction | The factor-aware rank-four artifact, expert 103, immutable EXL3 checkpoint, and published one-context BF16 reference | Factorized-runtime paired-KLD result and stored routed-row closure comparison | Expert 103 reached mean KLD `0.0606608189028`, only 0.6771% below EXL3 and above the target. The report SHA-256 is `636b471688c67384931bc28ff1c39f3198714cbb1bc8f7771401a13b0db85d8b`. On 951 stored routed rows, the two-GEMM output differed from the dense endpoint by about `1.9954e-7` relative SSE with maximum absolute error `1.5259e-5`. | Reject per-token two-GEMM execution. A numerically small local difference erased most of the downstream KLD improvement. This result does not reject storing low-rank factors or fusing them at load time. |
 | 2026-08-18 20:14–20:21 UTC | Qualified load-time materialization for the frozen low-rank correction on the available context | The same stored K3 base and BF16 factors, an FP16 reconstruction assertion on every tensor-parallel rank, immutable EXL3, and the same published reference | Load-time-materialized paired-KLD result and `experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json` | Expert 103 reproduced mean KLD `0.0582574646070`, 4.6122% below EXL3. Report SHA-256 is `94a161eb507c3f0fbaf200bb969f11340f794f209eb42b45bf3c9c496439d1cb`. All 2,047 per-position KLD values and the complete route arrays were bit-identical to the dense screen. Repeatability and direct-return controls passed. | Serialize the factors, fuse their product into the decoded FP16 down matrix when the expert is loaded, and retain the one-GEMM inference path. This is one-context runtime closure, not document-replicated qualification. The 32-document confirmation set and complete-container byte ledger remain blocking release requirements. |
 | 2026-08-18 20:34 UTC | Refreshed the durable artifact index after source-window and low-rank runtime completion | Regular files under `/home/sunil/qsrt-glm52-experiments/` | `/home/sunil/qsrt-glm52-experiments/ARTIFACT_INDEX.json` | 17,294 regular files; 476,270,045,183 regular-file bytes; 684 unhashed files; index SHA-256 `c39ae9c2906b83c74e224ac9b40bc55974ee315a226f5a6d508f98ac98a2638c` | The index locates the completed bounded source window, stored-factor artifacts, runtime reports, and launch records. The 684 unhashed files are not content-verified and must not support identity claims. |
+| 2026-08-18 20:45–21:02 UTC | Closed source-to-teacher weight identity and prepared an independent public-reference subset | Hugging Face content metadata for the pinned source and teacher revisions plus public teacher logprobs from `festr2/GLM-5.2-Unsloth-Style-KLD-Refs-20260707` revision `874f0395c003133260fa6898df32638512e6de0a` | `experiments/glm52_source_teacher_weight_identity.json`, `experiments/glm52_public_reference_auxiliary_plan.json`, and `/home/sunil/qsrt-glm52-experiments/reference/glm52-unsloth-document-disjoint-auxiliary-v1/` | All 282 official safetensors paths, LFS content SHA-256 identities, and file sizes match between source revision `b4734de4facf877f85769a911abafc5283eab3d9` and teacher revision `4d67f66cc64d3219133b767c253b2ad1425c6c88`. The tensor-index SHA-256 is `5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e`. The frozen auxiliary plan SHA-256 is `91484042ccd375993129d7d41d15dfeb457d48d69bef2cd5077882c418c9f24c`; it selects 16 untouched documents and 5,065,263,616 reference bytes. | No model weight was downloaded. The 16 public chunks were written to kossel's internal `/dev/nvme0n1p2`. The external `/home/sunil/usb-mnt` disk remained unchanged. Sixteen 512-token documents provide independent auxiliary evidence but cannot satisfy the frozen 32-document, 2,048-token qualification contract. |
+| 2026-08-18 21:02–21:10 UTC | Evaluated the frozen rank-four expert-103 correction on 16 untouched public documents | The unchanged registered factors, stored-factor artifact, host-local EXL3 checkpoint, frozen public-reference plan, and existing v39 runtime | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-document-disjoint-public-reference-auxiliary/` and `experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json` | Resident EXL3 equal-document mean KLD was `0.092796188456`; the candidate measured `0.092635107672`, a paired reduction of `0.000161080784` or 0.1736%. The candidate won on 9 of 16 documents. The 20,000-resample document-bootstrap 95% interval for candidate minus resident was `[-0.003332554163, 0.002636722739]`. Candidate p99, CVaR1%, and maximum were `1.12713334`, `1.91714534`, and `4.58371925`, below resident values `1.12971044`, `1.97600164`, and `5.98803091`. Report SHA-256 is `e15e7989b82ba0953ef31c2616580596b37a541b63b448d783a8723b71c142b8`. | Retain the correction as a research candidate, but do not call the KLD gain replicated: the confidence interval includes zero and material regression. The absolute `0.059` threshold was not met on this harder suite, where resident EXL3 itself measured `0.09279619`. All resident-repeat, direct-return identity, final resident-bracket, and route controls passed bitwise. The run used one model load, four GPUs, disabled networking, internal NVMe, and no model or container download. |
+| 2026-08-18 21:21 UTC | Refreshed the durable artifact index after public-reference replication | Every regular file under `/home/sunil/qsrt-glm52-experiments/`, read through an existing network-disabled container | `/home/sunil/qsrt-glm52-experiments/ARTIFACT_INDEX.json` | 20,620 regular files; 481,515,914,716 regular-file bytes; zero unhashed files; index SHA-256 `7ca6263be32c7db3c31a6b7df2e0b8e11e1754be15cae4a24533c43ddee6718d` | The inventory now covers the public-reference files, source snapshot used by the run, controls, launch records, and results. It excludes its own output path. All four GPUs were idle at 2 MiB after indexing, and no experiment container remained running. |
 
 ## Evidence sequence and present status
 
@@ -437,10 +440,12 @@ and traces remain outside the Git repository.
     captured metric.
 13. **Partly completed:** metadata proved that the source and reporting
     revisions contain byte-identical weight shards, and the bounded source
-    windows for layers 52, 60, 63, and 64 are complete. The available BF16
-    reference still contains one published 2,048-token context, so it cannot
-    provide document-level replication. Complete serialized checkpoint bytes
-    also remain unavailable because the GLM QSRT container has not been
+    windows for layers 52, 60, 63, and 64 are complete. The available
+    references now include one published 2,048-token context and 16 untouched
+    public documents with 512 tokens apiece. The shorter public set supports
+    an auxiliary document-level estimate but cannot satisfy the registered
+    32-document, 2,048-token qualification. Complete serialized checkpoint
+    bytes also remain unavailable because the GLM QSRT container has not been
     defined.
 14. **Completed and rejected for the newly selected policies:** crossed the
     identity or reconstructed-input-covariance down metric with the source or
@@ -459,6 +464,14 @@ and traces remain outside the Git repository.
     endpoint and every measured KLD value bit for bit. Direct two-GEMM
     execution is rejected; complete-container accounting and production
     serving remain unimplemented.
+16. **Completed as an inconclusive auxiliary replication:** measured the
+    unchanged rank-four expert-103 correction on 16 untouched public
+    documents. The paired point estimate improved by 0.1736%, and p99,
+    CVaR1%, and maximum also improved. The 95% document-bootstrap interval for
+    the mean difference crossed zero, with 9 document wins and 7 regressions.
+    The original 4.6122% screen therefore did not repeat at comparable
+    magnitude. Retain the mechanism for research, but require the registered
+    32-document confirmation before calling the gain replicated.
 
 ## Files prepared for the rate-preserving down-refit experiment
 

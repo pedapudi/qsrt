@@ -21,6 +21,14 @@ reject a large regression and compare candidates within the context. They
 cannot establish complete-checkpoint quality or generalization to other
 documents, layers, experts, or serving kernels.
 
+A separate public cache contains 565 full-vocabulary teacher-logprob chunks
+with 512 tokens each. After excluding every document used for activation
+fitting, candidate selection, or the original KLD screen, 16 documents remained
+with one complete aligned chunk apiece. Those chunks provide an independent
+auxiliary replication for the frozen rank-four correction. Their shorter
+contexts and limited document count do not satisfy the registered requirement
+for at least 32 documents with 2,048 tokens each.
+
 The bounded source tensors and published reporting logits name different
 GLM-5.2 revisions. The source window and sealed tensor inventory name revision
 `b4734de4facf877f85769a911abafc5283eab3d9`. The published reference-logit
@@ -229,6 +237,36 @@ It records the stored-factor artifact, both runtime reports, the bit-identical
 per-position closure, and the decision to fuse the correction at expert load
 time instead of executing two additional inference GEMMs.
 
+### Independent public-reference replication
+
+The frozen expert-103 correction was evaluated without modification on 16
+documents that did not participate in factor fitting, ridge selection,
+candidate selection, or the original one-context screen. Each document supplied
+511 next-token comparisons from one public 512-token teacher-logprob chunk.
+The model loaded once, the runtime network was disabled, and the unchanged
+resident checkpoint bracketed the interventions. Resident-repeat,
+direct-return identity, and final resident-bracket controls were bitwise equal
+for both KLD and complete route arrays.
+
+| Representation | Equal-document mean KLD | p99 | CVaR1% | Maximum |
+|---|---:|---:|---:|---:|
+| Resident EXL3 | 0.09279619 | 1.12971 | 1.97600 | 5.98803 |
+| Frozen rank-four correction on expert 103 | 0.09263511 | 1.12713 | 1.91715 | 4.58372 |
+
+The candidate reduced the paired point estimate by `0.00016108`, or 0.1736%,
+and won on 9 of 16 documents. Its document-bootstrap 95% interval for
+`candidate minus resident` was `[-0.00333255, 0.00263672]`. The interval
+includes zero and material regression, so the improvement is not statistically
+established. The correction also failed the absolute `0.059` threshold on this
+harder reference suite, but that cross-suite threshold does not determine the
+paired comparison: resident EXL3 itself measured 0.09279619.
+
+The auxiliary result retains the low-rank correction as a research candidate
+because the paired mean and all three pooled tail statistics moved in the
+favorable direction. It sharply reduces the estimated effect from the original
+4.6122% screen and does not qualify the candidate. The compact receipt is
+`experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json`.
+
 ## Interpretation by mechanism
 
 ### Reconstruction-table training
@@ -401,6 +439,7 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | Rank-four attribution-selected singletons and combinations | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/` | `8cf9d7a7f7332a16ac8accebde102f892dd9bc5e193145b677a12f6e30e0b39b` |
 | Rank-four expert 103 with two inference GEMMs | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-factorized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/` | `636b471688c67384931bc28ff1c39f3198714cbb1bc8f7771401a13b0db85d8b` |
 | Rank-four expert 103 with load-time fusion | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-load-time-materialized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/` | `94a161eb507c3f0fbaf200bb969f11340f794f209eb42b45bf3c9c496439d1cb` |
+| Rank-four expert 103 on 16 untouched public documents | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-document-disjoint-public-reference-auxiliary/` | `e15e7989b82ba0953ef31c2616580596b37a541b63b448d783a8723b71c142b8` |
 
 The codec-mechanism reports below do not contain new model KLD vectors.
 
@@ -418,9 +457,11 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 
 ## Next admissible experiments
 
-1. Acquire or produce BF16 reference logits for multiple document-disjoint
-   contexts without downloading the full BF16 checkpoint. Evaluate the
-   registered rank-four expert-103 correction without changing it.
+1. Acquire or produce at least 32 BF16 reference contexts with 2,048 tokens
+   each without downloading the full BF16 checkpoint. The frozen expert-103
+   correction improved the paired point estimate on the 16-document public
+   auxiliary set, but its confidence interval crossed zero and the shorter
+   contexts do not satisfy the registered qualification contract.
 2. Use at least eight selection contexts to choose between the source target,
    the earlier fixed refit, and a bounded set of hard-encoded ridge/fallback
    policies. Complete-expert error may prune candidates but cannot choose the

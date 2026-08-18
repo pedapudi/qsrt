@@ -52,14 +52,17 @@ uv sync --dev
   chronological operations, immutable inputs, generated files, container
   identities, measurements, and cleanup policies.
 - [GLM-5.2 layer-3 KLD results](docs/glm52-layer3-kld-results.md) — repeatable
-  one-context comparison of uniform K3, one-sided input covariance, and
-  reconstructed-activation down refitting against EXL3.
+  one-context mechanism comparisons and an independent 16-document auxiliary
+  replication of the frozen low-rank correction against EXL3.
 - [QSRT improvement strategy](docs/qsrt-improvement-strategy.md) — model-loss
   curvature implementation status, measured mechanism decisions, and exact-byte
   promotion gates.
 - [GLM-5.2 mixed-K3/K4 allocation pre-registration](experiments/glm52_layer3_k3_k4_allocation_pre_registration.json) —
   frozen twelve-projection byte budget, fixed EXL3-rate control, deterministic
   complete-expert selection rule, and reporting-data prohibition.
+- [GLM-5.2 low-rank auxiliary replication receipt](experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json) —
+  frozen candidate identity, public-reference provenance, paired
+  document-bootstrap result, controls, and the unmet qualification boundary.
 - [Audit of the K2 no-feedback claim](docs/qsrt-blockldlq-no-feedback-audit.md) —
   scale-selection confound, greedy-feedback counterexample, and the frozen-scale
   K3 measurement that produced byte-identical feedback and no-feedback experts.

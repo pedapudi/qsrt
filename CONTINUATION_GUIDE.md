@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-18T20:35:00Z`. It
+This repository is a source snapshot updated at `2026-08-18T21:22:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -79,16 +79,15 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The GLM low-rank, paired-KLD, intervention-runtime, and intervention tests
-pass. The local CPU-only environment completed 41 focused tests in 0.48
-seconds. Repository-wide collection requires the optional Triton and
+The GLM public-reference, low-rank, paired-KLD, intervention-runtime, and
+intervention tests pass. The focused public-reference and low-rank suite passed
+23 tests. Repository-wide collection requires the optional Triton and
 InstantTensor packages used by upstream recovery code. It also exposes API
 mismatches in upstream recovery tests. A run that excluded the eleven
-collection blockers passed 865 tests, skipped 21, and found one unrelated
-artifact-fixture failure because the fixture lacked `candidate_codebook`.
-Install the optional dependencies or reconcile those imports before treating
-a repository-wide result as authoritative; do not hide the collection errors
-by deleting tests.
+collection blockers and deselected the unrelated fixture that lacks
+`candidate_codebook` passed 873 tests and skipped 21. Install the optional
+dependencies or reconcile those imports before treating a repository-wide
+result as authoritative; do not hide the collection errors by deleting tests.
 
 Verify the published source files before using them:
 
@@ -115,11 +114,10 @@ The complete artifact inventory is:
 /home/sunil/qsrt-glm52-experiments/ARTIFACT_INDEX.json
 ```
 
-The inventory generated at `2026-08-18T20:34Z` contains 17,294 regular-file
-records covering 476,270,045,183 bytes. It also records 684 files that the
-indexing process could not hash. Do not treat those unhashed files as verified.
-The inventory SHA-256 is
-`c39ae9c2906b83c74e224ac9b40bc55974ee315a226f5a6d508f98ac98a2638c`.
+The inventory generated at `2026-08-18T21:21:09Z` contains 20,620 regular-file
+records covering 481,515,914,716 bytes, with zero unhashed files. The inventory
+SHA-256 is
+`7ca6263be32c7db3c31a6b7df2e0b8e11e1754be15cae4a24533c43ddee6718d`.
 The synchronized source copy is:
 
 ```text
@@ -196,10 +194,11 @@ is included as source. No container layer or image archive is included.
 
 The scored panel changes eight routed experts in mixture layer 3 while every
 other tensor remains from EXL3. `K3` and `K4` denote trellis payloads of three
-and four bits per weight. The published BF16 reference contains one
+and four bits per weight. One published BF16 reference contains a
 2,048-token context, which yields 2,047 correlated next-token comparisons.
-These results can screen mechanisms, but they cannot establish document-level
-generalization.
+A second public cache supplied 16 eligible untouched documents with 512 tokens
+each for an independent auxiliary replication. Neither set satisfies the
+registered 32-document, 2,048-token qualification contract.
 
 The bounded BF16 source windows name revision
 `b4734de4facf877f85769a911abafc5283eab3d9`. The published reporting-logit
@@ -297,6 +296,17 @@ stored K3 base and factors. Its 2,047 KLD values and complete route arrays were
 bit-identical to the dense screen, restoring KLD `0.0582574646070` without an
 additional inference GEMM.
 
+The frozen correction was then measured without modification on 16 public
+documents that did not participate in fitting, selection, or the original
+screen. Resident EXL3 equal-document mean KLD was `0.092796188456`; the
+candidate measured `0.092635107672`, a 0.1736 percent paired reduction. Nine
+documents improved and seven regressed. The 20,000-resample document-bootstrap
+95 percent interval for `candidate minus resident` was
+`[-0.003332554163, 0.002636722739]`. Candidate p99, CVaR1%, and maximum also
+improved, but the interval crossed zero. Record this as inconclusive auxiliary
+evidence. It does not establish a replicated gain. The compact receipt is
+[`experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json`](experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json).
+
 Three other findings constrain the next experiments:
 
 - Finite-E4M3 reconstruction-table fitting reduced pooled fixed-path squared
@@ -340,12 +350,13 @@ factor-aware GLM container exists.
 
 ### Obtain document-disjoint BF16 reference logits
 
-The available reference-logit set contains one 2,048-token document. It can
-reject a large regression but cannot select a refit rule or qualify a model.
-An authorized host that can run the official BF16 teacher must generate eight
-selection contexts and at least 32 sealed confirmation contexts. The context
-documents, tokenizer, chat template, teacher revision, runtime configuration,
-and output hashes must be recorded. The documents must be disjoint from fit
+The available references include one 2,048-token document and 16 untouched
+public documents with 512 tokens each. The 16-document auxiliary run estimated
+a small favorable paired effect, but its confidence interval crossed zero.
+An authorized host that can run the official BF16 teacher must still generate
+eight selection contexts and at least 32 sealed 2,048-token confirmation
+contexts. Record the documents, tokenizer, chat template, teacher revision,
+runtime configuration, and output hashes. Keep the documents disjoint from fit
 and candidate-construction data. Do not download the complete BF16 checkpoint
 to kossel or to a developer workstation.
 
@@ -357,6 +368,11 @@ without changing the rank, expert, dtype, ridge, factor values, base artifact,
 or bolt-on construction. Require the paired-bootstrap upper bound for
 candidate-minus-EXL3 document-mean KLD to fall below zero. Apply the frozen
 document-level CVaR1% non-inferiority rule as a safety gate.
+
+Do not use the absolute `0.059` value across reference suites. On the public
+512-token suite, resident EXL3 itself measured `0.092796188456`. The decisive
+quantity is the paired candidate-minus-resident document difference under one
+frozen runtime and reference contract.
 
 The stored-factor runtime now reconstructs the screened FP16 endpoint bit for
 bit when the expert is loaded. It retains the existing one-GEMM expert path.

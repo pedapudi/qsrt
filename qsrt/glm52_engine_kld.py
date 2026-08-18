@@ -29,16 +29,23 @@ from safetensors import safe_open
 ENGINE_KLD_REFERENCE_PATH_ENV = "QSRT_GLM52_ENGINE_KLD_REFERENCE_PATH"
 ENGINE_KLD_REFERENCE_KEY_ENV = "QSRT_GLM52_ENGINE_KLD_REFERENCE_KEY"
 ENGINE_KLD_CHUNK_ROWS_ENV = "QSRT_GLM52_ENGINE_KLD_CHUNK_ROWS"
+ENGINE_KLD_REFERENCE_REPRESENTATION_ENV = (
+    "QSRT_GLM52_ENGINE_KLD_REFERENCE_REPRESENTATION"
+)
 
 _PATCH_LOCK = Lock()
 _PATCHED = False
 
 
-def _engine_kld_configuration() -> tuple[Path, str, int] | None:
+def _engine_kld_configuration() -> tuple[Path, str, int, str] | None:
     path_text = os.environ.get(ENGINE_KLD_REFERENCE_PATH_ENV)
     key = os.environ.get(ENGINE_KLD_REFERENCE_KEY_ENV)
     chunk_rows_text = os.environ.get(ENGINE_KLD_CHUNK_ROWS_ENV)
-    if not path_text and not key and not chunk_rows_text:
+    representation = os.environ.get(
+        ENGINE_KLD_REFERENCE_REPRESENTATION_ENV, "logits"
+    )
+    representation_was_set = ENGINE_KLD_REFERENCE_REPRESENTATION_ENV in os.environ
+    if not path_text and not key and not chunk_rows_text and not representation_was_set:
         return None
     if not path_text or not key or not chunk_rows_text:
         raise RuntimeError(
@@ -54,7 +61,11 @@ def _engine_kld_configuration() -> tuple[Path, str, int] | None:
     path = Path(path_text)
     if not path.is_file():
         raise FileNotFoundError(path)
-    return path, key, chunk_rows
+    if representation not in {"logits", "logprobs"}:
+        raise RuntimeError(
+            "engine KLD reference representation must be 'logits' or 'logprobs'"
+        )
+    return path, key, chunk_rows, representation
 
 
 def forward_kld_from_model_logprobs(
@@ -63,6 +74,7 @@ def forward_kld_from_model_logprobs(
     reference_path: Path,
     reference_key: str,
     chunk_rows: int,
+    reference_representation: str = "logits",
 ) -> torch.Tensor:
     """Return per-position ``KL(reference || model)`` on the model device."""
 
@@ -70,6 +82,8 @@ def forward_kld_from_model_logprobs(
         raise ValueError("model log-probabilities must be one floating rank-two tensor")
     if isinstance(chunk_rows, bool) or not isinstance(chunk_rows, int) or chunk_rows < 1:
         raise ValueError("engine KLD chunk rows must be a positive integer")
+    if reference_representation not in {"logits", "logprobs"}:
+        raise ValueError("reference representation must be 'logits' or 'logprobs'")
     result = torch.empty(
         model_logprobs.shape[0],
         dtype=torch.float32,
@@ -84,24 +98,50 @@ def forward_kld_from_model_logprobs(
             )
         reference_slice = handle.get_slice(reference_key)
         reference_shape = tuple(reference_slice.get_shape())
-        if reference_shape != tuple(model_logprobs.shape):
+        expected_shape = tuple(model_logprobs.shape)
+        has_singleton_batch = reference_shape == (1, *expected_shape)
+        if reference_shape != expected_shape and not has_singleton_batch:
             raise ValueError(
                 "reference and model log-probability shapes differ: "
-                f"{reference_shape} versus {tuple(model_logprobs.shape)}"
+                f"{reference_shape} versus {expected_shape}"
             )
         for start in range(0, model_logprobs.shape[0], chunk_rows):
             stop = min(model_logprobs.shape[0], start + chunk_rows)
-            reference = reference_slice[start:stop].to(
+            reference_rows = (
+                reference_slice[0, start:stop]
+                if has_singleton_batch
+                else reference_slice[start:stop]
+            )
+            reference = reference_rows.to(
                 device=model_logprobs.device,
                 dtype=torch.float32,
             )
-            log_reference = F.log_softmax(reference, dim=-1)
-            values = F.kl_div(
-                model_logprobs[start:stop],
-                log_reference,
-                reduction="none",
-                log_target=True,
-            ).sum(dim=-1)
+            log_reference = (
+                F.log_softmax(reference, dim=-1)
+                if reference_representation == "logits"
+                else reference
+            )
+            model_rows = model_logprobs[start:stop]
+            if reference_representation == "logprobs":
+                finite_reference = torch.isfinite(log_reference)
+                if not bool(finite_reference.any(dim=-1).all()):
+                    raise ValueError("reference log-probability row has no finite token")
+                model_rows = torch.where(
+                    finite_reference,
+                    model_rows,
+                    torch.full_like(model_rows, float("-inf")),
+                )
+                model_rows = model_rows - torch.logsumexp(
+                    model_rows, dim=-1, keepdim=True
+                )
+            reference_probability = log_reference.exp()
+            terms = torch.where(
+                torch.isfinite(log_reference),
+                reference_probability
+                * (log_reference - model_rows),
+                torch.zeros_like(log_reference),
+            )
+            values = terms.sum(dim=-1)
             result[start:stop] = values
     if not bool(torch.isfinite(result).all()):
         raise ValueError("engine KLD produced a non-finite per-position value")
@@ -178,7 +218,7 @@ def install_vllm_engine_kld_patch() -> None:
         configuration = _engine_kld_configuration()
         if configuration is None:
             return
-        reference_path, reference_key, chunk_rows = configuration
+        reference_path, reference_key, chunk_rows, representation = configuration
 
         from vllm.v1.sample.sampler import (  # type: ignore[import-not-found]
             LogprobsTensors,
@@ -201,6 +241,7 @@ def install_vllm_engine_kld_patch() -> None:
                 reference_path=reference_path,
                 reference_key=reference_key,
                 chunk_rows=chunk_rows,
+                reference_representation=representation,
             )
             return _kld_logprobs_tensors(
                 LogprobsTensors,
@@ -217,6 +258,7 @@ __all__ = [
     "ENGINE_KLD_CHUNK_ROWS_ENV",
     "ENGINE_KLD_REFERENCE_KEY_ENV",
     "ENGINE_KLD_REFERENCE_PATH_ENV",
+    "ENGINE_KLD_REFERENCE_REPRESENTATION_ENV",
     "engine_kld_from_prompt_logprobs",
     "forward_kld_from_model_logprobs",
     "install_vllm_engine_kld_patch",

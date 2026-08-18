@@ -69,6 +69,16 @@ worst one percent.
 | Ten-promotion selection-data K3/K4 control with one down target per expert | 0.06362581 | 1.06116 | 2.02477 | 4.24433 |
 | Fixed twelve-promotion K3/K4 control with one down target per expert | 0.06396692 | 1.02369 | 2.15752 | 5.91416 |
 
+The frozen rank-four expert-103 correction also has an independent auxiliary
+measurement on 16 untouched documents with 512 tokens each. Resident EXL3
+measured 0.09279619 equal-document mean KLD; the candidate measured
+0.09263511, a 0.1736% paired reduction. The candidate won on 9 documents and
+lost on 7. Its 95% document-bootstrap interval for `candidate minus resident`
+was `[-0.00333255, 0.00263672]`, so the improvement is not statistically
+established. Candidate p99, CVaR1%, and maximum improved, but this shorter
+public set does not satisfy the registered requirement for 32 documents with
+2,048 tokens each.
+
 These values establish four mechanism decisions.
 
 - **Reconstruction-table training remains rejected for the measured GLM
@@ -106,10 +116,12 @@ These values establish four mechanism decisions.
   expert 103 reduced mean KLD to 0.05825746. It also improved p99, CVaR1%, and
   maximum KLD relative to EXL3 on the available context. The rank and expert
   were chosen after inspecting other KLD arms on that same context. The result
-  is therefore a mechanism screen and supplies no document-replicated
-  evidence. The stored K3 base and BF16 factors now reproduce the screened
-  FP16 endpoint bit for bit when the expert is loaded. A complete factor-aware
-  container and production-serving qualification remain unimplemented.
+  is therefore a mechanism screen. On 16 untouched public documents, the same
+  frozen candidate improved the paired point estimate by only 0.1736%; the
+  confidence interval crossed zero. The stored K3 base and BF16 factors now
+  reproduce the screened FP16 endpoint bit for bit when the expert is loaded.
+  A qualifying 32-document reference set, complete factor-aware container, and
+  production-serving qualification remain unimplemented.
 
 The logical eight-expert ledger charges 133,791,744 bytes for EXL3 and
 113,643,520 bytes for uniform QSRT K3. This 20,148,224-byte margin is large
@@ -320,6 +332,15 @@ one-GEMM expert execution. The runtime receipt is
 A checkpoint claim still requires exact complete-container accounting,
 document-disjoint KLD confirmation, and production-serving validation.
 
+The first document-level replication is informative but inconclusive. On 16
+untouched 512-token documents, the frozen candidate reduced equal-document
+mean KLD from 0.09279619 to 0.09263511 and improved pooled p99, CVaR1%, and
+maximum. Nine documents improved and seven regressed. The paired 95% bootstrap
+interval crossed zero, so this result neither confirms nor rejects a small
+general effect. It does reject treating the original 4.6122% reduction as a
+stable effect-size estimate. The compact result receipt is
+`experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json`.
+
 ### Use activations from the artifact being corrected
 
 Fit factors against naturally routed rows from the exact checkpoint that will
@@ -488,7 +509,7 @@ to their stored dtype and loaded through the packed serving path.
 | 1 | Fit BF16 down-only rank-two and rank-four factors for the frozen eight-expert panel | Complete: both ranks improved activation-weighted error on candidate-selection rows |
 | 2 | Measure bolt-on factors through complete-expert reconstruction and one-context model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached KLD 0.05825746 |
 | 3 | Freeze the exact rank-four expert-103 candidate | Complete in `experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`; no candidate field may change before confirmation |
-| 4 | Evaluate once on at least 32 document-disjoint confirmation contexts | Advance only if paired mean KLD beats EXL3, CVaR1% is non-inferior, and the logical byte advantage survives exact serialization |
+| 4 | Evaluate once on at least 32 document-disjoint confirmation contexts | Incomplete: a 16-document, 512-token auxiliary run improved the point estimate by 0.1736% but its confidence interval crossed zero; advance only if the registered 32-document run beats EXL3 mean KLD, keeps CVaR1% non-inferior, and preserves the exact-byte advantage |
 | 5 | Implement deterministic factor serialization and a factor-aware inference path | Partly complete: load-time fusion reproduces every screened per-position KLD value and route bit; complete-container accounting and production serving remain |
 | 6 | Replicate the frozen construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
 | 7 | Compare against coherent K3/K4 configurations at matched exact bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
@@ -507,7 +528,7 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 |---|---|
 | Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for the frozen rank-four expert-103 candidate |
 | Freeze the down-construction rule | Reconstructed-input covariance excluded; one identity-metric target, ridge, and fallback rule frozen by measured KLD on eight selection contexts |
-| Confirm the frozen low-rank candidate | The registered rank-four expert-103 correction beats EXL3 mean KLD and satisfies CVaR1% non-inferiority on at least 32 document-disjoint contexts |
+| Confirm the frozen low-rank candidate | The 16-document auxiliary result is inconclusive; the registered rank-four expert-103 correction must beat EXL3 mean KLD and satisfy CVaR1% non-inferiority on at least 32 document-disjoint 2,048-token contexts |
 | Serialize and execute low-rank factors | Load-time fusion already reproduces the screened endpoint bit for bit; the complete serialized byte ledger and production serving path remain |
 | Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
@@ -536,14 +557,19 @@ the mixture-of-experts router computation to 32-bit floating point through
 generation must therefore preserve and report the teacher runtime behavior.
 The weight-identity result does not establish runtime identity.
 
-The published reference-logit dataset contains one 2,048-token WikiText
-context. It was produced from the teacher revision with tensor parallelism 16,
-B12X sparse attention, eight-bit floating-point key/value cache storage, and
-32-bit floating-point logits. That single context remains a wiring and
-candidate-development control. It cannot supply the eight selection contexts
-or the 32 sealed confirmation contexts. Producing those references on an
-authorized host that already holds the BF16 teacher is an active dependency;
-the GLM program must not download the complete BF16 checkpoint to satisfy it.
+One published reference-logit dataset contains a 2,048-token WikiText context.
+It was produced from the teacher revision with tensor parallelism 16, B12X
+sparse attention, eight-bit floating-point key/value cache storage, and 32-bit
+floating-point logits. That context remains a wiring and candidate-development
+control.
+
+A second public dataset contains 565 full-vocabulary teacher-logprob chunks
+with 512 tokens each. After the frozen candidate's fitting, selection, and
+screening documents were excluded, 16 eligible documents remained. Their
+auxiliary result is inconclusive and cannot supply the 32 sealed 2,048-token
+confirmation contexts. Producing the qualifying references on an authorized
+host that already holds the BF16 teacher remains an active dependency. The GLM
+program must not download the complete BF16 checkpoint to satisfy it.
 
 Before another GPU run, inventory the artifacts needed by each analysis:
 

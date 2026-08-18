@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-18T20:35:00Z",
+  "snapshot_timestamp_utc": "2026-08-18T21:22:00Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -28,6 +28,7 @@
       "?? docs/qsrt-two-bit-research-corpus.md",
       "?? experiments/",
       "?? qsrt/glm52_blockldlq_feedback.py",
+      "?? qsrt/glm52_document_disjoint_confirmation.py",
       "?? qsrt/glm52_down_construction.py",
       "?? qsrt/glm52_down_refit.py",
       "?? qsrt/glm52_down_refit_rate_pool.py",
@@ -67,6 +68,7 @@
       "?? scripts/merge_glm52_production_codec_results.py",
       "?? scripts/refit_glm52_reconstructed_activation_down.py",
       "?? scripts/run_glm52_blockldlq_feedback_ablation.py",
+      "?? scripts/run_glm52_document_disjoint_reference_confirmation.py",
       "?? scripts/run_glm52_paired_expert_intervention_kld.py",
       "?? scripts/run_glm52_routed_input_curvature.py",
       "?? scripts/run_glm52_two_sided_curvature.py",
@@ -77,6 +79,7 @@
       "?? scripts/validate_glm52_two_sided_real_weight_cuda.py",
       "?? scripts/validate_two_sided_curvature_cuda.py",
       "?? tests/test_glm52_blockldlq_feedback.py",
+      "?? tests/test_glm52_document_disjoint_confirmation.py",
       "?? tests/test_glm52_down_construction.py",
       "?? tests/test_glm52_down_refit.py",
       "?? tests/test_glm52_down_refit_rate_pool.py",
@@ -128,12 +131,16 @@
       "experiments/create_glm52_uniform_k3_kld_only_lower_memory_container.sh",
       "experiments/create_glm52_uniform_k3_model_runner_v1_container.sh",
       "experiments/download_glm52_layers_52_60_63_64_source_shards_on_kossel.sh",
+      "experiments/download_glm52_public_reference_auxiliary_on_kossel.sh",
       "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
       "experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json",
       "experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json",
+      "experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json",
       "experiments/glm52_layer3_rate_pattern_panel.json",
       "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json",
       "experiments/glm52_layers_52_60_63_64_source_shards.json",
+      "experiments/glm52_public_reference_auxiliary_plan.json",
+      "experiments/glm52_source_teacher_weight_identity.json",
       "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
       "experiments/materialize_glm52_fixed_mixed_k3_k4_on_kossel.sh",
       "experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh",
@@ -142,6 +149,7 @@
       "experiments/merge_glm52_low_rank_down_slices_on_kossel.sh",
       "experiments/run_glm52_blockldlq_feedback_slices_on_kossel.sh",
       "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
+      "experiments/run_glm52_document_disjoint_reference_confirmation_on_kossel.sh",
       "experiments/run_glm52_down_construction_slice_on_kossel.sh",
       "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
       "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
@@ -157,6 +165,7 @@
       "experiments/start_glm52_uniform_k3_model_runner_v1_container.sh",
       "experiments/sync_glm52_rate_preserving_down_refit_source_to_kossel.sh",
       "qsrt/glm52_blockldlq_feedback.py",
+      "qsrt/glm52_document_disjoint_confirmation.py",
       "qsrt/glm52_down_construction.py",
       "qsrt/glm52_down_refit.py",
       "qsrt/glm52_down_refit_rate_pool.py",
@@ -196,6 +205,7 @@
       "scripts/merge_glm52_production_codec_results.py",
       "scripts/refit_glm52_reconstructed_activation_down.py",
       "scripts/run_glm52_blockldlq_feedback_ablation.py",
+      "scripts/run_glm52_document_disjoint_reference_confirmation.py",
       "scripts/run_glm52_paired_expert_intervention_kld.py",
       "scripts/run_glm52_routed_input_curvature.py",
       "scripts/run_glm52_two_sided_curvature.py",
@@ -206,6 +216,7 @@
       "scripts/validate_glm52_two_sided_real_weight_cuda.py",
       "scripts/validate_two_sided_curvature_cuda.py",
       "tests/test_glm52_blockldlq_feedback.py",
+      "tests/test_glm52_document_disjoint_confirmation.py",
       "tests/test_glm52_down_construction.py",
       "tests/test_glm52_down_refit.py",
       "tests/test_glm52_down_refit_rate_pool.py",
@@ -232,7 +243,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 114
+    "untracked_file_count": 122
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -257,8 +268,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 433,
-  "total_file_bytes": 8394246,
+  "file_count": 441,
+  "total_file_bytes": 8478911,
   "files": [
     {
       "path": ".gitignore",
@@ -272,13 +283,13 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 25028,
-      "sha256": "825ecb32685610a987eac3bb4bd3551e8d074b51358a9613603b263497494cf1"
+      "bytes": 26214,
+      "sha256": "ac554c88279405fa2f1c00301730c251c44545d6239480cef81d6c41d321b0b5"
     },
     {
       "path": "README.md",
-      "bytes": 4505,
-      "sha256": "186cf41ae06facab80b981f8cdd5a80b31a640466bb95ccee1b35d4d78437360"
+      "bytes": 4794,
+      "sha256": "abe9a0199e22a05c79e792c42dcdee5677ca30a67425548ac43736822f99da1a"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -297,13 +308,13 @@
     },
     {
       "path": "docs/glm52-experiment-journal.md",
-      "bytes": 153071,
-      "sha256": "ec6754eb5830f220a40eceff66aba7e6a03684f6e1caee34820c174d07103119"
+      "bytes": 157435,
+      "sha256": "7cd83590e90de2fa140dcc5f075aae4eb8c1780bfc780d77f3c07809b4fdd052"
     },
     {
       "path": "docs/glm52-layer3-kld-results.md",
-      "bytes": 28781,
-      "sha256": "735ab90c806a44915ce84ef727fd6e0740580f2f997a3fa8e3ad97616635983a"
+      "bytes": 31518,
+      "sha256": "c65b010c5eab9b0ce1e59eb4864f442502c1dfef6b33db9fe24ef9d42022ee75"
     },
     {
       "path": "docs/qsrt-2bpw-codec.md",
@@ -337,8 +348,8 @@
     },
     {
       "path": "docs/qsrt-improvement-strategy.md",
-      "bytes": 52787,
-      "sha256": "ac3899f7bfcf2bbe5ebed4ad6f755bd09724dc07e45725695a57f484b79399cd"
+      "bytes": 54600,
+      "sha256": "fe198b11955ecc9b323d3065d2ce668f48ce5b2be7ce83d14ce0417ba0dd0254"
     },
     {
       "path": "docs/qsrt-technical-brief.md",
@@ -386,6 +397,11 @@
       "sha256": "76d7732686827be75f94d16a6fe71e73b5516f8829bd6736a8611d408137f2fa"
     },
     {
+      "path": "experiments/download_glm52_public_reference_auxiliary_on_kossel.sh",
+      "bytes": 3413,
+      "sha256": "21572fc71a7f9138e33afd15d8a6ef84e474c69b0d58f2edb5592958d82e3b94"
+    },
+    {
       "path": "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
       "bytes": 5885,
       "sha256": "60c3c72a7aae6f5f679d3d1027410137e5822b629885e540db7b807a58e73d44"
@@ -401,6 +417,11 @@
       "sha256": "fe4909c49ffe0ad1fe1e7b373353e0d2f1ed16b065db640d53f0eb14f7e0c746"
     },
     {
+      "path": "experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json",
+      "bytes": 4613,
+      "sha256": "41ecd49ee6459e802f8d097d28134a0b46cf54af6246ed22a926a83c98e26958"
+    },
+    {
       "path": "experiments/glm52_layer3_rate_pattern_panel.json",
       "bytes": 1495,
       "sha256": "046945e916482b45062e880d46d14efc3d35021376e1f07113f38df87d631179"
@@ -414,6 +435,16 @@
       "path": "experiments/glm52_layers_52_60_63_64_source_shards.json",
       "bytes": 2699,
       "sha256": "844ada3b89341bb86bb0dad9772a49eb429969865e53d4b78e5efdfedec00382"
+    },
+    {
+      "path": "experiments/glm52_public_reference_auxiliary_plan.json",
+      "bytes": 12071,
+      "sha256": "91484042ccd375993129d7d41d15dfeb457d48d69bef2cd5077882c418c9f24c"
+    },
+    {
+      "path": "experiments/glm52_source_teacher_weight_identity.json",
+      "bytes": 1451,
+      "sha256": "41fb68d72f2e44b9526d6400ce39809725703e0637f47c18df5de70c0e16965d"
     },
     {
       "path": "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
@@ -454,6 +485,11 @@
       "path": "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
       "bytes": 16740,
       "sha256": "bb8598493fe6abe9c16c7828cbf3b2adadccd25f72522012ff27c8bd7f75d9d0"
+    },
+    {
+      "path": "experiments/run_glm52_document_disjoint_reference_confirmation_on_kossel.sh",
+      "bytes": 8663,
+      "sha256": "2c25c09d5b2c26496bf66be88fc68faa6c308c38a922cfaeed2b129d04ef21f8"
     },
     {
       "path": "experiments/run_glm52_down_construction_slice_on_kossel.sh",
@@ -641,6 +677,11 @@
       "sha256": "1f2d29acfb4e7fe03dd7c26bab058b87e4bc937dab1463e92df7b3291befefd6"
     },
     {
+      "path": "qsrt/glm52_document_disjoint_confirmation.py",
+      "bytes": 13402,
+      "sha256": "96d193c506a3fdf5227925582f231ba47635483e1781d811283cbc4607551ad4"
+    },
+    {
       "path": "qsrt/glm52_down_construction.py",
       "bytes": 21421,
       "sha256": "a86b27173f553bf84a540c26bbcadcbf6cf2583526d9031008006ea095331f6d"
@@ -662,8 +703,8 @@
     },
     {
       "path": "qsrt/glm52_engine_kld.py",
-      "bytes": 8612,
-      "sha256": "72cfab05043a3c1363c189c649b6fcaf3f750938844353320f49b42c58e52262"
+      "bytes": 10619,
+      "sha256": "90e61d096b231a8e0a8a23e3d77a092e87532b2f5a46c720b4292dfb1653087b"
     },
     {
       "path": "qsrt/glm52_expert_intervention.py",
@@ -1566,6 +1607,11 @@
       "sha256": "d67f5d4d9f9bd9e5b54e3290ddd1ae9cade37a1fb78ddba9017873954aa28781"
     },
     {
+      "path": "scripts/run_glm52_document_disjoint_reference_confirmation.py",
+      "bytes": 19991,
+      "sha256": "38514d47946e2ed56e4f62437bb9c1545d181ea88c3a3abd9eebd79863ca2362"
+    },
+    {
       "path": "scripts/run_glm52_fp4_roundtrip_pilot.py",
       "bytes": 7752,
       "sha256": "0417dfd3941b9388eadfc8d0022fb6566afcb5a32227bf8f12dfc7539813cef5"
@@ -1901,6 +1947,11 @@
       "sha256": "2756a817c70332564967769b0fa5b9d859d5fa2b52a932d24776141f0274f44f"
     },
     {
+      "path": "tests/test_glm52_document_disjoint_confirmation.py",
+      "bytes": 6888,
+      "sha256": "5f90d3a59d1a1232ce3daa0248949203cfe0068b931fc37b0d56e4024fe324e1"
+    },
+    {
       "path": "tests/test_glm52_down_construction.py",
       "bytes": 2905,
       "sha256": "ad57f98de030ce46aa711ae5e4794cdb23634d72b605b0330df212a8a25fd9f9"
@@ -1922,8 +1973,8 @@
     },
     {
       "path": "tests/test_glm52_engine_kld.py",
-      "bytes": 4499,
-      "sha256": "baf26c6d397b6604b931fd7d26ca6f444fe0d2e7237f31686077ddb277a81e25"
+      "bytes": 6276,
+      "sha256": "f7092d9d7d2eb87e3db89a3e8a3cde30201c9cfca4e64927716a318a78c9255f"
     },
     {
       "path": "tests/test_glm52_expert_intervention.py",
