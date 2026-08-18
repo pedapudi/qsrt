@@ -9,6 +9,7 @@ from scripts.run_interim_calibration_corpus import (
     _content_hash,
     _fold_selected,
     _load_excluded_documents,
+    _load_excluded_token_files,
     _parse_source,
     _record_tokens,
     _resume_report,
@@ -313,6 +314,23 @@ def test_excluded_report_inventory_is_authenticated(tmp_path: Path) -> None:
     assert len(identities[0]["sha256"]) == 64
 
 
+def test_exact_token_sequence_exclusion_is_authenticated(tmp_path: Path) -> None:
+    token_file = tmp_path / "window.json"
+    token_file.write_text("[1,2,3,4]\n")
+
+    hashes, identities = _load_excluded_token_files([token_file])
+
+    assert len(hashes) == 1
+    assert identities == [
+        {
+            "path": str(token_file.resolve()),
+            "sha256": __import__("hashlib").sha256(token_file.read_bytes()).hexdigest(),
+            "tokens": 4,
+            "prompt_hash": next(iter(hashes)),
+        }
+    ]
+
+
 def test_resume_report_requires_identical_document_plan(tmp_path: Path) -> None:
     report_path = tmp_path / "report.json"
     planned = {
@@ -355,6 +373,7 @@ def test_live_capture_requires_explicit_source_and_exact_teacher(
         "source": "pure_qsrt_sqg_xor_cheb_t12",
         "teacher_checkpoint": str(teacher.resolve()),
         "complete": False,
+        "corpus_manifest_sha256": "aa" * 32,
     }
     (capture / "manifest.json").write_text(json.dumps(manifest))
 
@@ -362,6 +381,7 @@ def test_live_capture_requires_explicit_source_and_exact_teacher(
         capture,
         teacher.resolve(),
         expected_source="pure_qsrt_sqg_xor_cheb_t12",
+        expected_plan_sha256="aa" * 32,
         timeout=0.1,
     ) == manifest
 
@@ -370,9 +390,33 @@ def test_live_capture_requires_explicit_source_and_exact_teacher(
             capture,
             teacher.resolve(),
             expected_source="interim_exl3_3p09_hybrid",
+            expected_plan_sha256="aa" * 32,
             timeout=0.1,
         )
     except ValueError as error:
         assert "capture source" in str(error)
     else:
         raise AssertionError("mismatched capture source should fail")
+
+
+def test_live_capture_accepts_canonical_all_row_schema(tmp_path: Path) -> None:
+    teacher = tmp_path / "resident"
+    capture = tmp_path / "capture.kqrows"
+    teacher.mkdir()
+    capture.mkdir()
+    manifest = {
+        "kind": "qsrt_all_routed_rows",
+        "source": "coupled_qsrt_3p083",
+        "teacher_checkpoint": str(teacher.resolve()),
+        "complete": False,
+        "corpus_manifest_sha256": "bb" * 32,
+    }
+    (capture / "manifest.json").write_text(json.dumps(manifest))
+
+    assert _validate_live_capture(
+        capture,
+        teacher,
+        expected_source="coupled_qsrt_3p083",
+        expected_plan_sha256="bb" * 32,
+        timeout=0.1,
+    ) == manifest

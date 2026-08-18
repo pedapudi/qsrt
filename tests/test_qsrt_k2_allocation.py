@@ -4,13 +4,25 @@ import pytest
 import torch
 
 from scripts.explore_qsrt_k2_allocation import (
+    _balanced_p13_unit_rates,
+    _balanced_p13_record_rates,
+    _best_balanced_p13_units,
     _canonical_reconstruction,
     _encoder_coordinates,
     _four_channel_group_errors,
     _global_shape_clustered_group_order,
     _k2_menu_selector_stats,
+    _maximum_weight_pairing,
     _permutation_tile_geometry,
     _p24_band_aligned_permutation,
+    _p13_channel_group_deltas_from_tile_errors,
+    _p13_channel_group_map_from_rates,
+    _p13_record_map,
+    _p13_record_map_from_rates,
+    _p13_marginal_diagnostics,
+    _p13_fractional_tile_map,
+    _p13_record_deltas_from_tile_errors,
+    _p13_tile_pair_diagnostics,
     _prepare_coupled_search_basis,
     _priority_shape_clustered_group_order,
     _quantize_maps,
@@ -22,6 +34,7 @@ from scripts.explore_qsrt_k2_allocation import (
     _tile_balanced_group_order,
     _top2_band_aligned_permutation,
     _weighted_functional_sse,
+    _w2_record_traversal_variant,
 )
 
 
@@ -40,6 +53,309 @@ def _as_rate_strips(rate_map: tuple[int, ...], rate_axis: str) -> torch.Tensor:
     if rate_axis == "n":
         return rates.reshape(224, 24, 8).permute(0, 2, 1).reshape(-1, 24)
     return rates.reshape(24, 8, 224).permute(2, 1, 0).reshape(-1, 24)
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+@pytest.mark.parametrize("donor_records", (0, 1, 6, 12))
+def test_p13_record_map_preserves_exact_two_bit_strip_budget(
+    rate_axis: str, donor_records: int
+) -> None:
+    shape = (3584, 3072) if rate_axis == "n" else (3072, 3584)
+    rate_map = _p13_record_map(
+        shape, donor_records, rate_axis=rate_axis
+    )
+    strips = _as_rate_strips(rate_map, rate_axis)
+
+    assert torch.equal(strips.sum(dim=1), torch.full((1792,), 48))
+    assert torch.all((strips == 1).sum(dim=1) == donor_records)
+    assert torch.all((strips == 3).sum(dim=1) == donor_records)
+    assert torch.all((strips == 2).sum(dim=1) == 24 - 2 * donor_records)
+
+
+def test_balanced_p13_record_rates_select_disjoint_best_exchanges() -> None:
+    donor = torch.arange(24, dtype=torch.float64)
+    recipient = -torch.arange(24, dtype=torch.float64)
+    rates_by_count, evidence = _balanced_p13_record_rates(donor, recipient)
+
+    assert rates_by_count["n0"] == (2,) * 24
+    for count in (1, 6, 12):
+        rates = rates_by_count[f"n{count}"]
+        assert rates.count(1) == count
+        assert rates.count(3) == count
+        assert set(index for index, rate in enumerate(rates) if rate == 1) == set(
+            range(count)
+        )
+        assert set(index for index, rate in enumerate(rates) if rate == 3) == set(
+            range(24 - count, 24)
+        )
+    assert evidence["allocator"] == "exact_disjoint_record_dynamic_program"
+
+
+def test_unconstrained_p13_allocator_uses_marginal_slopes() -> None:
+    donor = torch.tensor((7.0, 1.0, 5.0, 8.0), dtype=torch.float64)
+    recipient = torch.tensor((-2.0, -3.0, -9.0, -4.0), dtype=torch.float64)
+    result = _best_balanced_p13_units(donor, recipient)
+
+    assert result["k1_count"] == result["k3_count"] == 1
+    assert result["k1_units"] == [1]
+    assert result["k3_units"] == [2]
+    assert result["delta"] == pytest.approx(-8.0)
+
+
+def test_balanced_p13_unit_rates_retains_fixed_count_shortlist() -> None:
+    donor = torch.tensor((7.0, 1.0, 5.0, 8.0), dtype=torch.float64)
+    recipient = torch.tensor((-2.0, -3.0, -9.0, -4.0), dtype=torch.float64)
+    result = _balanced_p13_unit_rates(donor, recipient, max_count=2)
+
+    assert set(result) == {0, 1, 2}
+    assert result[1]["k1_units"] == [1]
+    assert result[1]["k3_units"] == [2]
+    assert result[1]["delta"] == pytest.approx(-8.0)
+    assert result[2]["k1_count"] == result[2]["k3_count"] == 2
+
+
+def test_p13_marginals_report_crossover_and_exact_gain() -> None:
+    donor = torch.full((24,), 4.0, dtype=torch.float64)
+    recipient = torch.full((24,), 1.0, dtype=torch.float64)
+    donor[3] = 0.25
+    recipient[17] = -3.0
+
+    result = _p13_marginal_diagnostics(donor, recipient)
+
+    assert result["maximum_pair_margin"] == pytest.approx(2.75)
+    assert result["unconstrained_profitable_pairs"] == 1
+    assert result["best_balanced_allocation"] == "n1"
+    assert result["best_balanced_gain"] == pytest.approx(2.75)
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+def test_p13_record_map_from_rates_preserves_record_identity(
+    rate_axis: str,
+) -> None:
+    shape = (3584, 3072) if rate_axis == "n" else (3072, 3584)
+    rates = (1, 3, 1, 3, *(2 for _ in range(20)))
+    rate_map = _p13_record_map_from_rates(shape, rates, rate_axis=rate_axis)
+    strips = _as_rate_strips(rate_map, rate_axis)
+
+    assert torch.all(strips == torch.tensor(rates, dtype=torch.int8))
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+@pytest.mark.parametrize("channels", (16, 64, 128))
+def test_p13_channel_group_map_preserves_group_identity_and_budget(
+    rate_axis: str,
+    channels: int,
+) -> None:
+    shape = (3584, 3072) if rate_axis == "n" else (3072, 3584)
+    groups = 3072 // channels
+    rates = (1, 3, *(2 for _ in range(groups - 2)))
+    rate_map = _p13_channel_group_map_from_rates(
+        shape,
+        rates,
+        rate_axis=rate_axis,
+        channels_per_group=channels,
+    )
+    values = torch.tensor(rate_map, dtype=torch.int8).reshape(
+        (224, 192) if rate_axis == "n" else (192, 224)
+    )
+    axis_values = values[0] if rate_axis == "n" else values[:, 0]
+
+    expected = torch.tensor(rates, dtype=torch.int8).repeat_interleave(
+        channels // 16
+    )
+    assert torch.equal(axis_values, expected)
+    assert int(values.sum()) == 2 * values.numel()
+
+
+@pytest.mark.parametrize(
+    ("policy", "first_visited_record"),
+    (("donor_first", 3), ("recipient_first", 20)),
+)
+def test_w2_record_traversal_preserves_rates_and_h128_groups(
+    policy: str,
+    first_visited_record: int,
+) -> None:
+    weight = torch.arange(3072, dtype=torch.float32)[:, None].repeat(1, 3584)
+    hessian = torch.diag(torch.arange(1, 3073, dtype=torch.float32))
+    permutation = torch.arange(3072)
+    record_rates = [2] * 24
+    record_rates[3] = 1
+    record_rates[20] = 3
+    rate_map = _p13_record_map_from_rates(
+        (3072, 3584), record_rates, rate_axis="k"
+    )
+
+    reordered, reordered_map, evidence = _w2_record_traversal_variant(
+        (weight, hessian, permutation),
+        rate_map,
+        policy=policy,
+    )
+
+    reordered_weight, reordered_hessian, reordered_permutation = reordered
+    assert evidence["blockldlq_visit_order"][0] == first_visited_record
+    for encoder_record, source_record in enumerate(evidence["encoder_record_order"]):
+        source_rows = slice(source_record * 128, (source_record + 1) * 128)
+        encoder_rows = slice(encoder_record * 128, (encoder_record + 1) * 128)
+        assert torch.equal(
+            reordered_permutation[encoder_rows], permutation[source_rows]
+        )
+        assert torch.equal(reordered_weight[encoder_rows], weight[source_rows])
+        assert torch.equal(
+            torch.diag(reordered_hessian)[encoder_rows],
+            torch.diag(hessian)[source_rows],
+        )
+        tile_rows = torch.tensor(reordered_map, dtype=torch.int8).reshape(192, 224)
+        assert torch.all(
+            tile_rows[encoder_record * 8 : (encoder_record + 1) * 8]
+            == record_rates[source_record]
+        )
+
+
+def test_maximum_weight_pairing_is_exact() -> None:
+    assert _maximum_weight_pairing(
+        torch.tensor([[1.0, 4.0], [3.0, 2.0]])
+    ) == (1, 0)
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+def test_p13_fractional_tile_map_selects_only_profitable_pairs(
+    rate_axis: str,
+) -> None:
+    shape = (224, 192) if rate_axis == "n" else (192, 224)
+    errors = {
+        1: torch.full(shape, 12.0),
+        2: torch.full(shape, 10.0),
+        3: torch.full(shape, 9.0),
+    }
+    # One donor and one recipient record.  Half of the matching recipient
+    # tiles repay the donor cost; the other half remain P22.
+    if rate_axis == "n":
+        errors[3][:112, 8:16] = 5.0
+    else:
+        errors[3][8:16, :112] = 5.0
+    record_rates = (1, 3, *(2 for _ in range(22)))
+    rate_map, evidence = _p13_fractional_tile_map(
+        errors, record_rates, rate_axis=rate_axis
+    )
+    values = torch.tensor(rate_map, dtype=torch.int8).reshape(shape)
+
+    assert int(values.sum()) == 2 * values.numel()
+    assert int((values == 1).sum()) == int((values == 3).sum()) == 8 * 112
+    assert evidence["pair_tiles"] == 8 * 224
+    assert evidence["selected_pair_tiles"] == 8 * 112
+    assert evidence["selected_fraction"] == 0.5
+
+
+def test_p13_fractional_tile_map_supports_fixed_mirror_record_pairs() -> None:
+    shape = (192, 224)
+    errors = {
+        1: torch.full(shape, 12.0),
+        2: torch.full(shape, 10.0),
+        3: torch.full(shape, 9.0),
+    }
+    errors[3][184:192, :] = 5.0
+    rates = (*((1,) * 12), *((3,) * 12))
+
+    rate_map, evidence = _p13_fractional_tile_map(
+        errors,
+        rates,
+        rate_axis="k",
+        pairing_policy="mirror",
+    )
+    values = torch.tensor(rate_map, dtype=torch.int8).reshape(shape)
+
+    assert evidence["pairing_policy"] == "mirror"
+    assert evidence["record_pairs"][0]["donor"] == 0
+    assert evidence["record_pairs"][0]["recipient"] == 23
+    assert torch.all(values[0:8] == 1)
+    assert torch.all(values[184:192] == 3)
+    assert int(values.sum()) == 2 * values.numel()
+
+
+def test_p13_fractional_tile_map_can_shortlist_best_positive_prefix() -> None:
+    shape = (192, 224)
+    errors = {
+        1: torch.full(shape, 12.0),
+        2: torch.full(shape, 10.0),
+        3: torch.full(shape, 9.0),
+    }
+    errors[3][184:192, :112] = 5.0
+    rates = (*((1,) * 12), *((3,) * 12))
+
+    rate_map, evidence = _p13_fractional_tile_map(
+        errors,
+        rates,
+        rate_axis="k",
+        pairing_policy="mirror",
+        positive_fraction=0.25,
+    )
+    values = torch.tensor(rate_map, dtype=torch.int8).reshape(shape)
+
+    assert evidence["positive_pair_tiles"] == 8 * 112
+    assert evidence["selected_pair_tiles"] == 2 * 112
+    assert int((values == 1).sum()) == int((values == 3).sum()) == 2 * 112
+    assert int(values.sum()) == 2 * values.numel()
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+def test_p13_record_deltas_sum_dense_h_tile_costs(rate_axis: str) -> None:
+    shape = (224, 192) if rate_axis == "n" else (192, 224)
+    errors = {
+        1: torch.full(shape, 3.0),
+        2: torch.full(shape, 2.0),
+        3: torch.full(shape, 1.75),
+    }
+    donor, recipient = _p13_record_deltas_from_tile_errors(
+        errors, rate_axis=rate_axis
+    )
+
+    assert donor.shape == recipient.shape == (24,)
+    assert torch.all(donor == 8 * 224)
+    assert torch.all(recipient == -0.25 * 8 * 224)
+
+
+@pytest.mark.parametrize("rate_axis", ("n", "k"))
+@pytest.mark.parametrize("channels", (16, 64, 128))
+def test_p13_channel_group_deltas_preserve_additive_loss(
+    rate_axis: str,
+    channels: int,
+) -> None:
+    shape = (224, 192) if rate_axis == "n" else (192, 224)
+    errors = {
+        1: torch.full(shape, 3.0),
+        2: torch.full(shape, 2.0),
+        3: torch.full(shape, 1.75),
+    }
+    donor, recipient = _p13_channel_group_deltas_from_tile_errors(
+        errors,
+        rate_axis=rate_axis,
+        channels_per_group=channels,
+    )
+
+    groups = 3072 // channels
+    orthogonal_tiles = 224
+    group_tiles = channels // 16
+    assert donor.shape == recipient.shape == (groups,)
+    assert torch.all(donor == group_tiles * orthogonal_tiles)
+    assert torch.all(recipient == -0.25 * group_tiles * orthogonal_tiles)
+
+
+def test_p13_tile_diagnostics_exclude_same_tile_pairing() -> None:
+    errors = {
+        1: torch.tensor([[2.0, 3.0], [5.0, 7.0]]),
+        2: torch.ones((2, 2)),
+        3: torch.tensor([[0.0, -1.0], [0.5, 0.75]]),
+    }
+    result = _p13_tile_pair_diagnostics(errors)
+
+    assert result["maximum_pair_margin"] == pytest.approx(1.0)
+    assert result["unconstrained_profitable_pairs"] == 1
+    assert result["best_pair"] == {
+        "k1_tile": 0,
+        "k3_tile": 1,
+        "donor_cost": 1.0,
+        "recipient_gain": 2.0,
+    }
 
 
 def _functional_band_surfaces() -> dict[str, dict[int, torch.Tensor]]:

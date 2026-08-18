@@ -147,7 +147,7 @@ def build_server_environment(
             "K3_HOST": host,
             "K3_PORT": str(port),
             "K3_TP_SIZE": str(tp_size),
-            "K3_DSPARK": "0",
+            "K3_ENABLE_DSPARK": "0",
             # KLD is text-only.  Do not instantiate or load the multimodal
             # tower merely because the checkpoint retains a multimodal config.
             "K3_LANGUAGE_MODEL_ONLY": "1",
@@ -163,8 +163,10 @@ def build_server_environment(
             # granularity in the current vLLM stack.
             "K3_MAX_NUM_BATCHED_TOKENS": "2048",
             "K3_MAX_NUM_SEQS": "1",
-            # Leave enough transient headroom for the 2,048-token KLD prefill.
-            "K3_KV_CACHE_MEMORY_BYTES": str(1 << 30),
+            # Preserve the configured 262,144-token model limit. Kimi-K3
+            # requires approximately 3.45 GiB of FP8 KV cache before vLLM
+            # will admit even the shorter fixed KLD windows.
+            "K3_KV_CACHE_MEMORY_BYTES": str(4 << 30),
             # Emit one post-start repeat-check record from the actual MoE
             # execution path.  The kernel audit must be backed by runtime
             # evidence rather than merely by checkpoint-loader messages.
@@ -311,7 +313,7 @@ def main() -> int:
         "K3_HOST",
         "K3_PORT",
         "K3_TP_SIZE",
-        "K3_DSPARK",
+        "K3_ENABLE_DSPARK",
         "K3_LANGUAGE_MODEL_ONLY",
         "K3_ENFORCE_EAGER",
         "K3_ADDITIONAL_CONFIG",

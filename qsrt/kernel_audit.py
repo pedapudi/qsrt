@@ -26,14 +26,20 @@ _REQUIRED: Mapping[str, Mapping[str, tuple[str, ...]]] = {
         ),
     },
     HYBRID_EXL3: {
-        "hybrid_quantization": ("quantization=qsrt_hybrid",),
+        "hybrid_quantization": (
+            "quantization=kquant_hybrid",
+            "quantization=qsrt_hybrid",
+        ),
         "exl3_checkpoint_tensors": ("w13_exl3_trellis",),
         "w4a16_kernel_family": ("W4A16FusedMoeKernel",),
         "exl3_trellis_layout": ("trellis3_t256",),
         "repeat_check_w4a16": ("implementation=w4a16",),
     },
     QSRT: {
-        "hybrid_quantization": ("quantization=qsrt_hybrid",),
+        "hybrid_quantization": (
+            "quantization=kquant_hybrid",
+            "quantization=qsrt_hybrid",
+        ),
         "qsrt_atom_reader": ("Loaded QSRT layer",),
         "w4a16_runtime": (
             "B12X MoE repeat check:",
@@ -46,7 +52,10 @@ _REQUIRED: Mapping[str, Mapping[str, tuple[str, ...]]] = {
 
 _FORBIDDEN: Mapping[str, Mapping[str, tuple[str, ...]]] = {
     STOCK_W4A16: {
-        "hybrid_quantization": ("quantization=qsrt_hybrid",),
+        "hybrid_quantization": (
+            "quantization=kquant_hybrid",
+            "quantization=qsrt_hybrid",
+        ),
         "exl3_trellis_layout": ("trellis3_t256",),
         "hybrid_one_grid": (
             "executing hybrid one-grid",

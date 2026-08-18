@@ -114,6 +114,20 @@ wheels = [
 ]
 
 [[package]]
+name = "instanttensor"
+version = "0.1.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/69/a4dc4e0f0018a0e558b716e90bcb19cb6a8c7506f68e89a1493608cf5e62/instanttensor-0.1.9.tar.gz", hash = "sha256:d8692b97991c1a5fb2db7905b9a6ae90a7f967c7ddd853d35e41caa146750c02", size = 9618304, upload-time = "2026-05-27T21:33:46.45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/01/667438b2c7b9caad3be48fe1363032574bb4a85d8d90b7a6e3ddf9979f53/instanttensor-0.1.9-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0d957728161ec0d22a74bad3c0feb8fb9105736ab2585b48a0a0da8d330c6ff3", size = 5903991, upload-time = "2026-05-27T21:33:38.634Z" },
+    { url = "https://files.pythonhosted.org/packages/41/90/b50182538f64d59f4711dd902e60d84cdfb55a03e72a4619121a83260f28/instanttensor-0.1.9-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1f2b2447959d22b9682d45ae75d7a9260485ed5a6763006db9a3735ceced3efa", size = 5901576, upload-time = "2026-05-27T21:33:41.051Z" },
+    { url = "https://files.pythonhosted.org/packages/29/7c/b5cb0ae191bac6de43ea574b7d99a33ad9e680a44741b4f13b15e5e22e2f/instanttensor-0.1.9-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:41725abe03e4282ea3cba5f9f0ed63c9fe2b4776f7d6e9ccba8edee5570749f1", size = 5895517, upload-time = "2026-05-27T21:33:43.41Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -124,33 +138,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
 ]
-
-[[package]]
-name = "qsrt"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "numpy" },
-    { name = "safetensors" },
-    { name = "torch" },
-    { name = "tqdm" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "safetensors", specifier = ">=0.4.5" },
-    { name = "torch", specifier = ">=2.7" },
-    { name = "tqdm", specifier = ">=4.66" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "markupsafe"
@@ -478,6 +465,35 @@ sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa
 wheels = [
     { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
 ]
+
+[[package]]
+name = "qsrt"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "instanttensor" },
+    { name = "numpy" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "tqdm" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "instanttensor", specifier = ">=0.1.9" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "safetensors", specifier = ">=0.4.5" },
+    { name = "torch", specifier = ">=2.7" },
+    { name = "tqdm", specifier = ">=4.66" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "safetensors"

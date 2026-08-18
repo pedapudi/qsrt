@@ -1209,12 +1209,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--capture",
         type=Path,
-        default=Path("/data/kquant/k3-codec-diverse-train-v2.kqcapture"),
+        default=Path("/data/datasets/kquant/captures/k3-codec-diverse-train-v2.kqcapture"),
     )
     parser.add_argument(
         "--validation-capture",
         type=Path,
-        default=Path("/data/kquant/k3-codec-diverse-validation-v3-128k.kqcapture"),
+        default=Path("/data/datasets/kquant/captures/k3-codec-diverse-validation-v3-128k.kqcapture"),
     )
     parser.add_argument(
         "--sample-cache",
@@ -1229,7 +1229,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hessians",
         type=Path,
-        default=Path("/data/kquant/k3-codec-diverse-train-v2-fit3of4-all.kqhess"),
+        default=Path("/data/datasets/kquant/hessians/k3-codec-diverse-train-v2-fit3of4-all.kqhess"),
     )
     parser.add_argument(
         "--training-report",

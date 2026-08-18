@@ -43,7 +43,7 @@ from qsrt.sqg_quantizer import install_sqg_quantizer
 KIND = "qsrt_k3_coupled_uniform_codec_confirmation"
 SCHEMA_VERSION = 2
 DEFAULT_CACHE = Path(
-    "/data/kquant/captures/k3-codec-diverse-validation-v3-128k-input-v1.kqsamples"
+    "/data/datasets/kquant/captures/k3-codec-diverse-validation-v3-128k-input-v1.kqsamples"
 )
 
 

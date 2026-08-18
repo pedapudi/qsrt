@@ -31,13 +31,13 @@ from qsrt.capture import load_capture
 
 
 DEFAULT_CAPTURE = Path(
-    "/data/kquant/captures/k3-denseh-broad-v6-1m-train.kqcapture"
+    "/data/datasets/kquant/captures/k3-denseh-broad-v6-1m-train.kqcapture"
 )
 DEFAULT_CACHE = Path(
-    "/data/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples"
+    "/data/datasets/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples"
 )
 DEFAULT_HESSIANS = Path(
-    "/data/kquant/hessians/k3-denseh-broad-v6-1m-train-h13-identity-v1.kqhess"
+    "/data/datasets/kquant/hessians/k3-denseh-broad-v6-1m-train-h13-identity-v1.kqhess"
 )
 DEFAULT_REPORT = Path("out/k3-denseh-broad-v6-1m-train-corpus.json")
 

@@ -17,11 +17,12 @@ LEGACY_KIND = "qsrt_k2_coupled_rotation_plan"
 SCHEMA_VERSION = 1
 PRODUCTION_DRAW_CANDIDATES = (0, 6)
 PRODUCTION_SELECTION = "c128_fit_propose_confirmation_total_sse_accept"
+POOLED_ALL_ROW_SELECTION = "pooled_all_routed_rows_total_post_projection_sse"
 
 
 @dataclass(frozen=True)
 class CoupledDrawSelection:
-    """One expert's disjoint-fold coupled-rotation decision."""
+    """One expert's coupled-rotation decision and its support evidence."""
 
     evaluated_draws: tuple[int, ...]
     proposed_draw: int
@@ -214,6 +215,7 @@ __all__ = [
     "CoupledRotationPlan",
     "KIND",
     "PRODUCTION_DRAW_CANDIDATES",
+    "POOLED_ALL_ROW_SELECTION",
     "PRODUCTION_SELECTION",
     "SCHEMA_VERSION",
     "load_coupled_rotation_plan",

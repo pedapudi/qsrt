@@ -66,10 +66,10 @@ KIND = "qsrt_k3_coupled_expert_cpu_study"
 SCHEMA_VERSION = 1
 DEFAULT_POOL = Path("/models/Kimi-K3-QSRT-SQG-XOR-CHEB-T12-CANDIDATES-v1")
 DEFAULT_FIT_CACHE = Path(
-    "/data/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples"
+    "/data/datasets/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples"
 )
 DEFAULT_VALIDATION_CACHE = Path(
-    "/data/kquant/captures/k3-codec-diverse-validation-v3-128k-input-v1.kqsamples"
+    "/data/datasets/kquant/captures/k3-codec-diverse-validation-v3-128k-input-v1.kqsamples"
 )
 DEFAULT_DEST = Path("/data/kquant/research/k3-coupled-ptq-v1")
 DEFAULT_LAYERS = (1, 8, 24, 40, 64, 80, 92)

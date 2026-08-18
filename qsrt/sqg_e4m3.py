@@ -30,8 +30,8 @@ _Q = (1.0, 2.07630930, -8.08332684, 6.32135736, -1.31208298)
 
 
 def _validate(bits: int, mode: str) -> None:
-    if isinstance(bits, bool) or not isinstance(bits, int) or bits not in range(2, 7):
-        raise ValueError("SQG supports integer K2 through K6")
+    if isinstance(bits, bool) or not isinstance(bits, int) or bits not in range(1, 7):
+        raise ValueError("SQG supports integer K1 through K6")
     if mode != "normal":
         raise ValueError("the supported R44 mode is 'normal'")
 

@@ -27,8 +27,8 @@ QSRT_CODEBOOKS = (
 
 
 def _validate_bits(bits: int) -> None:
-    if isinstance(bits, bool) or not isinstance(bits, int) or bits not in range(2, 7):
-        raise ValueError("the uniform SQG reference supports K=2 through K=6")
+    if isinstance(bits, bool) or not isinstance(bits, int) or bits not in range(1, 7):
+        raise ValueError("the uniform SQG reference supports K=1 through K=6")
 
 
 def reconstruct_trellis_states(
@@ -147,9 +147,9 @@ def decode_qsrt_regularized_weight(
     tile_bits: tuple[int, ...],
     codebook: str,
 ) -> torch.Tensor:
-    """Decode a K2/K3/K4 tile map to transformed ``[K, N]`` weights.
+    """Decode a K1/K2/K3/K4 tile map to transformed ``[K, N]`` weights.
 
-    SQG uses a distinct state labelling for K2, K3, and K4, so the physical
+    SQG uses a distinct state labelling for each rate, so the physical
     tile rate is part of the numerical decode contract.
     """
 
@@ -166,10 +166,12 @@ def decode_qsrt_regularized_weight(
     if len(tile_bits) != expected_bits:
         raise ValueError("tile_bits length does not match the selected rate axis")
     if any(
-        isinstance(value, bool) or not isinstance(value, int) or value not in (2, 3, 4)
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value not in (1, 2, 3, 4)
         for value in tile_bits
     ):
-        raise ValueError("tile_bits must contain only integer K2, K3, or K4")
+        raise ValueError("tile_bits must contain only integer K1 through K4")
     if codebook not in QSRT_CODEBOOKS:
         raise ValueError(f"unsupported QSRT codebook: {codebook}")
 
@@ -239,6 +241,40 @@ def _blockwise_hadamard_right(weight: torch.Tensor) -> torch.Tensor:
     hadamard = normalized_hadamard(device=weight.device, dtype=weight.dtype)
     blocks = weight.reshape(weight.shape[0], -1, HADAMARD_BLOCK)
     return torch.matmul(blocks, hadamard).reshape_as(weight).contiguous()
+
+
+def qsrt_regularized_target(
+    encoder_weight: torch.Tensor,
+    suh: torch.Tensor,
+    svh: torch.Tensor,
+) -> torch.Tensor:
+    """Map an encoder-coordinate weight into the trellis objective basis.
+
+    ``encoder_weight`` uses the quantizer's ``[input, output]`` orientation.
+    The returned matrix is directly comparable with
+    :func:`decode_qsrt_regularized_weight`; this makes per-tile mixed-rate
+    proposal costs use the same scales and Hadamard convention as BlockLDLQ.
+    """
+
+    if encoder_weight.ndim != 2:
+        raise ValueError("encoder weight must be two-dimensional")
+    if (
+        suh.ndim != 1
+        or svh.ndim != 1
+        or suh.numel() != encoder_weight.shape[0]
+        or svh.numel() != encoder_weight.shape[1]
+    ):
+        raise ValueError("QSRT scale vectors do not match the encoder weight")
+    if not all(torch.is_floating_point(value) for value in (encoder_weight, suh, svh)):
+        raise TypeError("QSRT target and scales must be floating point")
+    if not all(bool(torch.all(torch.isfinite(value))) for value in (encoder_weight, suh, svh)):
+        raise ValueError("QSRT target and scales must be finite")
+    if bool(torch.any(suh == 0)) or bool(torch.any(svh == 0)):
+        raise ValueError("QSRT scales must be nonzero")
+    target = encoder_weight.float() / svh.float().unsqueeze(0)
+    target = _blockwise_hadamard_right(target)
+    target = target / suh.float().unsqueeze(1)
+    return _blockwise_hadamard_left(target).contiguous()
 
 
 def decode_exl3_weight(

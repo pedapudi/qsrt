@@ -67,6 +67,7 @@ def test_new_candidate_manifest_freezes_explicit_logical_schema(tmp_path) -> Non
     assert actual["h2_contract"]["down_candidate_grid"] == "w2_r13_r2"
     assert actual["h2_contract"]["prior"] == "expert_local_trace_scaled_identity"
     assert actual["h2_contract"]["unsupported_expert_fallback"] == "identity"
+    assert actual["down_target_contract"] == {"policy": "source_down_projection"}
     assert actual["rotation_draws"] == {
         "source": "fixed_cli_draws",
         "fixed": {
@@ -76,6 +77,25 @@ def test_new_candidate_manifest_freezes_explicit_logical_schema(tmp_path) -> Non
         },
     }
     assert json.loads(path.read_text()) == actual
+
+
+def test_candidate_manifest_records_functional_w2_refit(tmp_path) -> None:
+    args = _args(tmp_path)
+    args.mode_ids = (4,)
+    args.down_target_policy = "functional_ridge"
+    args.w2_refit_regularization_ratio = 1e-2
+
+    contract = _manifest(args)["down_target_contract"]
+
+    assert contract == {
+        "policy": "candidate_hidden_regularized_functional_refit",
+        "indexed_by": "expert_upstream_profile",
+        "objective": "applied_gate_squared_routed_expert_output_sse",
+        "prior": "source_down_projection",
+        "regularization_ratio": 1e-2,
+        "candidate_construction_population": "all_available_routed_rows",
+        "serialized_format_change": False,
+    }
 
 
 def test_candidate_manifest_embeds_rotation_plan_contents(tmp_path) -> None:

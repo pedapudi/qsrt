@@ -8,6 +8,7 @@ from qsrt.exl3_reference import (
     CODEBOOK_SQG_CHEB_NORMAL_E4M3,
     CODEBOOK_SQG_NORMAL_E4M3,
 )
+from qsrt.rng import seeded_normal
 from qsrt.qsrt import (
     CONTEXT_GROUP_CHANNELS,
     H308,
@@ -20,11 +21,29 @@ from qsrt.qsrt import (
 from qsrt.sqg_e4m3 import sqg_codebook_bytes
 from qsrt.pack.qsrt_encoder import (
     QSRTTransformSeeds,
+    _arbitrary_tile_quant_args,
     _qsrt_quant_args,
     default_qsrt_transform_seeds,
     plan_qsrt_matrix,
     qsrt_transform_seed_draw,
 )
+
+
+def test_seeded_normal_matches_manual_seed_without_changing_global_rng() -> None:
+    seed = 1_499_981
+    saved_state = torch.random.get_rng_state()
+    try:
+        torch.manual_seed(seed)
+        expected = torch.randn(3072)
+    finally:
+        torch.random.set_rng_state(saved_state)
+
+    before = torch.random.get_rng_state()
+    actual = seeded_normal(3072, device=torch.device("cpu"), seed=seed)
+    after = torch.random.get_rng_state()
+
+    assert torch.equal(actual, expected)
+    assert torch.equal(after, before)
 
 
 def _scrambled_record_contexts() -> torch.Tensor:
@@ -208,6 +227,29 @@ def test_qsrt_quant_args_selects_sqg() -> None:
             shared_scale_scope=None,
             codebook="unknown",
         )
+
+
+def test_research_tile_map_adds_k1_without_changing_production_rates() -> None:
+    args = _arbitrary_tile_quant_args(
+        (1, 3),
+        matrix="w2",
+        layer=1,
+        device=torch.device("cpu"),
+        shared_scale_scope=None,
+        codebook=CODEBOOK_SQG_XOR_CHEB_T12,
+        ldlq_tf32=False,
+        tailbite_context=128,
+        transform_seeds=default_qsrt_transform_seeds(1, "w2"),
+        g_scale_override=None,
+    )
+
+    assert args["mixed_rate_axis"] == "tile"
+    assert args["mixed_tile_bits"] == (1, 3)
+    assert set(args["sqg_e4m3_luts_by_bits"]) == {1, 2, 3, 4}
+    assert torch.equal(
+        args["sqg_e4m3_luts_by_bits"][1],
+        sqg_codebook_bytes(1, CODEBOOK_SQG_XOR_CHEB_T12),
+    )
 
 
 def test_qsrt_transform_draw_zero_preserves_production_seeds() -> None:

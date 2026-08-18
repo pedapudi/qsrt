@@ -26,7 +26,6 @@ from qsrt.exl3_reference import CODEBOOK_SQG_XOR_CHEB_T12
 from qsrt.qsrt_candidates import RoutedRows, functional_sse_by_request
 from qsrt.qsrt import (
     SCHEMA,
-    MATRIX_TRELLIS_BYTES,
     PackedQSRTTrellis,
     QSRTTrellisDescriptor,
     decode_qsrt_exl3_weight,
@@ -291,7 +290,7 @@ def decode_candidate_matrix(
     payload = reader.get_tensor(names["trellis"])
     suh = reader.get_tensor(names["suh"])
     svh = reader.get_tensor(names["svh"])
-    if payload.numel() * payload.element_size() != MATRIX_TRELLIS_BYTES:
+    if payload.numel() * payload.element_size() != descriptor.payload_bytes:
         raise ValueError(f"{matrix} candidate trellis has the wrong byte count")
     packed = PackedQSRTTrellis(
         descriptor,

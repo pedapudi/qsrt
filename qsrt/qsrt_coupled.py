@@ -196,6 +196,154 @@ def encode_coupled_weights(
     )
 
 
+def encode_coupled_upstream_weights(
+    w1: Tensor,
+    w3: Tensor,
+    spec: CoupledHadamardSpec,
+) -> tuple[Tensor, Tensor]:
+    """Reparameterize gate and up weights without materializing W2."""
+
+    if w1.ndim != 2 or w3.ndim != 2 or w1.shape != w3.shape:
+        raise ValueError("coupled upstream weights must be matching matrices")
+    if not torch.is_floating_point(w1) or not torch.is_floating_point(w3):
+        raise TypeError("coupled upstream weights must be floating point")
+    if w1.device != w3.device:
+        raise ValueError("coupled upstream weights must share one device")
+    intermediate, hidden = map(int, w1.shape)
+    if hidden % spec.residual_block_size:
+        raise ValueError("hidden size does not close residual Hadamard blocks")
+    if 2 * intermediate % spec.preactivation_block_size:
+        raise ValueError("interleaved size does not close preactivation blocks")
+    input_signs = rotation_signs(
+        hidden,
+        draw=spec.residual_draw,
+        axis=0,
+        device=w1.device,
+    )
+    pre_signs = rotation_signs(
+        2 * intermediate,
+        draw=spec.intermediate_draw,
+        axis=1,
+        device=w1.device,
+    )
+    interleaved = torch.stack((w1, w3), dim=1).reshape(
+        2 * intermediate,
+        hidden,
+    )
+    transformed = signed_block_hadamard(
+        signed_block_hadamard(
+            interleaved,
+            block_size=spec.residual_block_size,
+            signs=input_signs,
+            dim=1,
+        ),
+        block_size=spec.preactivation_block_size,
+        signs=pre_signs,
+        dim=0,
+    )
+    return (
+        transformed[:intermediate].contiguous(),
+        transformed[intermediate:].contiguous(),
+    )
+
+
+def encode_coupled_down_weight(
+    w2: Tensor,
+    spec: CoupledHadamardSpec,
+) -> Tensor:
+    """Reparameterize a down-projection without materializing W1 or W3."""
+
+    if w2.ndim != 2 or not torch.is_floating_point(w2):
+        raise TypeError("coupled down weight must be a floating-point matrix")
+    hidden, intermediate = map(int, w2.shape)
+    if hidden % spec.residual_block_size:
+        raise ValueError("hidden size does not close residual Hadamard blocks")
+    if intermediate % spec.postactivation_block_size:
+        raise ValueError("intermediate size does not close postactivation blocks")
+    post_signs = rotation_signs(
+        intermediate,
+        draw=spec.intermediate_draw,
+        axis=2,
+        device=w2.device,
+    )
+    output_signs = rotation_signs(
+        hidden,
+        draw=spec.residual_draw,
+        axis=3,
+        device=w2.device,
+    )
+    return signed_block_hadamard(
+        signed_block_hadamard(
+            w2,
+            block_size=spec.postactivation_block_size,
+            signs=post_signs,
+            dim=1,
+        ),
+        block_size=spec.residual_block_size,
+        signs=output_signs,
+        dim=0,
+    ).contiguous()
+
+
+def decode_coupled_weights(
+    weights: WeightTriplet, spec: CoupledHadamardSpec
+) -> WeightTriplet:
+    """Restore coupled-coordinate weights to the ordinary expert basis."""
+
+    w1, w3, w2 = weights
+    intermediate, hidden = _validate_triplet(weights)
+    if hidden % spec.residual_block_size:
+        raise ValueError("hidden size does not close residual Hadamard blocks")
+    if 2 * intermediate % spec.preactivation_block_size:
+        raise ValueError("interleaved size does not close preactivation blocks")
+    if intermediate % spec.postactivation_block_size:
+        raise ValueError("intermediate size does not close postactivation blocks")
+    device = w1.device
+    input_signs = rotation_signs(hidden, draw=spec.residual_draw, axis=0, device=device)
+    pre_signs = rotation_signs(
+        2 * intermediate, draw=spec.intermediate_draw, axis=1, device=device
+    )
+    post_signs = rotation_signs(
+        intermediate, draw=spec.intermediate_draw, axis=2, device=device
+    )
+    output_signs = rotation_signs(
+        hidden, draw=spec.residual_draw, axis=3, device=device
+    )
+    upstream = torch.cat((w1, w3), dim=0)
+    interleaved = signed_block_hadamard(
+        signed_block_hadamard(
+            upstream,
+            block_size=spec.preactivation_block_size,
+            signs=pre_signs,
+            dim=0,
+            inverse=True,
+        ),
+        block_size=spec.residual_block_size,
+        signs=input_signs,
+        dim=1,
+        inverse=True,
+    )
+    down = signed_block_hadamard(
+        signed_block_hadamard(
+            w2,
+            block_size=spec.residual_block_size,
+            signs=output_signs,
+            dim=0,
+            inverse=True,
+        ),
+        block_size=spec.postactivation_block_size,
+        signs=post_signs,
+        dim=1,
+        inverse=True,
+    )
+    paired = interleaved.reshape(intermediate, 2, hidden)
+    return (
+        paired[:, 0, :].contiguous(),
+        paired[:, 1, :].contiguous(),
+        down.contiguous(),
+    )
+
+
 @dataclass(frozen=True)
 class CoupledHadamardExecution:
     """Calibration and scoring operations for one transformed expert basis."""
@@ -216,6 +364,97 @@ class CoupledHadamardExecution:
             rows,
             block_size=self.spec.residual_block_size,
             signs=self._signs(0, device=rows.device),
+            dim=1,
+        )
+
+    def transform_preactivation_gradients(self, gradients: Tensor) -> Tensor:
+        """Move concatenated gate/up cotangents into stored W1/W3 coordinates."""
+
+        if gradients.ndim != 2 or gradients.shape[1] != 2 * self.intermediate:
+            raise ValueError("gate/up gradients do not match the intermediate dimension")
+        interleaved = torch.stack(
+            (
+                gradients[:, : self.intermediate],
+                gradients[:, self.intermediate :],
+            ),
+            dim=2,
+        ).reshape(gradients.shape[0], 2 * self.intermediate)
+        return signed_block_hadamard(
+            interleaved,
+            block_size=self.spec.preactivation_block_size,
+            signs=self._signs(1, device=gradients.device),
+            dim=1,
+        )
+
+    def transform_upstream_weight_gradients(
+        self,
+        w1_gradient: Tensor,
+        w3_gradient: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Apply the decoder adjoint to source-basis W1/W3 gradients."""
+
+        expected = (self.intermediate, self.hidden)
+        if tuple(w1_gradient.shape) != expected or tuple(w3_gradient.shape) != expected:
+            raise ValueError("upstream weight gradients have incompatible geometry")
+        if w1_gradient.device != w3_gradient.device:
+            raise ValueError("upstream weight gradients must share one device")
+        interleaved = torch.stack((w1_gradient, w3_gradient), dim=1).reshape(
+            2 * self.intermediate, self.hidden
+        )
+        transformed = signed_block_hadamard(
+            signed_block_hadamard(
+                interleaved,
+                block_size=self.spec.residual_block_size,
+                signs=self._signs(0, device=interleaved.device),
+                dim=1,
+            ),
+            block_size=self.spec.preactivation_block_size,
+            signs=self._signs(1, device=interleaved.device),
+            dim=0,
+        )
+        return (
+            transformed[: self.intermediate].contiguous(),
+            transformed[self.intermediate :].contiguous(),
+        )
+
+    def transform_down_weight_gradient(self, gradient: Tensor) -> Tensor:
+        """Apply the decoder adjoint to a source-basis W2 gradient."""
+
+        if tuple(gradient.shape) != (self.hidden, self.intermediate):
+            raise ValueError("down weight gradient has incompatible geometry")
+        return signed_block_hadamard(
+            signed_block_hadamard(
+                gradient,
+                block_size=self.spec.postactivation_block_size,
+                signs=self._signs(2, device=gradient.device),
+                dim=1,
+            ),
+            block_size=self.spec.residual_block_size,
+            signs=self._signs(3, device=gradient.device),
+            dim=0,
+        )
+
+    def transform_postactivation_rows(self, rows: Tensor) -> Tensor:
+        """Move source post-SiTU rows into stored W2 input coordinates."""
+
+        if rows.ndim != 2 or rows.shape[1] != self.intermediate:
+            raise ValueError("postactivation rows do not match the intermediate dimension")
+        return signed_block_hadamard(
+            rows,
+            block_size=self.spec.postactivation_block_size,
+            signs=self._signs(2, device=rows.device),
+            dim=1,
+        )
+
+    def transform_expert_output_gradients(self, gradients: Tensor) -> Tensor:
+        """Move source expert-output cotangents into stored W2 coordinates."""
+
+        if gradients.ndim != 2 or gradients.shape[1] != self.hidden:
+            raise ValueError("expert-output gradients do not match the hidden dimension")
+        return signed_block_hadamard(
+            gradients,
+            block_size=self.spec.residual_block_size,
+            signs=self._signs(3, device=gradients.device),
             dim=1,
         )
 
@@ -247,6 +486,24 @@ class CoupledHadamardExecution:
                 dim=0,
             ),
             block_size=self.spec.postactivation_block_size,
+            signs=signs,
+            dim=1,
+        )
+
+    def transform_output_hessian(self, hessian: Tensor) -> Tensor:
+        """Move an ordinary residual-space metric into W2 output coordinates."""
+
+        if tuple(hessian.shape) != (self.hidden, self.hidden):
+            raise ValueError("output Hessian does not match the hidden dimension")
+        signs = self._signs(3, device=hessian.device)
+        return signed_block_hadamard(
+            signed_block_hadamard(
+                hessian,
+                block_size=self.spec.residual_block_size,
+                signs=signs,
+                dim=0,
+            ),
+            block_size=self.spec.residual_block_size,
             signs=signs,
             dim=1,
         )
@@ -298,7 +555,9 @@ __all__ = [
     "CoupledHadamardSpec",
     "WeightTriplet",
     "block_hadamard",
+    "decode_coupled_weights",
     "coupled_execution",
+    "encode_coupled_upstream_weights",
     "encode_coupled_weights",
     "rotation_signs",
     "signed_block_hadamard",

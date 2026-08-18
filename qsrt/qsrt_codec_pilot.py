@@ -299,6 +299,7 @@ def encode_uniform_candidate(
     g_scale_override: float | None = None,
     ldlq_feedback_multiplier: float = 1.0,
     codebook_values: torch.Tensor | None = None,
+    hessian: torch.Tensor | None = None,
     input_hessian: torch.Tensor | None = None,
     output_hessian: torch.Tensor | None = None,
     use_two_sided_traversal_without_output_feedback: bool = False,
@@ -381,23 +382,28 @@ def encode_uniform_candidate(
     if device.type != "cuda":
         raise ValueError("uniform codec encoding requires a CUDA device")
     encoder_weight = source.T.float().contiguous().to(device)
-    if input_hessian is None:
+    if hessian is not None and input_hessian is not None:
+        raise ValueError("supply either hessian or input_hessian, not both")
+    selected_input_hessian = (
+        input_hessian if input_hessian is not None else hessian
+    )
+    if selected_input_hessian is None:
         shared_h = make_shared_h(encoder_weight.shape[0], device)
         input_hessian_role = "identity_control"
         input_hessian_sha256 = None
     else:
         if (
-            input_hessian.ndim != 2
-            or tuple(input_hessian.shape)
+            selected_input_hessian.ndim != 2
+            or tuple(selected_input_hessian.shape)
             != (encoder_weight.shape[0], encoder_weight.shape[0])
-            or not torch.is_floating_point(input_hessian)
-            or not bool(torch.isfinite(input_hessian).all())
+            or not torch.is_floating_point(selected_input_hessian)
+            or not bool(torch.isfinite(selected_input_hessian).all())
         ):
             raise ValueError(
-                "input_hessian must be a finite floating-point square matrix "
+                "the input Hessian must be a finite floating-point square matrix "
                 "matching the encoder input dimension"
             )
-        canonical_hessian = input_hessian.float()
+        canonical_hessian = selected_input_hessian.float()
         if not torch.allclose(
             canonical_hessian,
             canonical_hessian.T,

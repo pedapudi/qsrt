@@ -1,567 +1,811 @@
-# QSRT improvement strategy and evidence contract
+# GLM-5.2 QSRT improvement testing strategy
 
-## Objective
+**Status:** Active execution specification, 2026-08-18.
+
+## Decision that the testing program must support
 
 The Quantile-Stratified Rate-shifted Trellis codec (QSRT) compresses model
 weights by storing paths through a labelled reconstruction graph. EXL3 is the
-comparison checkpoint produced by ExLlamaV3's trellis quantizer. The research
-target is a complete QSRT checkpoint that occupies fewer bytes than the
-immutable EXL3 checkpoint and has lower teacher-to-candidate forward
-Kullback–Leibler divergence (KLD) on the same document-disjoint model inputs.
-The QSRT and EXL3 evaluations must use identical non-expert weights.
-Tables, scales, metadata, alignment, and padding count toward checkpoint size.
+comparison format produced by ExLlamaV3's trellis quantizer. The program seeks
+a complete QSRT checkpoint that satisfies two conditions:
 
-No coefficient-error experiment, isolated expert calculation, or encoder timing
-result establishes that target. Those measurements can reject weak ideas before
-an expensive model build. Only paired full-model evaluation can establish the
-quality comparison.
+1. Its serialized checkpoint occupies fewer bytes than the immutable EXL3
+   checkpoint.
+2. Its output probabilities have lower forward Kullback-Leibler divergence
+   from the same high-precision teacher on document-disjoint inputs.
 
-## Available measurement and remaining evidence gap
+Forward Kullback-Leibler divergence (forward KLD) measures how much probability
+the candidate removes from tokens that the teacher considers likely. Lower
+forward KLD means that the candidate preserves the teacher's probability
+distribution more closely.
 
-The repository contains a repeatable one-context GLM-5.2 KLD measurement for
-an eager, dense-attention, per-expert EXL3 runtime. The unchanged-model repeat
-and a direct-return identity intervention reproduced all 2,047 position-level
-KLD values bit for bit. They also reproduced every routed expert identifier at
-all `2,048 × 78 × 8` route positions. Engine-side KLD streams four reference
-rows at a time and avoids the full-vocabulary sort that exceeded GPU memory.
+The comparison must keep all non-expert weights identical. Checkpoint size
+includes reconstruction tables, scales, format directories, headers, alignment,
+padding, and every other stored byte. A panel can compare the bytes of the
+expert tensors that it replaces, but only a complete serialized artifact can
+establish the model-size claim.
 
-The published BF16 reference contains one 2,048-token context. Its correlated
-token positions cannot provide document-level replication or a clustered
-confidence interval. The measurement can reject a large regression and compare
-mechanisms within that context. It cannot qualify a complete checkpoint. A
-paired forward-KLD gate still needs multiple document-disjoint reference
-contexts, identical non-expert weights, exact artifact identities, and
-repeatability controls in every candidate process.
+Weight error, isolated expert error, and encoder timing can screen candidate
+mechanisms. They cannot establish checkpoint quality. The primary quality
+decision uses paired full-model forward KLD on the same documents.
 
-The calibration capture stack records forward activations. The repository now
-implements the two-sided error-feedback recurrence, output-metric
-factorization, bounded factor-artifact contract, and frozen-scale GLM candidate
-encoder. The capture stack still lacks the output gradients needed to build a
-real downstream-loss metric. It must add a bounded backward pass before the
-GLM candidate can be selected or scored. An absolute 0.004 KLD threshold
-derived from separate runs cannot estimate paired noise because shared runtime
-effects cancel in a paired comparison.
+K2, K3, and K4 name scalar trellis rates with two, three, and four stored branch
+bits per weight. QSRT uses the Stratified Quantile Graph (SQG) and the same
+scalar reconstruction law at all three rates. Rate changes the trellis state
+and branch split while the reconstruction law remains fixed.
 
-Natural routing frequency defines the primary deployment estimator. A separate
-support-balanced diagnostic may oversample rare experts, but its samples must
-carry documented importance weights when they contribute to the primary
-estimate. Both estimators must freeze their expert reservoirs, shrinkage, and
-identity fallbacks before candidate errors are available.
+GLM-5.2 routes each token to eight of 256 learned experts in a mixture layer.
+Each expert contains gate, up, and down weight matrices. For input `x`, the
+expert computes `down(SiLU(gate(x)) * up(x))`, where SiLU is a coordinatewise
+nonlinearity and `*` is coordinatewise multiplication. A complete-expert error
+measurement executes all three reconstructed matrices and compares that output
+with the source expert output.
 
-The frozen GLM-5.2 panel includes a fresh matched encode with EXL3's computed
-scalar reconstruction law, identified by its implementation name MCG.
-The control uses the same BF16 source tensors, transforms, covariance, scale
-search, and fit rows as QSRT. The existing EXL3 bit maps show final three-bit
-(K3), four-bit (K4), and five-bit (K5) assignments. They do not replace a
-matched encode or expose the candidate losses that produced those assignments.
+## Evidence already available for GLM-5.2
 
-## Measured GLM-5.2 mechanism results
+The controlled GLM-5.2 measurement runs one 2,048-token context through an
+eager, dense-attention, per-expert EXL3 runtime. An unchanged-model repeat and
+an engine intervention that returned the resident expert output without
+modification reproduced all 2,047 scored position KLD values and every routed
+expert identifier bit for bit. The measurement can reject a large regression
+within that context. One context cannot estimate document-level uncertainty or
+qualify a checkpoint.
 
-The following measurements replace the earlier assumption that three
-format-preserving ideas deserved equal implementation priority.
+The position-level results expose different mean and tail behavior. The 99th
+percentile is the value exceeded by the worst one percent of scored positions.
+Conditional value at risk at one percent (CVaR1%) is the average KLD within that
+worst one percent.
 
-- **Reconstruction-table training is rejected on the measured residual
-  domain.** Production post-feedback values were nearly Gaussian, adjacent
-  correlation was negligible, and every matrix used all 4,096 table entries.
-  A per-matrix fixed-path oracle with finite E4M3 centroids reduced pooled SSE
-  by 0.00175%. A shared production table has less freedom, so the observed
-  headroom does not justify an alternating table-training implementation.
-- **One-sided input-covariance path selection is rejected.** It produced large
-  complete-expert output SSE reductions on the candidate-selection documents,
-  then increased one-context mean full-model KLD by 2.3453% relative to uniform
-  K3. Those output rows were separate from the covariance-fit documents, but
-  they selected the candidate and therefore were not an untouched reporting
-  set. The inversion demonstrates that the local proxy is unsafe for candidate
-  promotion.
-- **Reconstructed-activation down refitting remains active.** Seven of eight
-  experts accepted re-encoded K3 down targets. On the scored context, the panel
-  reduced mean KLD from `0.0623782807651` for uniform K3 to
-  `0.0612386895257`. It recovered 87.3960% of uniform K3's excess KLD above
-  EXL3, whose mean was `0.0610743407031`. The refit still regressed 0.2691%
-  relative to EXL3 and needs document-replicated confirmation.
-- **Two-sided downstream-loss curvature is implemented but lacks a real GLM
-  loss metric.** A synthetic 128-by-128 CUDA closure changed the trellis path
-  and reduced its supplied Kronecker proxy. A complete `2,048 × 6,144` GLM
-  gate-matrix audit exposed numerical drift when an algebraic scalar-identity
-  output metric acquired `1.1e-8` off-diagonal terms during its Hadamard
-  congruence transform. The factorizer now preserves that scalar identity
-  directly. Source-basis identity curvature and an explicit zero-output-
-  feedback traversal control both reproduce the ordinary K3 trellis, scales,
-  and dense reconstruction bit for bit. The real-matrix audit used about 1.57
-  GiB of peak allocated GPU memory. These closures validate identity,
-  dimensions, and dispatch. They do not test downstream-loss prediction
-  because the required GLM output gradients have not been captured.
-- **Removing BlockLDLQ feedback was neutral in the frozen-scale K3 control.**
-  Setting the feedback multiplier to zero changed the numerical targets that
-  reached Viterbi but changed none of the 24 gate, up, or down paths. All eight
-  complete expert files were byte-identical to uniform K3 and therefore inherit
-  its KLD. This result rules out a hidden feedback-removal gain for the tested
-  layer-3 identity-metric panel. It does not resolve K2 or dense captured
-  curvature.
+| Layer-3 eight-expert intervention | Mean KLD | 99th percentile | CVaR1% | Maximum |
+|---|---:|---:|---:|---:|
+| Resident EXL3 | 0.06107434 | 1.09967 | 1.95576 | 5.57961 |
+| Uniform QSRT K3 | 0.06237828 | 1.18850 | 2.04973 | 4.91117 |
+| Input-covariance-selected K3 | 0.06384127 | 1.23571 | 2.09884 | 4.79991 |
+| K3 with reconstructed-activation down refit | 0.06123869 | 1.05916 | 2.09531 | 5.91416 |
+| Ten-promotion selection-data K3/K4 control with one down target per expert | 0.06362581 | 1.06116 | 2.02477 | 4.24433 |
+| Fixed twelve-promotion K3/K4 control with one down target per expert | 0.06396692 | 1.02369 | 2.15752 | 5.91416 |
 
-All three KLD processes reproduced their resident baseline vector bit for bit.
-The logical eight-expert byte ledger charges 133,791,744 bytes for EXL3 and
-113,643,520 bytes for uniform QSRT K3, a 20,148,224-byte reduction. The GLM
-QSRT container, headers, alignment, padding, and serving directory do not exist,
-so this arithmetic is a logical-rate result rather than complete serialized
-model-size evidence.
+These values establish four mechanism decisions.
 
-## Why the eight-weight calculation is not a quantization benchmark
+- **Reconstruction-table training remains rejected for the measured GLM
+  residuals.** Values presented to Viterbi after blockwise quantization-error
+  feedback (BlockLDLQ) were nearly Gaussian, adjacent correlation was
+  negligible, and every matrix used all 4,096 table entries.
+  A per-matrix fixed-path oracle with finite eight-bit floating-point centroids,
+  using four exponent and three mantissa bits (E4M3), reduced pooled squared
+  error by 0.00175%.
+- **One-sided input-covariance selection remains rejected.** It reduced
+  complete-expert output error substantially, then increased full-model mean
+  KLD by 2.3453% relative to uniform K3. A locally accurate reconstruction can
+  perturb a downstream probability direction that matters more to the model.
+- **Reconstructed-activation down refitting remains under test.** It recovered
+  87.3960% of uniform K3's excess mean KLD above EXL3. It also increased CVaR1%
+  and the maximum KLD. The construction therefore needs an explicit tail-risk
+  policy and document-level replication.
+- **Removing blockwise quantization-error feedback (BlockLDLQ) remains a scoped
+  neutral result.** With frozen K3 scales and the identity input metric,
+  disabling feedback changed the values presented to the dynamic-programming
+  path search (Viterbi search) but changed none of the 24 trellis paths. It
+  also changed none of the reconstructed tensor bytes. This result covers
+  eight layer-3 experts at K3. It does not establish the result at K2 or under
+  a captured dense metric.
 
-The interactive explainer contains an eight-weight SwiGLU calculation because a
-reader can follow every multiplication. It does not reproduce the production
-encoder:
+The logical eight-expert ledger charges 133,791,744 bytes for EXL3 and
+113,643,520 bytes for uniform QSRT K3. This 20,148,224-byte margin is large
+enough to fund twelve complete K3-to-K4 matrix promotions while retaining a
+1,273,856-byte logical margin. The GLM QSRT container does not yet exist, so
+these figures support panel allocation only.
 
-- A production scalar QSRT path covers all 256 positions in a transformed
-  16-by-16 tile. The encoder uses 128 positions of cyclic context on either side
-  to infer the closed boundary state.
-- The eight-weight calculation gives each scalar stream only two positions. Its
-  sixteen closed paths expose a small and biased subset of the reconstruction
-  table.
-- The calculation chooses a scale from the largest of two values. The
-  production encoder searches a global scale on sampled full tiles.
-- The calculation omits the model's transforms, BlockLDLQ error feedback,
-  captured input covariance, native BF16 source values, real routed inputs, the
-  shared expert, and downstream layers.
-- Enumerating every gate-path and up-path combination under an exact output KLD
-  objective is cheap with sixteen paths. The same computation is intractable at
-  production dimensions and is therefore not a deployable encoder method.
+The measured mixed-rate intervention does not test a coherent combination. It
+promoted twelve source-target matrices over a down-refitted K3 base. Promoted
+down matrices replaced their refitted K3 targets with source-target K4 tensors.
+Mean KLD rose to 0.06596340. This result rejects that construction. It does not
+reject K4 encoding of a refitted target.
 
-The synthetic calculation can explain how a mechanism changes an expert. Its
-reported gains are not evidence that the mechanism helps GLM-5.2 or Kimi-K3.
-The browser page must label it as an illustration and must not promote its
-expert counts or synthetic KLD reductions as results.
+A later pool preserved one down-refit target per expert and encoded that target
+at both K3 and K4. Complete-expert error selected ten promotions, producing
+mean KLD 0.06362581. The matched fixed twelve-promotion control produced mean
+KLD 0.06396692. Both regressed relative to EXL3, uniform K3, and K3 down
+refitting. Both also worsened CVaR1% despite lowering p99. Reject these
+one-target constructions.
 
-## What a faithful microbenchmark preserves
+The later pool still reused a target fitted from K3/K3 upstream activations
+when gate or up changed rate. It therefore does not test the coherent
+rate-conditioned construction specified below. That experiment remains the
+first admissible mixed-rate test.
 
-Here, *microbenchmark* means that few real experts or layers are processed. It
-does not mean that the trellis, matrix, transform, or loss is made smaller. A
-production-shaped GLM-5.2 expert measurement preserves all of the following:
+## Governing acceptance rule
 
-- the pinned BF16 source revision and tensor hashes;
-- the 6,144-dimensional model state, 2,048 intermediate coordinates, 256 routed
-  experts per mixture layer, top-eight routing, one shared expert, and SiLU
-  gated expert equation;
-- complete gate, up, and down matrices in their native orientations;
-- the same 16-by-16 transform tiles and 256-position tensor-core ordering;
-- the frozen SQG rank map, reconstruction table bytes, rate, 128-position cyclic
-  context, Viterbi implementation, traceback, and decoder;
-- production scale search, persisted scale precision, matrix transforms,
-  BlockLDLQ feedback, and the exact covariance policy under test;
-- fit, selection, and reporting rows from disjoint source documents;
-- applied router coefficients, natural expert co-routing, and the complete
-  routed expert output; and
-- the same candidate implementation that a complete checkpoint build would
-  call.
+A QSRT candidate advances from a document-replicated comparison only when all
+of the following conditions hold:
 
-Changing any item creates a mechanism illustration or an ablation. It cannot be
-used as transfer evidence for the complete encoder.
+- its paired mean forward KLD is lower than EXL3;
+- the 95% paired-bootstrap upper bound for candidate-minus-EXL3 mean KLD is
+  below zero;
+- its document-level CVaR1% is non-inferior within a margin frozen before
+  candidate measurement;
+- its charged bytes are lower than EXL3 for the comparison scope;
+- its candidate construction was frozen before confirmation data were opened;
+  and
+- the result repeats on documents that did not contribute to target fitting,
+  candidate selection, rate allocation, or threshold selection.
 
-The repository's production codec benchmark already streams complete pinned GLM
-experts through the production CUDA encoder. The configurable driver is
-[`scripts/benchmark_glm52_production_codec.py`](../scripts/benchmark_glm52_production_codec.py).
-Its default panel contains eight error-blind experts spread across early,
-middle, and late mixture layers. Increasing `--experts` extends the same frozen
-panel to at most 48 experts. This host has neither the source checkpoint nor a
-CUDA device, so only its selection and manifest contracts can run here.
+The complete-checkpoint claim also requires lower complete serialized bytes,
+task-quality evaluation, and production-serving validation. A layer or expert
+panel remains a mechanism result even when it passes every panel gate.
 
-The production codec driver measures source-relative weight error. A separate
-intervention runtime now measures full-model forward KLD for selected layer-3
-experts under the eager per-expert correctness path. The remote experiment
-tree also contains a pinned routed-input capture with separate fit and
-selection documents. The two-sided encoder has passed synthetic and complete
-real-matrix CUDA closure. A GLM candidate still requires an output-gradient
-capture adapter and the resulting expert-local factor artifact.
+Mean forward KLD is the primary quality measure. CVaR1% is a safety constraint
+that protects against a candidate buying an average gain by damaging a small
+set of positions. The 99th percentile and maximum are descriptive because they
+are too unstable to serve as independent pass/fail tests on a small document
+set.
 
-## Claim-specific evidence ladder
+## Data separation and uncertainty
 
-A single small experiment cannot make improvement at small and large scale
-logically equivalent. Routing, rare experts, layer depth, and downstream error
-propagation introduce effects that do not exist in a single expert. The
-research program instead uses the smallest unchanged system that can answer
-each question.
+The GLM experiments use three document roles.
 
-| Decision | Smallest valid measurement | What a pass permits |
+1. **Activation-fit documents** build input covariances, continuous down
+   targets, and closed-form low-rank factors.
+2. **Candidate-selection documents** choose ridge strength, expert fallback,
+   factor rank and dtype, alternation, rate tuples, and complete panel
+   configurations. The rapid KLD selection set must contain eight 2,048-token
+   contexts.
+3. **Confirmation documents** report the frozen configuration. The first
+   confirmation set must contain at least 32 independent 2,048-token contexts
+   across the intended deployment domains.
+
+The roles must be disjoint at document level. Splitting adjacent segments from
+one document across roles violates the contract. If a reporting result
+influences a later candidate, its documents become selection data for that
+later decision. A further claim then needs another sealed confirmation set.
+
+Enforce the confirmation boundary through storage and process controls. Create
+more than 32 eligible contexts, audit them for overlap, choose the first 32 in
+a pre-recorded order, and write their identifiers and content hashes to a
+manifest. Store their inputs and reference logits under a separate path. A KLD
+process must refuse to read that path until a freeze record names the complete
+candidate, byte ledger, runtime, and selection evidence. Mount the sealed path
+read-only during confirmation and retain an access log. Replacement contexts
+must come from the pre-recorded spare order.
+
+The overlap audit compares source document identifiers, hashes of normalized
+documents, and token spans. An exact context hash alone cannot detect two
+different windows taken from the same source document. The reference-logit
+manifest also records the immutable model and tokenizer revisions, chat
+template, token identifiers, attention and mask settings, logits dtype and
+vocabulary width, runtime and container identities, and every scored position.
+
+The eight-context set provides fast configuration selection. The 32-context
+set provides the first document-replicated acceptance result. A power analysis
+after the first eight contexts may increase the confirmation count, but it may
+not reduce the frozen minimum.
+
+The rapid screen may use a six-of-eight same-direction rule. Under an
+independent symmetric null, the probability of at least six positive results
+is 14.453125%. It is a configuration screen and supplies no confirmation
+evidence on its own.
+
+Compute the mean difference for each document, then weight documents equally.
+Use a paired document bootstrap to estimate sampling uncertainty. Repeated
+unchanged runs estimate numerical noise. Their near-zero variation does not
+estimate how results vary across documents.
+
+The practical CVaR non-inferiority margin must be recorded before confirmation.
+Its record must distinguish three quantities:
+
+- numerical variation from unchanged repeat runs;
+- sampling uncertainty from the paired document bootstrap; and
+- the largest tail degradation that the release policy considers acceptable.
+
+## Standard candidate report
+
+Every full-model candidate report contains the following measurements.
+
+- paired mean forward KLD for each document;
+- the paired bootstrap interval for the mean difference;
+- candidate-specific 99th percentile and CVaR1% for each document;
+- a CVaR1% non-inferiority verdict;
+- the positions entering and leaving the candidate's own worst one percent;
+- overlap between the candidate's and comparator's worst-one-percent sets;
+- maximum KLD as a descriptive value;
+- exact charged bytes for the comparison scope;
+- complete-expert output error on fit and selection rows;
+- changes in routed expert identifiers and the associated top-k routing
+  margins, defined as the score gap between the last selected expert and the
+  first rejected expert; and
+- every per-expert candidate, acceptance, and fallback decision.
+
+Tail metrics must be recomputed for each candidate. Evaluating every candidate
+on positions selected from EXL3's tail confuses movement of the tail with an
+improvement in the candidate's own worst positions.
+
+Route changes are diagnostic until repeated evidence ties them to KLD damage
+or serving-capacity failures. A route change can improve the model. The testing
+program must not impose a zero-change rule without that evidence.
+
+## Test activation-weighted low-rank corrections without training
+
+A low-rank correction adds a small continuous operator to a frozen quantized
+matrix. For a source matrix `W`, its QSRT reconstruction `Q`, input rows `X`,
+and rank-`r` factors `B` and `A`, fit
+
+```text
+minimize ||(W - Q - B A^T) X^T||_F^2.
+```
+
+Let `H` be the regularized covariance of `X`. Multiply `W - Q` by the matrix
+square root of `H` and keep the leading `r` singular components. Map the right
+singular vectors back through the inverse matrix square root of `H` to obtain
+the factors. The fit report must record the covariance regularization,
+singular values, and held-out recovery curve so a rank choice is reproducible.
+
+The product `B A^T` remains present during inference. It therefore consumes
+checkpoint bytes and adds an execution branch. This differs from the
+reconstructed-activation down refit: the down refit discards its continuous
+target after re-encoding and stores only the resulting trellis matrix.
+
+The construction follows the activation-aware low-rank residual objective in
+[CALDERA](https://proceedings.neurips.cc/paper_files/paper/2024/file/a20e8451ffb07ad25282c21945ad4f19-Paper-Conference.pdf).
+CALDERA alternates a low-precision backbone with quantized low-rank factors on
+dense Llama models. Its result motivates this experiment but does not establish
+performance for a routed SQG trellis, GLM-5.2 experts, rank-two factors, or the
+KLD acceptance rule used here.
+
+### Use activations from the artifact being corrected
+
+Fit factors against naturally routed rows from the exact checkpoint that will
+execute them. Gate and up factors use the expert inputs seen by that artifact.
+Down factors use hidden rows reconstructed through that artifact's gate and up
+matrices. For the layer-3 panel, use the same uniform-K3 gate and up
+reconstructions that will feed the corrected down matrix. Refitting factors
+from resident EXL3 hidden rows would repeat the activation-mismatch error that
+the down-refit work is designed to avoid.
+
+Capture rows at the input boundary of each routed expert, before gate and up
+projections. This boundary is unchanged by a layer-local expert replacement.
+For every candidate, derive its down-matrix inputs offline as
+`SiLU(candidate_gate(x)) * candidate_up(x)`. Do not use the down-matrix inputs
+produced by the resident EXL3 expert to fit a QSRT candidate.
+
+Partition complete documents before fitting. Factor fitting uses the
+activation-fit documents. Rank, regularization, factor dtype, expert fallback,
+and any alternation decision use candidate-selection documents. Confirmation
+documents remain sealed until the complete panel configuration is frozen.
+
+Measure the singular-value recovery curve on the eight layer-3 experts before
+choosing a rank. Replicate the selected rank at early, middle, and late mixture
+layers before adopting a model-wide policy. Freeze support-stratified expert
+lists before candidate errors are available. Low-rank concentration measured
+on another model or another layer is a prior, not GLM evidence.
+
+Start with down-only rank two and rank four. Test gate and up only after the
+down-only candidate establishes useful KLD per byte. Gate and up factors must
+pass a complete-expert functional gate because their errors interact through
+the coordinatewise activation and multiplication.
+
+The bounded low-rank candidates correct uniform K3 and remain separate from the
+mixed K3/K4 candidates. If a later candidate combines an upstream K4 matrix
+with a down correction, rebuild that correction from the K4-specific hidden
+rows. Never splice a factor fitted for one upstream reconstruction into
+another.
+
+### Compare a bolt-on correction with one residual re-encoding
+
+The bolt-on candidate retains the incumbent trellis matrix `Q0` and fits
+`B0 A0^T` to `W - Q0`. The alternating candidate performs one additional
+decomposition round.
+
+```text
+Q0 = QSRT(W)
+B0 A0^T = activation_weighted_rank_r(W - Q0)
+Q1 = QSRT(W - B0 A0^T)
+B1 A1^T = activation_weighted_rank_r(W - Q1)
+```
+
+Pre-register the null prediction that the alternating candidate will not
+improve materially over the bolt-on candidate. Direct Viterbi minimizes
+transformed coefficient error, while the factor fit minimizes error after
+projection through routed activations. GLM has no measured evidence yet that
+the trellis can exploit the activation-space structure removed by the factor.
+
+The prediction does not remove the experiment. Hard trellis decisions can
+change after a small structured target shift. Record five observables:
+
+- the fraction of trellis paths that change;
+- the count of reconstructed matrices that remain byte-identical;
+- every reconstruction-scale change;
+- the incremental held-out activation-weighted error change beyond the
+  bolt-on candidate; and
+- the paired end-to-end KLD change beyond the bolt-on candidate.
+
+Run a frozen-scale residual re-encode before repeating global scale search.
+This control holds the incumbent scales fixed and isolates path changes caused
+by subtracting the low-rank correction. If its trellis payload is identical,
+refit the factors once and verify complete-candidate closure. Trellis identity
+alone does not establish model identity: scales, factor metadata, serialized
+factors or their reconstructed product, and complete expert outputs must also
+match.
+
+If the frozen-scale trellis remains unchanged while the full alternation
+changes, add a fixed-path scale-only control. That control separates scale
+drift from path changes induced by the new scales. Do not add the control when
+the frozen-scale arm already changes paths.
+
+QSRT's direct Viterbi step and the activation-weighted factor step optimize
+different objectives. No shared objective is guaranteed to improve after
+every round. Retain the incumbent at each round. Accept an alternating local
+candidate only when it improves document-disjoint activation-weighted
+complete-expert error. Accept it for model construction only when paired KLD
+also improves under the standard tail and byte gates.
+
+Any gate or up change invalidates the downstream fit. Reconstruct the changed
+upstream activations, refit the down target or down adapter, and re-encode the
+complete expert before comparison.
+
+### Serialize factors deterministically and test their precision
+
+The factorization is unchanged when one factor column is multiplied by a
+nonzero scalar and the corresponding column of the other factor is divided by
+that scalar. Remove this scale ambiguity before hashing or quantizing factors.
+For a singular-value decomposition initialization, order columns by descending
+singular value and split each singular value equally as its square root across
+both factors. Make the maximum-magnitude entry of each left-factor column
+positive, choosing the lowest index on a tie.
+
+After any regression update, balance each factor pair so its two column norms
+are equal while preserving their product. Reject a non-finite or zero-norm
+column. The serialized schema records matrix role, layer, expert, logical rank,
+stored rank, factor dtype, scale dtype and shape, logical shapes, padding,
+byte offsets, and content hashes.
+
+Test three stored factor precisions as separate candidates:
+
+1. BF16 factors provide the numerical reference.
+2. Eight-bit factors use explicit charged scales and a frozen quantization
+   rule.
+3. Four-bit factors run only after the eight-bit candidate preserves enough
+   functional recovery to justify another precision reduction.
+
+CALDERA's BF16 and four-bit-factor results do not establish that a rank-two
+QSRT factor tolerates eight-bit storage. Measure product error,
+activation-weighted recovery, complete-expert error, and KLD after factor
+quantization. The serving path may pad rank two or four to rank eight in
+memory; checkpoint accounting charges the stored representation, while
+latency reporting includes the executed padded rank.
+
+Each GLM-5.2 routed expert uses a 6,144 by 2,048 down matrix. A down-only
+rank-two correction contains 16,384 factor values per expert. BF16 factors
+therefore occupy 32,768 raw bytes per expert and 262,144 raw bytes across the
+eight-expert panel. This is about 0.006944 bits per expert-weight equivalent
+when charged across the expert's gate, up, and down matrices. Eight-bit values
+would halve the raw factor bytes before scales, headers, indices, and
+alignment. The logical panel margin below EXL3 is 20,148,224 bytes, so the
+BF16 panel candidate fits comfortably. Only a serialized GLM container can
+establish checkpoint size.
+
+### Compare against buildable rate allocations under the same byte cap
+
+The low-rank correction must beat the best buildable use of the same bytes.
+The GLM panel can already build complete K3 and K4 matrix candidates. Include
+the low-rank candidates and the coherent K3/K4 candidates in one charged-byte
+comparison. Remove any candidate that another candidate beats in both KLD and
+bytes. If the rate format cannot spend an adapter-sized budget because one
+matrix promotion is the smallest legal rate change, report that granularity
+instead of inventing a fractional promotion.
+
+Select adapter and rate-allocation candidates on the same documents. Compare
+complete artifacts with identical non-expert tensors. Nominal bits per weight
+cannot substitute for serialized bytes.
+
+### Keep gradient training behind the closed-form result
+
+Gradient training becomes eligible only when the closed-form candidate leaves
+a measured deficit that is large enough to matter and small enough for
+continuous recovery to plausibly close. Initialize any trained adapter from
+the accepted closed-form factors. Report the trained-over-initialized KLD
+change separately so the value of training is measured.
+
+Training inputs become recovery-training data even though teacher outputs
+supply the labels. Keep those documents disjoint from factor fitting,
+candidate selection, and confirmation. Evaluate only factors rounded
+to their stored dtype and loaded through the packed serving path.
+
+### Execute the GLM low-rank comparison in a frozen order
+
+| Order | Work | Advance or stop rule |
+|---:|---|---|
+| 1 | Fit BF16 down-only rank-two and rank-four factors for the frozen eight-expert panel | Continue only when activation-weighted recovery holds on candidate-selection rows |
+| 2 | Measure bolt-on factors through complete-expert reconstruction | Establish functional recovery and panel KLD per charged logical byte |
+| 3 | Run frozen-scale re-encoding, closure checks, and one guarded full alternation | Retain alternation only when it improves over the bolt-on candidate on selection documents |
+| 4 | Test eight-bit factors, then conditionally four-bit factors | Retain a smaller dtype only when it passes functional, KLD, tail, and byte gates |
+| 5 | Compare low-rank and coherent K3/K4 panel configurations | Freeze one configuration using the eight KLD selection contexts |
+| 6 | Evaluate once on at least 32 confirmation contexts | The frozen candidate beats EXL3 in paired mean KLD, satisfies CVaR1% non-inferiority, and remains smaller |
+| 7 | Replicate the selected construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
+| 8 | Train factors only if the closed-form result leaves a material, plausibly recoverable deficit | Training must beat its serialized closed-form initialization on disjoint data |
+
+The small expert panel selects the factor rank, dtype, and bolt-on or
+alternating construction. It cannot establish a checkpoint win. Only the
+complete serialized GLM artifact under the paired confirmation protocol can
+establish that QSRT is smaller than EXL3 and has lower KLD.
+
+## GLM-5.2 execution order and advance rules
+
+| Work | Result required before advancement |
+|---|---|
+| Verify model identity and prepare reference logits | Source and teacher revisions reconciled; eight selection contexts and at least 32 sealed confirmation contexts available |
+| Separate down conditioning from target refitting | One covariance, target, ridge, and fallback rule frozen from selection evidence |
+| Build coherent rate-conditioned and down-only low-rank candidates | Every upstream rate pair has its own down construction; each low-rank factor uses native reconstructed activations |
+| Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
+| Test transfer across layers | The selected construction repeats across error-blind panels from independently chosen layers |
+| Build the complete checkpoint | Serialized bytes, forward KLD, task quality, and production-serving checks all pass |
+
+Artifact forensics run alongside candidate construction when their inputs are
+available. Their findings select a follow-up investigation when a candidate
+fails. They do not delay construction of the four down cells or the
+rate-conditioned and low-rank candidate pools.
+
+## Verify model and artifact identity
+
+The bfloat16 (BF16) source tensors identify GLM-5.2 revision
+`b4734de4facf877f85769a911abafc5283eab3d9`. The published teacher-logit
+manifest identifies revision
+`4d67f66cc64d3219133b767c253b2ad1425c6c88`. The two immutable revisions have
+byte-identical safetensors indexes. Every safetensors object also has the same
+Hugging Face large-file SHA-256 identity and size in both revisions. This
+metadata closes weight identity without downloading the complete BF16 model.
+
+The configurations are not identical. The source revision explicitly sets
+the mixture-of-experts router computation to 32-bit floating point through
+`moe_router_dtype: float32`; the teacher revision omits that field. Reference
+generation must therefore preserve and report the teacher runtime behavior.
+The weight-identity result does not establish runtime identity.
+
+The published reference-logit dataset contains one 2,048-token WikiText
+context. It was produced from the teacher revision with tensor parallelism 16,
+B12X sparse attention, eight-bit floating-point key/value cache storage, and
+32-bit floating-point logits. That single context remains a wiring and
+candidate-development control. It cannot supply the eight selection contexts
+or the 32 sealed confirmation contexts. Producing those references on an
+authorized host that already holds the BF16 teacher is an active dependency;
+the GLM program must not download the complete BF16 checkpoint to satisfy it.
+
+Before another GPU run, inventory the artifacts needed by each analysis:
+
+| Analysis | Required retained artifacts |
+|---|---|
+| KLD tail statistics and migration | Position-level KLD tensors |
+| Route-change analysis | Per-layer route identifiers and routing margins |
+| Complete-expert error alignment | Routed inputs and reconstructed candidate endpoints |
+| Input leverage | Routed inputs and the regularized input covariance used by the encoder |
+| Down-refit tail analysis | Routed inputs, source expert outputs, and source/refitted endpoints |
+
+The first analysis is CPU-only from the preserved KLD tensors. The remaining
+analyses are CPU-only only when every listed tensor was retained in a directly
+readable form. Missing endpoints or routed rows require one bounded replay.
+The artifact inventory must record this distinction rather than describing all
+forensics as zero-compute work.
+
+## Separate down conditioning from down-target refitting
+
+The down-construction experiment determines why the down intervention improved
+mean KLD and how to control its tail. Gate and up remain at uniform K3. Each
+expert receives four complete down constructions.
+
+| Input metric used to encode the down matrix | Continuous down target |
+|---|---|
+| Identity | Original source weights |
+| Covariance of activations reconstructed by quantized gate and up matrices | Original source weights |
+| Identity | Target fitted to reproduce the source expert output |
+| Covariance of activations reconstructed by quantized gate and up matrices | Target fitted to reproduce the source expert output |
+
+The reconstructed-activation covariance describes the input that the encoded
+down matrix will receive. This covariance summarizes the directions and scales
+of the hidden activations and weights reconstruction error toward frequently
+excited directions. The fitted target solves a regularized least-squares
+problem so the complete quantized expert reproduces the source expert output.
+The regularization strength is called the ridge strength. It limits how far
+the fitted target can move from the source down weights.
+
+Test a small ridge grid within both fitted-target cells. Freeze the grid before
+candidate measurement. Fit each target on activation-fit documents and choose
+the ridge value on candidate-selection documents. Evaluate the complete gated
+expert because gate, up, and down errors interact.
+
+Retain the source-target encode as an expert-specific fallback. Choose a refit
+only when it improves the complete-expert mean error and does not violate the
+pre-registered upper-tail rule on candidate-selection rows. Do not derive a
+fallback decision from one worst token. Model-level tail safety is judged by
+document-level CVaR after the expert choices are assembled.
+
+The eight KLD selection contexts choose one down-construction rule, including
+its covariance policy, target policy, ridge grid decision, and fallback rule.
+The chosen rule becomes an input to the mixed-rate experiment. The sealed
+confirmation contexts remain unopened during this decision.
+
+## Build complete rate-conditioned expert candidates
+
+The mixed-rate experiment builds eight complete candidates for each expert.
+
+- K3 gate, K3 up, K3 down;
+- K3 gate, K3 up, K4 down;
+- K3 gate, K4 up, K3 down;
+- K3 gate, K4 up, K4 down;
+- K4 gate, K3 up, K3 down;
+- K4 gate, K3 up, K4 down;
+- K4 gate, K4 up, K3 down; and
+- K4 gate, K4 up, K4 down.
+
+Each gate/up rate pair creates a different reconstructed hidden activation.
+For each of the four gate/up pairs, the encoder must perform these operations:
+
+1. Reconstruct the selected gate and up matrices.
+2. Execute them on activation-fit rows.
+3. Build the down-input covariance for those reconstructed activations.
+4. Fit a separate down target when the selected down rule uses refitting.
+5. Encode that pair-specific target independently at K3 and K4.
+
+This construction prevents an upstream rate change from silently invalidating
+the down metric or target. The stored candidate contains only ordinary QSRT
+matrices; the continuous fitted target adds no checkpoint bytes.
+
+The measured control implementation in
+[`qsrt/glm52_down_refit_rate_pool.py`](../qsrt/glm52_down_refit_rate_pool.py)
+recomputes one down target from the K3/K3 upstream pair and reuses it when gate
+or up changes rate. Its frozen registration is
+[`experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json`](../experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json).
+Preserve that registration and its negative KLD reports as the one-target
+control. It cannot govern the rate-conditioned candidate experiment. The
+rate-conditioned build needs a new registration and pair-specific down
+metrics, targets, hashes, and receipts.
+
+### Select a panel configuration with measured KLD
+
+Complete-expert output error remains useful for pruning. Its earlier inversion
+shows that it cannot authorize the final configuration by itself. Use the
+following bounded selection procedure for the eight-expert panel:
+
+1. Build all eight coherent candidates for every expert.
+2. Remove candidates that another candidate beats in both bytes and
+   complete-expert error.
+3. Retain the best two or three candidates per expert under the down
+   experiment's selected complete-expert metric.
+4. Use an exact-byte dynamic program or bounded beam search to produce at most
+   sixteen promising complete panel configurations.
+5. Measure those configurations on the eight KLD selection contexts.
+6. Freeze one configuration and its exact selection rule.
+7. Evaluate that configuration once on at least 32 sealed confirmation
+   contexts.
+
+The eight selection contexts become training evidence as soon as their KLD
+chooses a configuration. Only the confirmation result may close the experiment.
+This bounded KLD search is feasible for eight experts. A complete model will
+need a validated allocation score and a separate confirmation set because an
+exhaustive model-level KLD search does not scale to every expert.
+
+The layer-3 logical budget permits at most twelve K4 matrix promotions:
+
+```text
+uniform K3 panel                    113,643,520 bytes
+twelve K4 matrix promotions         18,874,368 bytes
+mixed QSRT panel                    132,517,888 bytes
+EXL3 comparison panel               133,791,744 bytes
+logical QSRT margin                   1,273,856 bytes
+```
+
+This arithmetic excludes a GLM QSRT container. The panel passes its size screen
+only provisionally. The complete artifact must later charge scales, the shared
+reconstruction table, headers, directories, alignment, and padding.
+
+### Close the layer-3 experiment
+
+The layer-3 experiment closes only when its frozen configuration has all of the
+following evidence:
+
+- paired mean KLD against EXL3 on the confirmation documents;
+- document-level bootstrap uncertainty;
+- the CVaR1% non-inferiority verdict;
+- candidate-specific tail migration and route-change diagnostics;
+- the logical panel byte ledger;
+- fit, selection, and confirmation document manifests;
+- candidate, source, teacher, runtime, and comparison-checkpoint identities;
+  and
+- reproducible artifact hashes and process controls.
+
+A lower mean on the eight KLD selection contexts does not close the experiment.
+A KLD report without the frozen byte ledger also remains incomplete.
+
+## Test transfer across layers before model-wide allocation
+
+A layer-3 result cannot establish behavior in later mixture layers. After the
+coherent layer-3 configuration passes, repeat the selected construction on
+error-blind expert panels from additional layers.
+
+The external claim that layers 60 and 64 are sensitive supplies a sampling
+prior. Layers 52 and 63 provide nearby controls. Freeze expert lists before
+candidate errors are available. On separate documents, use the engine hook to
+return replacement expert outputs one layer at a time. This sweep produces an
+independent layer-damage map instead of treating the external list as ground
+truth.
+
+For each document `d`, let `gain(layer, d)` be the reduction in paired mean
+KLD from applying the same bounded intervention at that layer. The screening
+statistic is
+
+```text
+(gain(60, d) + gain(64, d)) / 2
+    - (gain(52, d) + gain(63, d)) / 2.
+```
+
+The external sensitivity prior passes the rapid screen when the statistic is
+positive in at least six of eight selection documents. It passes confirmation
+when the lower bound of its equal-document paired-bootstrap interval is above
+zero on at least 32 sealed documents. Retain the four individual layer gains
+so that one unusually large layer cannot hide the other three. Failure means
+that the external map is unconfirmed under this protocol; the independent
+layer sweep still proceeds.
+
+The bounded source window for layers 52, 60, 63, and 64 contains 3,072 routed
+expert tensors in 17 official shards totaling 91,142,336,944 bytes. Each shard
+must match its immutable source SHA-256 identity before encoding begins. This
+window is sufficient for the four-layer comparison and does not contain the
+complete BF16 model.
+
+Panel manifests and bounded source-shard plans can be prepared while layer-3
+confirmation runs. Candidate encoding should begin only after the layer-3
+construction passes. Download only the source shards that contain the selected
+layers; the transfer test does not require the complete BF16 checkpoint.
+
+Use new selection and confirmation documents when a preceding reporting set
+has influenced layer selection or allocation. Compare the direction and
+ranking of complete-expert, complete-layer, and full-model results. If the
+small panel fails to predict layer behavior, redesign the panel before using it
+to allocate checkpoint-wide bytes.
+
+## Build and validate a complete checkpoint
+
+Model-wide allocation chooses complete expert candidates under a complete
+serialized-byte budget. The allocator must charge each format directory,
+payload stack, scale plane, table, header, alignment gap, and padding region.
+Non-expert weights must remain byte-identical to the EXL3 comparison inputs.
+
+Materialize the complete checkpoint into a fresh path. Validate decode,
+payload hashes, malformed-input rejection, tensor-parallel ownership, routed
+expert outputs, and live routing. Then run paired document-disjoint KLD, task
+quality, long-generation checks, and production latency.
+
+Only this complete-artifact result can support the stated objective. A panel
+win authorizes model construction; it does not imply the complete model will
+win.
+
+## Run reusable forensics in parallel
+
+The following analyses may run alongside identity closure and candidate
+construction when their required artifacts are available. They do not block
+the down-construction or coherent-pool experiments.
+
+### Align local error, KLD damage, and routing changes
+
+For uniform K3, input-covariance-selected K3, and down-refitted K3, align each
+scored position with its routed rows and complete-expert output error.
+Classify damaged positions into three cases:
+
+- local expert error also worsens;
+- local expert error improves while routes remain unchanged; or
+- local expert error improves and a later top-k route changes.
+
+The cases select different follow-up work. The first indicates inadequate
+row or tail coverage. The second indicates missing downstream direction or
+interaction. The third indicates a routing discontinuity.
+
+### Measure input leverage
+
+Input leverage measures how unusual a routed row is under the regularized
+input covariance used by the encoder. For an input row `x` and covariance `H`,
+the diagnostic uses the Mahalanobis quantity `x.T H^-1 x` in the same basis and
+with the same regularization as candidate construction.
+
+Measure whether the input-covariance candidate's KLD damage increases with
+leverage on documents that did not fit `H`. Report gate/up and down leverage
+separately. A positive association authorizes a small covariance-eigenvalue
+floor sweep. Absence of the association keeps that sweep out of the GPU queue.
+
+### Locate down-refit tail damage
+
+Identify the experts and routed rows that contribute to the down-refit's
+candidate-specific worst one percent. Test their relation to ridge strength,
+input leverage, the source-target fallback expert, route changes, and
+particular co-routed experts. Use the result to define the ridge grid and local
+fallback statistic. Do not tune a rule against the sealed confirmation set.
+
+## Trigger expensive investigations from observed failures
+
+| Observed result | Authorized investigation | Decision supplied by the investigation |
 |---|---|---|
-| Determine whether the graph, table, scale, and traceback lower tile distortion | Complete 256-position production tiles drawn from real transformed and BlockLDLQ-feedback values | Run complete real experts |
-| Determine whether an expert-level target improves the gated calculation | Complete gate, up, and down matrices for a depth- and route-support-spread real-expert panel | Run complete layers |
-| Determine whether the change survives routing and co-routed error cancellation | Complete early, middle, and late mixture layers on natural routed traffic | Build a complete checkpoint candidate |
-| Determine whether the checkpoint beats EXL3 | Exact-byte complete checkpoints with paired document-disjoint forward KLD and task evaluation | Support the stated research claim |
+| KLD damage rises with input leverage | Sweep a small lower bound on the regularized input-covariance eigenvalues | Whether robust input conditioning improves mean KLD without violating CVaR1% |
+| Complete-expert error improves, routes remain stable, and full-model KLD worsens | Capture residual-stream output gradients and test two-sided downstream-loss curvature | Whether downstream sensitivity ranks real candidate errors better than complete-expert error |
+| Damaging positions coincide with small top-k margins and route changes | Add routing-margin and route-stability features to candidate scoring | Whether routing discontinuities explain enough damage to justify a routing-aware selector |
+| Partial expert swaps show unexplained interaction with resident EXL3 errors | Stream the first-order logit cross-term and the teacher-probability-weighted second-order term (Fisher quadratic) alongside the observed KLD change | Whether existing model error amplifies or cancels the candidate perturbation |
+| The source of SQG's scalar advantage remains important after the system candidate is competitive | Re-encode matched SQG and ExLlamaV3's computed scalar reconstruction law (MCG) at K3 | Whether SQG's mean scalar advantage extends to high-leverage rows and row-tail error |
 
-An idea is rejected when a smaller valid measurement shows a clear regression.
-A pass only authorizes the next measurement. It never skips the larger-scale
-gate. The reverse direction is also checked: after each complete-layer or model
-run, compare its direction and ranking with the smaller panel. If the panel did
-not predict the larger result, redesign the panel before using it to screen
-another idea.
+The two-sided curvature code already has synthetic and complete real-matrix CUDA
+closure. Source-basis identity output curvature and explicit zero-output
+feedback reproduce ordinary K3 bit for bit. A real curvature experiment still
+needs residual-stream output gradients, matched input-gradient samples,
+route-support-aware shrinkage, and validation on full-size K3 and K4 errors.
 
-## Real-expert panel design
+The factored two-sided score approximates the true sample-averaged curvature.
+Routing correlates input rows, output gradients, and router coefficients. A
+real experiment must compare the factorized score with matched per-sample
+quadratic scores. Complete-expert reconstructed propagation remains the final
+local acceptance boundary because separate matrix scores omit gate/up
+interactions.
 
-The default eight-expert run is a wiring and severe-regression screen. It is not
-large enough for a quality estimate. Panel construction is fixed before any
-candidate errors are observed and covers:
+A covariance eigenvalue measures activation variance along one direction. A
+lower bound prevents the encoder from treating a low-variance direction as
+arbitrarily unimportant. The leverage analysis must show that this failure
+pattern exists before the encoder spends GPU time on the sweep.
 
-- early, middle, and late mixture layers;
-- low, median, and high routed-row support;
-- low, median, and high source and transformed weight scale;
-- common and heavy-tail tile distributions;
-- experts that frequently and rarely co-route with the shared expert; and
-- every gate, up, and down projection.
+## Keep rejected and deferred mechanisms outside the critical path
 
-The configurable codec driver's larger panel is depth-spread and error-blind.
-The bounded official BF16 source window limits the completed intervention panel
-to eight layer-3 experts. That panel was frozen before candidate errors were
-available, and every expert appeared in all 32 fit documents and eight
-selection documents. A broader confirmation panel must add depth and
-route-support strata while preserving error-blind selection.
+- Reopen reconstruction-table training only when another model, rate, or
+  loss-weighted residual diagnosis shows material finite-table headroom.
+- Revisit BlockLDLQ removal only with a K2 or captured-metric result that
+  changes trellis paths after scale search is held constant.
+- Build a sparse residual plane only when held-out curvature-weighted residual
+  concentration beats a K4 promotion per charged byte. One indexed correction
+  per 256-value tile should explain more than six percent of tile damage; two
+  should explain more than ten percent before format work begins.
+- Treat discrete cosine and Walsh-Hadamard residual modes as offline controls.
+  The transformed weight layout has no established image-like locality.
+- Defer a gate/up pair trellis until the scalar, down-conditioning, and
+  allocation program is measured. A pair format requires a new encoder,
+  decoder, feedback rule, and exact-byte contract.
+- Keep K5 outside the production path. The production SQG quantizer supports
+  K2, K3, and K4, and prior K5 work found the finite E4M3 endpoint to be the
+  limiting error.
 
-The named GLM-5.2 EXL3 checkpoint supplies one additional stratification axis.
-Its per-layer manifests record the final bit width of each gate, up, and down
-projection after router-mass-weighted MCG allocation. Include experts from the
-common all-three-bit, down-upgraded, and all-four-bit patterns, plus rare
-five-bit down projections. Treat those patterns as allocation outcomes rather
-than an expert ranking. Preserve independently selected experts in every route
-support stratum so the panel does not inherit EXL3's selection policy.
+## Stop or advance mechanically
 
-The parsed rate map has two independent arithmetic checks. Its 75 mixture
-layers contain 19,200 routed experts and therefore 57,600 gate, up, and down
-projections. Relative to an all-K3 assignment, 28,638 K4 projections and 81 K5
-projections spend
-`28,638 × (4 − 3) + 81 × (5 − 3) = 28,800` added projection-bit units. The
-model card specifies 384 added units per layer, and `75 × 384` is also 28,800.
-This equality checks both the manifest parse and the per-layer budget. The
-listed common rate patterns cover 18,989 of 19,200 experts; the remaining 211
-experts include 12 of the 81 K5 projections. The truncated pattern list must
-not be mistaken for the complete rate map.
+Advance the layer-3 candidate to cross-layer testing only when it beats EXL3 in
+paired mean KLD, satisfies the frozen CVaR1% constraint, and occupies fewer
+charged panel bytes on at least 32 confirmation documents.
 
-Freeze the confirmation panel as a source-controlled list of layer and expert
-identifiers before encoding any candidate. Store the selection inputs and
-their hashes with the list so another run can reproduce the route-support,
-depth, scale, tail, and EXL3-rate strata.
+If the coherent candidate fails, choose one investigation from the observed
+failure pattern:
 
-Eight experts should complete quickly enough for iteration on the intended GPU
-host. A 32- or 48-expert confirmation panel supplies clustered uncertainty
-estimates. The full production expert encoder rejects CPU execution and cannot
-meet a one-minute CPU iteration budget: one expert contains three 2,048-by-6,144
-matrices, or 37,748,736 weights, and each 256-value tile requires production
-scale search plus Viterbi passes over 16,384 K2 states.
+- leverage-associated damage selects robust input conditioning;
+- stable-route local improvement with KLD regression selects output-gradient
+  curvature;
+- route-boundary damage selects routing-aware scoring; and
+- absence of all three patterns selects broader rate and layer allocation
+  analysis or termination of the mechanism.
 
-A useful CPU screen remains possible if its claim is narrower. Export complete
-256-value fixtures after the production transform and BlockLDLQ feedback, then
-replay the exact SQG graph, T12 bytes, cyclic context, scale candidates, edge
-cost, traceback, and decoder with a CPU reference. A small fixed fixture panel
-can test reconstruction-table updates and additive curvature costs in less than
-one minute because it processes tiles rather than full expert matrices. It
-cannot test the reconstructed-activation down fit, natural routing, downstream
-KLD, checkpoint bytes, or full-expert runtime. Every CPU winner must reproduce
-its direction under the unchanged CUDA encoder on complete experts before it
-advances.
+Do not run every branch after a failure. Each added experiment must answer the
+specific unresolved cause and must retain the same data-separation and
+acceptance contract.
 
-## Running the production panel on one to four GPUs
+The immediate constructions are a coherent rate-conditioned K3/K4 panel and a
+down-only activation-weighted low-rank panel. Every upstream rate pair gets a
+separately reconstructed down input, down metric, and down target. Every
+low-rank factor is fitted against the uniform-K3 activations that it will see
+at execution. Eight selection contexts choose one complete panel
+configuration. At least 32 untouched contexts determine whether it advances.
 
-The present production driver accepts one explicit CUDA device and processes
-its selected experts serially. It already writes one atomic result per expert,
-so the natural multi-GPU unit is a complete expert rather than a fraction of an
-expert. A one-to-four-GPU harness should start one process per GPU, assign each
-process a disjoint error-blind subset of the frozen panel, stream one expert at
-a time from CPU storage, and merge the results only after their source, codec,
-and experiment identities agree. Worker device details belong in run metadata;
-they must not change the codec identity used to compare results.
+## Authority and evidence records
 
-With one GPU, encode the selected experts sequentially. With two through four
-GPUs, distribute complete experts evenly and preserve the same aggregate order
-when results are reduced. This exposes independent work and avoids copying one
-expert's transform and BlockLDLQ state across devices. Splitting the tiles of a
-single expert across GPUs is a secondary latency optimization; use it only if a
-profile shows that one expert is the iteration bottleneck and its cross-device
-copies do not erase the gain.
+The codec specifications govern stored formats and decoder behavior. This
+strategy governs experimental order, data separation, and promotion decisions.
+The chronological journal records completed operations and rejected runs.
 
-Measure one complete expert first. Estimate the panel time as the slowest
-worker's assigned expert times plus source-loading and aggregation overhead.
-Do not promise a one-minute eight-expert iteration before that measurement. A
-useful operating pattern is one complete expert for implementation closure,
-the fixed eight-expert depth-spread panel for repeated screening, and 32 or 48
-experts for confirmation. Every run records projection-level encode time,
-expert wall time, GPU identity, peak memory, source hashes, and resumable expert
-paths.
+- [GLM-5.2 layer-3 KLD results](glm52-layer3-kld-results.md) records the
+  controlled one-context candidate comparisons and artifact hashes.
+- [GLM-5.2 experiment journal](glm52-experiment-journal.md) records source,
+  teacher, container, capture, and generated-artifact identities.
+- [QSRT and EXL3 comparative assessment](qsrt-exl3-comparative-assessment.md)
+  records the rate, allocation, and codec evidence boundary.
+- [Two-bit trellis research corpus](qsrt-two-bit-research-corpus.md) records
+  the academic evidence, implementation costs, and rejected alternatives.
 
-The production codec driver reports source-relative weight error for complete
-BF16 gate, up, and down matrices. Separate scripts report routed expert-output
-loss and one-context full-model KLD for dense endpoint interventions. Adding
-more GPUs reduces wall time; it does not broaden the claim supported by any
-metric.
-
-## Mechanisms and decisions
-
-### Validate two-sided model-loss curvature with residual-stream gradients
-
-The existing scalar SQG format, QSRT's scalar trellis reconstruction law, is
-retained. Fit data supplies both an input metric
-and a downstream output metric, producing a two-sided local curvature estimate
-for the error that each matrix sends into the rest of the model. The Viterbi
-cost remains additive, so the production dynamic program and stored branch
-format remain usable. The first experiment compares raw scalar error, routed
-expert output error, and the two-sided curvature objective by how well they
-predict held-out forward KLD.
-
-Capture the loss gradient at the mixture layer's residual-stream output. The
-same residual gradient serves every expert routed for that token. Multiplying
-it by each router coefficient gives the gradient of the loss with respect to
-that routed expert's output. This boundary avoids a separate backward capture
-inside every expert while retaining the downstream sensitivity that the
-one-sided objective omitted.
-
-The Kronecker score is an approximation. The true sample-averaged weight
-curvature contains matched input and output-gradient pairs,
-`E[(g g.T) ⊗ (x x.T)]`. A factored score replaces it with
-`E[g g.T] ⊗ E[x x.T]`. Routing correlates `x`, `g`, and the router coefficient,
-so the capture must preserve a bounded matched sample reservoir. Before using
-the factored score, compare its predictions with the matched per-sample
-quadratic score on real K3, K4, and refitted error matrices. Reject the
-factorization when its disagreement is comparable to the candidate gaps.
-
-Per-matrix curvature also omits interactions between gate and up errors in the
-coordinatewise product. Use it to generate and rank projections. Accept only a
-complete expert after reconstructed propagation through gate, up, and down.
-The validation uses full-size encode errors because a second-order model can
-mis-rank the non-infinitesimal perturbations produced at K3.
-
-Gradient factors require route-support-aware shrinkage. Freeze the shrinkage
-rule and identity fallback before candidate errors are visible. Include
-low-support experts in the validation panel. When support is insufficient,
-retain the incumbent candidate rather than silently using the rejected
-one-sided selector.
-
-This is the first priority because it changes the offline objective without
-changing checkpoint bytes or runtime decoding. It must use expert-local output
-coordinates and documented shrinkage. A layer-global post-activation covariance
-is invalid when intermediate coordinates belong to different experts.
-
-Model-Preserving Adaptive Rounding reports about 30% lower KLD than LDLQ on its
-evaluated models and quantizers, but it applies two-sided feedback rather than
-scoring paths alone. A QSRT scoring-only result should be expected to recover
-less. The first deliverable is therefore predictive: the curvature score must
-rank held-out forward KLD better than routed squared error across experts and
-layers.
-
-The rate name K3 means three stored trellis branch bits per weight; K4 means
-four. A validated predictor becomes the damage score for checkpoint-scale
-exact-byte allocation. It must score K3, mixed K3/K4, and any later residual
-candidate under one common metric. If curvature does not improve held-out KLD
-prediction, reject it as an allocation score. Down refitting retains its
-separate measured KLD rationale and does not depend on curvature for its fitted
-target. The bounded eight-expert K3/K4 panel can proceed earlier with
-pre-registered EXL3-derived and complete-expert routed-output controls because
-it is a mechanism screen rather than a checkpoint allocator.
-
-### Reconstruction values trained on production residuals — rejected
-
-The frozen T12 table approximates a reference scalar distribution. The encoder
-actually sees transformed targets after BlockLDLQ feedback, scale selection, and
-model-specific conditioning. Collect those real targets and their curvature
-weights, assign paths with the production Viterbi encoder, update table entries
-with weighted finite eight-bit E4M3 centroids, and repeat. Training and reporting
-documents remain disjoint. The table shape, finite E4M3 decoder, and branch
-payload stay unchanged; table bytes and hashes are charged to the artifact.
-
-The production residual diagnosis and fixed-path oracle fail the implementation
-gate. Table updates can overfit frequent layers or route-heavy experts and can
-damage tail coverage. Reopen this mechanism only if another model, rate, or
-loss-weighted residual diagnosis shows material headroom before reassignment.
-
-Run a residual diagnosis before implementing the alternating update. Measure
-the post-transform, post-BlockLDLQ histogram, reconstruction-table occupancy,
-conditional moments, adjacent-window correlation, and curvature-weighted tail
-mass. On an independent Gaussian source, the current K3 table is 7.6% above the
-Gaussian rate-distortion bound and has 3.0% lower error than MCG. Table training
-has little headroom if production residuals follow the same distribution.
-
-No decoder change or alternating training loop is justified for the measured
-GLM domain. If later evidence reopens the mechanism, first confirm whether the
-B12X GPU trellis decoder can index a distinct table for each layer without
-adding an indirect lookup to its hot path. If the decoder supports only one
-shared 4,096-byte table, train and report one global table.
-
-### Down target fitted to reconstructed upstream activations — confirm next
-
-Freeze the encoded gate and up matrices, execute them on real routed fit rows,
-and fit the down target against the source expert output. Encode that fitted
-target with the same production scalar trellis, scale search, and BlockLDLQ
-path. Store only the ordinary quantized down matrix. The continuous fit is an
-offline target and adds no checkpoint bytes.
-
-A 28-expert Kimi oracle found headroom for this operation, but the result used
-more freedom than the stored codec. The GLM eight-expert candidate retained the
-ordinary K3 representation and improved mean KLD relative to uniform K3 on the
-available context. The next test compares the quantized fitted target against a
-freshly encoded source target on multiple disjoint documents and complete
-layers. Reject the fit if live routing or held-out KLD regresses.
-
-Retain the ordinary source-target encode as a per-expert fallback. The
-one-context result recovered most of the uniform-K3 penalty in the mean while
-1,043 of 2,047 token positions regressed. That heavy-tailed pattern makes
-document-replicated evaluation essential before broader encoding.
-
-## Additional-byte candidates for GLM-5.2
-
-GLM-5.2 uses BF16 source weights, so Kimi-K3's exact MXFP4 endpoint, X4T, does
-not transfer. The first GLM-5.2 high-quality experiment uses per-matrix scalar
-rates. The GLM codec driver encodes gate, up, and down separately. It
-does not apply the interleaved gate/up Hadamard transform. The per-matrix panel
-can therefore construct all eight K3/K4 gate, up, and down rate tuples:
-
-- all three matrices at K3: `(K3, K3, K3)`;
-- K3 gate and up with K4 down: `(K3, K3, K4)`;
-- K3 gate and down with K4 up: `(K3, K4, K3)`;
-- K3 gate with K4 up and down: `(K3, K4, K4)`;
-- K4 gate with K3 up and down: `(K4, K3, K3)`;
-- K4 gate and down with K3 up: `(K4, K3, K4)`;
-- K4 gate and up with K3 down: `(K4, K4, K3)`;
-- all three matrices at K4: `(K4, K4, K4)`.
-
-Encode every K4 projection once, then assemble two allocation controls over the
-down-refitted K3 base. The EXL3-derived control promotes every panel projection
-whose EXL3 rate is at least K4, caps its two K5 projections at K4, and assigns
-the remaining byte allowance by frozen expert and projection order. The
-complete-expert control chooses among all eight tuples using routed-output SSE
-on the candidate-selection documents. Neither control may inspect the reporting
-context.
-
-The eight-expert logical ledger allows twelve K3-to-K4 promotions while
-remaining smaller than EXL3. Uniform K3 occupies 113,643,520 charged logical
-bytes. Each complete matrix promotion adds 1,572,864 bytes. Twelve promotions
-occupy 132,517,888 bytes, which is 1,273,856 bytes below EXL3's 133,791,744
-bytes. A thirteenth promotion would occupy 134,090,752 bytes and exceed the
-comparison. Serialized headers, directories, alignment, and padding remain a
-separate container gate.
-
-The implemented GLM selection policy shares one gate/up mode, so this experiment
-must explicitly add independent per-matrix candidate selection. Score each
-tuple through the complete expert because gate, up, and down errors interact.
-
-Per-matrix rates conflict with the coupled gate/up transform used by Kimi-K3.
-That transform interleaves gate and up rows before applying the Hadamard basis,
-so each coded row contains a mixture of both projections. A coupled candidate
-can express only `(K3, K3, K3)`, `(K3, K3, K4)`, `(K4, K4, K3)`, and
-`(K4, K4, K4)`. Unequal gate/up tuples require encoding that expert without
-the coupled transform and charging the measured 3.052% pooled conditioning
-gain that the uncoupled candidate forfeits. A two-dimensional gate/up
-symbol basis imposes the same joint-rate restriction. On the gate/up axis,
-independent rates, the interleaved transform, and joint pair symbols cannot all
-be retained at once.
-
-K5 is unsupported by the production SQG quantizer. The table generator supports
-K5, but the rate-specific production quantizer accepts only K2, K3, and K4. The
-high-rate evidence also found that the finite E4M3 reconstruction alphabet
-became the limiting error at K5: the E4M3 candidate lost to MCG, while a
-research-only FP16 reconstruction endpoint won on all seven measured experts.
-Any K5 diagnostic must therefore use that FP16 high-rate research
-path and charge its table and scale representation. Running K5 with the
-production E4M3 endpoint would repeat an established negative control.
-
-Each selected rate needs a few metadata bits for every matrix. Matrices with
-different rates also occupy separate dense payload stacks and need an
-exact-byte directory. The dense stacks, alignment, and
-padding are expected to dominate the metadata cost and must be measured from
-serialized files.
-
-A sparse residual plane remains an offline oracle until its exact-byte and
-runtime evidence beats mixed K3/K4. One fixed correction in every 256-position
-tile needs at least eight position bits and eight value bits, or 0.0625 payload
-bpw. A per-tile shared correction exponent can supply range more cheaply than
-a scale for every correction; four or five exponent bits are amortized over
-the corrections in that tile. A deployable format must still charge the
-exponent, tile presence, format maps, offsets, alignment, and padding. Accepted
-corrections must enter BlockLDLQ feedback before the remaining path is encoded.
-
-The residual oracle has a numerical kill threshold. A standard-normal
-order-statistic calculation puts the expected largest squared residual among
-256 values near 9.4. The largest residual carries about 3.7% of total squared
-error, and the two largest carry about 6.6%. One extra Gaussian
-rate-distortion bit reduces error by about 75%. A one-correction payload must
-therefore recover more than `0.0625 × 75% = 4.69%` of tile error; two
-corrections at 0.125 bpw must recover more than `0.125 × 75% = 9.38%`.
-
-Build a residual format only if held-out curvature-weighted measurements exceed
-6% for the largest residual or 10% for the two largest residuals in a
-256-position tile. The complete oracle must also beat K4 per exact added byte.
-The concentration thresholds include a screening margin for nonideal
-correction values and metadata; they are not claims about the final serialized
-rate.
-
-Measure direct sparse corrections against fixed two-dimensional discrete
-cosine and Walsh-Hadamard residual modes. Frequency-domain truncation is useful
-only if a few modes contain held-out curvature-weighted error. The transformed
-weight layout has no image-like locality, and the existing Hadamard transform
-may flatten its spectrum. Do not implement a frequency-domain decoder unless a
-fixed-mode oracle beats direct sparse corrections and K4 at the same exact
-bytes. The Walsh arm is nearly free because the encoder already implements that
-basis. It also tests whether a second Walsh representation merely renames
-sparsity that was already present before the production transform. Pre-transform
-coordinates may be inspected as a diagnostic, but a stored correction must
-live in the coding domain; otherwise the decoder must add the inverse-transform
-work that fixed modes were meant to avoid.
-
-The EXL3 allocation supplies a useful sampling stratum. It does not supply a
-directional answer. The
-[GLM-5.2 EXL3 checkpoint model card](https://huggingface.co/brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78)
-states that its encoder calibrates the down projection on reconstructed gate/up
-outputs. A down-heavy EXL3 map therefore cannot be
-explained as compensation for upstream reconstruction error that the encoder
-did not observe. Pre-register the neutral mechanism test instead: if
-curvature-scored QSRT moves bits upstream under matched candidate rates, test
-whether the downstream-loss objective explains the shift; if down-heavy
-allocation persists, treat that result as evidence of intrinsic down
-sensitivity. Neither outcome is implied by conditional down calibration alone.
-
-## Ideas not promoted by the synthetic calculation
-
-- Per-coordinate reciprocal up/down balancing is not promoted. The synthetic
-  two-position trellis exaggerated its benefit, while a real Kimi two-bit SQG
-  study increased pooled error by 2.250%.
-- Exhaustive exact-KLD selection across every gate and up path is not promoted.
-  Its candidate product grows beyond production feasibility and does not match
-  the additive Viterbi computation.
-- The two-step closed trellis is not an experimental proxy. It is retained only
-  as a drawing that exposes sixteen legal paths.
-- A gate/up pair trellis remains a later representation experiment. It needs a
-  production-length CPU reference, CUDA encoder, decoder, coupled feedback,
-  exact-byte accounting, and evidence that it recovers more than it loses by
-  giving up the qualified scalar transform basis.
-- Residual trellis streams and entropy-coded paths remain deferred because they
-  change the storage and random-access contracts.
-
-## Promotion criteria
-
-Before a mechanism reaches a complete checkpoint build, require all of the
-following:
-
-- bit-exact agreement between CPU reference and CUDA decode;
-- the production 256-position path, 128-position cyclic context, scale search,
-  transforms, and BlockLDLQ path;
-- no fit/report document overlap and no candidate-aware panel selection;
-- a source-controlled confirmation-panel list frozen before candidate errors
-  are available;
-- lower pooled loss with a positive lower clustered confidence bound on the
-  pre-registered confirmation panel;
-- no unacceptable regression in rare-support experts, heavy-tail tiles, live
-  routing, or the pre-registered tail metric;
-- agreement in direction between the expert panel and complete-layer runs; and
-- an implementation whose computational form and memory use remain feasible
-  for every routed expert.
-
-The first promotion gate applies to the measurement itself. Model-loss
-curvature must predict held-out forward KLD better than routed squared error on
-the frozen confirmation panel. Failure rejects curvature as a damage score and
-blocks curvature-weighted residual allocation. Reconstruction-table training
-has already failed its independent headroom gate. Down refitting keeps its own
-paired-KLD confirmation path because its fitted target does not require the
-curvature score.
-
-The sparse-residual gate is also mechanical: reject the format when the
-held-out curvature-weighted top-one and top-two shares fail to exceed 6% and
-10%, respectively, or when its oracle fails to beat K4 per exact added byte.
-
-The final decision uses complete serialized bytes and paired full-model forward
-KLD against the immutable EXL3 checkpoint. Smaller measurements remain
-diagnostics even when every diagnostic agrees.
+If a proposal-ranking section in another document conflicts with this testing
+order, follow this strategy. Preserve the older claim only in a document whose
+purpose is to record experimental history.

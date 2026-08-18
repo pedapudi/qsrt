@@ -62,7 +62,7 @@ from qsrt.tp_simulator import situ
 
 
 CANDIDATE_POOL_KIND = "qsrt_kimi_k3_qsrt_candidate_pool"
-CANDIDATE_POOL_SCHEMA_VERSION = 7
+CANDIDATE_POOL_SCHEMA_VERSION = 8
 OFFICIAL_SOURCE_DAMAGE_METRIC = "official_source_excess_sse"
 HessianPolicy = Literal["captured_blend", "identity"]
 HESSIAN_POLICIES: tuple[HessianPolicy, ...] = ("captured_blend", "identity")
@@ -658,7 +658,6 @@ def encode_phase1_expert(
         raise ValueError(f"unsupported Hessian policy: {hessian_policy}")
     if permutation_policy not in PERMUTATION_POLICIES:
         raise ValueError(f"unsupported permutation policy: {permutation_policy}")
-
     all_rows = select_expert_rows(samples, expert, partition.all)
     fit_mask = _split_rows(all_rows, partition.fit)
     confirmation_mask = _split_rows(all_rows, partition.confirmation)
@@ -798,6 +797,7 @@ def encode_phase1_expert(
         reference_output = torch.empty(
             (0, global_h13.shape[0]), dtype=torch.float32, device=device
         )
+    covariance["down_target"] = {"policy": "source_down_projection"}
     down_candidates = _quantize_conditional_down_grid(
         [source_w2],
         [block_contexts_device],
@@ -1052,7 +1052,6 @@ def encode_phase1_expert_batch(
         raise ValueError(f"unsupported Hessian policy: {hessian_policy}")
     if permutation_policy not in PERMUTATION_POLICIES:
         raise ValueError(f"unsupported permutation policy: {permutation_policy}")
-
     prepared: list[dict[str, object]] = []
     upstream_sources: list[dict[str, torch.Tensor]] = []
     upstream_contexts: list[torch.Tensor] = []
@@ -1152,6 +1151,7 @@ def encode_phase1_expert_batch(
         mode_specs = tuple(resolve_mode(mode) for mode in evaluated_modes)
         contexts_device = block_contexts.to(device=device, dtype=torch.long)
         coupled_execution_basis: CoupledHadamardExecution | None = None
+        coupled_source_upstream: tuple[torch.Tensor, torch.Tensor] | None = None
         coupled_source_w2: torch.Tensor | None = None
         coupled_reference_output: torch.Tensor | None = None
         if coupled:
@@ -1162,6 +1162,7 @@ def encode_phase1_expert_batch(
                 (source_w1, source_w3, source_w2), spec
             )
             coupled_execution_basis = coupled_execution(transformed, spec)
+            coupled_source_upstream = transformed[:2]
             coupled_source_w2 = transformed[2]
             coupled_reference_output = (
                 F.linear(source_middle, source_w2)
@@ -1215,6 +1216,7 @@ def encode_phase1_expert_batch(
                 "h13": h13,
                 "global_h2_basis": transformed_global_h2,
                 "coupled_execution": coupled_execution_basis,
+                "coupled_source_upstream": coupled_source_upstream,
                 "coupled_source_w2": coupled_source_w2,
                 "coupled_reference_output": coupled_reference_output,
             }
@@ -1253,7 +1255,7 @@ def encode_phase1_expert_batch(
     )
     del upstream_sources, upstream_hessians
 
-    down_sources: list[torch.Tensor] = []
+    down_targets_by_r13: list[dict[int, torch.Tensor]] = []
     conditional_h2s: list[dict[int, torch.Tensor]] = []
     for item, upstream in zip(prepared, upstream_candidates):
         expert = int(item["expert"])
@@ -1274,6 +1276,7 @@ def encode_phase1_expert_batch(
             middle_by_r13 = _candidate_middle_by_r13(
                 inputs, upstream, evaluated_modes
             )
+            source_middle_basis = source_middle
         else:
             middle_by_r13 = {
                 int(r13): execution_basis.decode_middle(
@@ -1283,6 +1286,14 @@ def encode_phase1_expert_batch(
                 )
                 for r13 in evaluated_modes
             }
+            source_coordinates = item["coupled_source_upstream"]
+            if source_coordinates is None:
+                raise AssertionError("coupled source upstream coordinates are absent")
+            source_middle_basis = execution_basis.decode_middle(
+                inputs,
+                source_coordinates[0],
+                source_coordinates[1],
+            )
         h2_by_r13, h2_evidence = _conditional_h2_by_r13(
             inputs,
             gates,
@@ -1325,11 +1336,30 @@ def encode_phase1_expert_batch(
                 (0, global_h13.shape[0]), dtype=torch.float32, device=device
             )
         item["reference_output"] = reference_output
-        down_sources.append(source_w2)
+        if down_target_policy == "functional_ridge":
+            fit_mask = item["fit_mask"].to(device=device)
+            construction_mask = (
+                torch.ones_like(fit_mask)
+                if fixed_profile
+                else fit_mask
+            )
+            targets, target_evidence = _functional_down_targets_by_r13(
+                source_w2,
+                source_middle_basis,
+                middle_by_r13,
+                gates,
+                construction_mask,
+                regularization_ratio=w2_refit_regularization_ratio,
+            )
+        else:
+            targets = {int(r13): source_w2 for r13 in evaluated_modes}
+            target_evidence = {"policy": "source_down_projection"}
+        item["covariance"]["down_target"] = target_evidence
+        down_targets_by_r13.append(targets)
         conditional_h2s.append(h2_by_r13)
 
     down_candidates = _quantize_conditional_down_grid(
-        down_sources,
+        down_targets_by_r13,
         upstream_contexts,
         upstream_modes,
         conditional_h2s,
@@ -1355,7 +1385,7 @@ def encode_phase1_expert_batch(
         layer=layer,
         stage="post-down-encode",
     )
-    del down_sources, conditional_h2s
+    del down_targets_by_r13, conditional_h2s
 
     results: list[QSRTCandidateEncoding] = []
     for item, upstream, down in zip(

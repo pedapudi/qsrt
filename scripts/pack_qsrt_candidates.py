@@ -11,6 +11,7 @@ metrics, and selection ledger are all present.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -26,6 +27,7 @@ from safetensors import safe_open
 from safetensors.torch import load_file, save_file
 
 from qsrt import constants as C
+from qsrt.all_row_capture import load_all_row_capture, map_layer_rows
 from qsrt.capture import (
     LayerSampleIndex,
     LayerSampleCacheIndex,
@@ -59,10 +61,15 @@ from qsrt.qsrt_rotations import (
 from qsrt.qsrt_coupled_plan import (
     CoupledDrawSelection,
     CoupledRotationPlan,
+    POOLED_ALL_ROW_SELECTION,
     PRODUCTION_SELECTION,
     load_coupled_rotation_plan,
     select_coupled_draw,
 )
+from qsrt.coupled_expert_study import CoupledTriplet
+from qsrt.pooled_calibration import evaluate_coupled_candidate_portfolio_batches
+from qsrt.pooled_selection import PooledCandidateScore, select_pooled_candidate
+from qsrt.qsrt_coupled import CoupledHadamardExecution, CoupledHadamardSpec
 from qsrt.qsrt import (
     FIXED_HIGH_RATE_TRELLIS_BYTES,
     H308,
@@ -83,6 +90,7 @@ from qsrt.qsrt import (
 from qsrt.pack.qsrt_candidates import (
     CANDIDATE_POOL_KIND,
     CANDIDATE_POOL_SCHEMA_VERSION,
+    DOWN_TARGET_POLICIES,
     HESSIAN_POLICIES,
     OFFICIAL_SOURCE_DAMAGE_METRIC,
     candidate_tensor_name,
@@ -245,6 +253,20 @@ def _coupled_manifest_contract(
             "plan": plan.to_json(),
         }
     if draws is not None:
+        pooled_capture = getattr(args, "pooled_selection_capture", None)
+        if pooled_capture is not None:
+            manifest_path = pooled_capture / "manifest.json"
+            manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            return {
+                "source": "candidate_pool_selection",
+                "selection": POOLED_ALL_ROW_SELECTION,
+                "draw_candidates": list(draws),
+                "capture": str(pooled_capture.resolve()),
+                "capture_manifest_sha256": manifest_sha256,
+                "population": "every_naturally_routed_captured_occurrence",
+                "metric": "whole_expert_post_projection_sse",
+                "router_weighting": "applied_gate_squared_once",
+            }
         return {
             "source": "candidate_pool_selection",
             "selection": PRODUCTION_SELECTION,
@@ -420,6 +442,29 @@ def _h2_contract(args: argparse.Namespace) -> dict[str, object]:
                 )
             )
         ),
+    }
+
+
+def _down_target_contract(args: argparse.Namespace) -> dict[str, object]:
+    policy = getattr(args, "down_target_policy", "source")
+    if policy == "source":
+        return {"policy": "source_down_projection"}
+    return {
+        "policy": "candidate_hidden_regularized_functional_refit",
+        "indexed_by": "expert_upstream_profile",
+        "objective": "applied_gate_squared_routed_expert_output_sse",
+        "prior": "source_down_projection",
+        "regularization_ratio": float(args.w2_refit_regularization_ratio),
+        "candidate_construction_population": (
+            "all_available_routed_rows"
+            if args.mode_ids in (
+                (R0.mode_id,),
+                (H308.mode_id,),
+                (K2.mode_id,),
+            )
+            else "fit_partition"
+        ),
+        "serialized_format_change": False,
     }
 
 
@@ -906,6 +951,7 @@ def _allocate_metrics(
     confirmation_documents: int,
     *,
     coupled: bool = False,
+    pooled_coupled: bool = False,
 ) -> dict[str, torch.Tensor]:
     count = len(experts)
     mode_count = len(modes)
@@ -963,6 +1009,20 @@ def _allocate_metrics(
                 ),
             }
         )
+    if pooled_coupled:
+        metrics.update(
+            {
+                "coupled_draw_pooled_sse": torch.full(
+                    (count, 8), float("nan"), dtype=torch.float64
+                ),
+                "coupled_draw_pooled_source_energy": torch.zeros(
+                    count, dtype=torch.float64
+                ),
+                "coupled_draw_pooled_occurrences": torch.zeros(
+                    count, dtype=torch.int64
+                ),
+            }
+        )
     return metrics
 
 
@@ -975,6 +1035,9 @@ def _store_metrics(
     coupled_selection: CoupledDrawSelection | None = None,
     coupled_fit_sse: dict[int, float] | None = None,
     coupled_confirmation_sse: dict[int, float] | None = None,
+    coupled_pooled_sse: dict[int, float] | None = None,
+    coupled_pooled_source_energy: float | None = None,
+    coupled_pooled_occurrences: int | None = None,
 ) -> None:
     selection = candidate.selection
     metrics["selected_r13"][row] = selection.selected_r13
@@ -1019,7 +1082,16 @@ def _store_metrics(
     )
     metrics[OFFICIAL_SOURCE_DAMAGE_METRIC][row] = official_source_excess_sse
     if coupled_selection is None:
-        if coupled_fit_sse is not None or coupled_confirmation_sse is not None:
+        if any(
+            value is not None
+            for value in (
+                coupled_fit_sse,
+                coupled_confirmation_sse,
+                coupled_pooled_sse,
+                coupled_pooled_source_energy,
+                coupled_pooled_occurrences,
+            )
+        ):
             raise ValueError("coupled draw SSE was provided without a selection")
         return
     if coupled_fit_sse is None or coupled_confirmation_sse is None:
@@ -1036,6 +1108,72 @@ def _store_metrics(
         metrics["coupled_draw_confirmation_improvement"][row] = (
             coupled_selection.confirmation_relative_improvement
         )
+    if coupled_pooled_sse is not None:
+        if coupled_pooled_source_energy is None or coupled_pooled_occurrences is None:
+            raise ValueError("pooled coupled scores are missing source support")
+        for draw in coupled_selection.evaluated_draws:
+            metrics["coupled_draw_pooled_sse"][row, draw] = coupled_pooled_sse[draw]
+        metrics["coupled_draw_pooled_source_energy"][row] = coupled_pooled_source_energy
+        metrics["coupled_draw_pooled_occurrences"][row] = coupled_pooled_occurrences
+
+
+def _load_source_triplet(
+    store: OfficialMXFP4Store,
+    *,
+    layer: int,
+    expert: int,
+    device: torch.device,
+) -> CoupledTriplet:
+    return CoupledTriplet(
+        *(
+            store.load_matrix(layer, expert, matrix, device=device).float()
+            for matrix in ("w1", "w3", "w2")
+        )
+    )
+
+
+def _pooled_coupled_draw_scores(
+    layer_rows,
+    store: OfficialMXFP4Store,
+    candidate_by_draw: dict[int, object],
+    *,
+    layer: int,
+    expert: int,
+    device: torch.device,
+    batch_rows: int,
+) -> tuple[dict[int, float], float, int]:
+    source = _load_source_triplet(
+        store, layer=layer, expert=expert, device=device
+    )
+    coordinates = {
+        str(draw): CoupledTriplet(
+            candidate.expert.matrices["w1"].reconstruction,
+            candidate.expert.matrices["w3"].reconstruction,
+            candidate.expert.matrices["w2"].reconstruction,
+        )
+        for draw, candidate in candidate_by_draw.items()
+    }
+    executions = {
+        str(draw): CoupledHadamardExecution(
+            hidden=source.hidden,
+            intermediate=source.intermediate,
+            spec=CoupledHadamardSpec(intermediate_draw=draw),
+        )
+        for draw in candidate_by_draw
+    }
+    evaluation = evaluate_coupled_candidate_portfolio_batches(
+        layer_rows.expert_batches(
+            expert, batch_rows=batch_rows, fields=("input",)
+        ),
+        source=source,
+        candidate_coordinates=coordinates,
+        executions=executions,
+    )
+    return (
+        {int(draw): value for draw, value in evaluation.candidate_sse.items()},
+        evaluation.source_energy,
+        evaluation.routed_occurrences,
+    )
 
 
 def encode_layer(
@@ -1106,16 +1244,38 @@ def encode_layer(
     device = torch.device("cuda", 0)
     global_h13 = global_h13.to(device=device, dtype=torch.float32)
     global_h2 = global_h2.to(device=device, dtype=torch.float32)
+    pooled_coupled = (
+        _coupled_manifest_contract(args) is not None
+        and _coupled_manifest_contract(args).get("selection")
+        == POOLED_ALL_ROW_SELECTION
+    )
+    pooled_layer_rows = None
+    if pooled_coupled:
+        mapped_started = time.time()
+        pooled_layer_rows = map_layer_rows(
+            args.pooled_selection_capture,
+            layer,
+            verify_hashes=False,
+        )
+        print(
+            f"layer {layer}: mapped {pooled_layer_rows.rows:,} pooled-selection "
+            f"rows in {time.time() - mapped_started:.1f}s",
+            flush=True,
+        )
+    metric_options = (
+        {
+            "coupled": True,
+            **({"pooled_coupled": True} if pooled_coupled else {}),
+        }
+        if _coupled_manifest_contract(args) is not None
+        else {}
+    )
     metrics = _allocate_metrics(
         experts,
         args.mode_ids,
         len(partition.fit),
         len(partition.confirmation),
-        **(
-            {"coupled": True}
-            if _coupled_manifest_contract(args) is not None
-            else {}
-        ),
+        **metric_options,
     )
     selections: dict[str, dict] = {}
     shared_hidden: dict[str, torch.Tensor] = {}
@@ -1203,6 +1363,10 @@ def encode_layer(
                             hessian_policy=args.hessian_policy,
                             permutation_policy=args.permutation_policy,
                             folded_scale_power=args.folded_scale_power,
+                            down_target_policy=args.down_target_policy,
+                            w2_refit_regularization_ratio=(
+                                args.w2_refit_regularization_ratio
+                            ),
                             transform_seeds_by_expert=(
                                 None
                                 if not (
@@ -1269,6 +1433,9 @@ def encode_layer(
                 coupled_selection: CoupledDrawSelection | None = None
                 coupled_fit_sse: dict[int, float] | None = None
                 coupled_confirmation_sse: dict[int, float] | None = None
+                coupled_pooled_sse: dict[int, float] | None = None
+                coupled_pooled_source_energy: float | None = None
+                coupled_pooled_occurrences: int | None = None
                 if coupled_plan is not None or coupled_draw_candidates is not None:
                     candidate_by_draw = {
                         int(draw_map[expert]): candidates[batch_row]
@@ -1294,18 +1461,65 @@ def encode_layer(
                         torch.count_nonzero(reference_candidate.confirmation_counts)
                     )
                     if coupled_draw_candidates is not None:
-                        coupled_selection = select_coupled_draw(
-                            coupled_draw_candidates,
-                            coupled_fit_sse,
-                            coupled_confirmation_sse,
-                            fit_documents=fit_documents,
-                            confirmation_documents=confirmation_documents,
-                            min_fit_documents=args.min_fit_documents,
-                            min_confirmation_documents=(
-                                args.min_confirmation_documents
-                            ),
-                            minimum_improvement=args.minimum_improvement,
-                        )
+                        if pooled_coupled:
+                            if pooled_layer_rows is None:
+                                raise AssertionError(
+                                    "pooled selection lacks mapped layer rows"
+                                )
+                            pooled_started = time.monotonic()
+                            (
+                                coupled_pooled_sse,
+                                coupled_pooled_source_energy,
+                                coupled_pooled_occurrences,
+                            ) = _pooled_coupled_draw_scores(
+                                pooled_layer_rows,
+                                store,
+                                candidate_by_draw,
+                                layer=layer,
+                                expert=expert,
+                                device=device,
+                                batch_rows=args.pooled_selection_batch_rows,
+                            )
+                            print(
+                                f"layer {layer}, expert {expert}: scored "
+                                f"{len(coupled_draw_candidates)} coupled draws over "
+                                f"{coupled_pooled_occurrences} routed occurrences in "
+                                f"{time.monotonic() - pooled_started:.1f}s",
+                                flush=True,
+                            )
+                            pooled_selection = select_pooled_candidate(
+                                PooledCandidateScore(
+                                    name=str(draw),
+                                    sse=coupled_pooled_sse[draw],
+                                    source_energy=coupled_pooled_source_energy,
+                                    metadata_bytes=0,
+                                )
+                                for draw in coupled_draw_candidates
+                            )
+                            selected_draw = int(pooled_selection.selected.name)
+                            coupled_selection = CoupledDrawSelection(
+                                evaluated_draws=coupled_draw_candidates,
+                                proposed_draw=selected_draw,
+                                selected_draw=selected_draw,
+                                fit_documents=fit_documents,
+                                confirmation_documents=confirmation_documents,
+                                confirmation_relative_improvement=None,
+                                accepted=selected_draw != 0,
+                                reason="pooled_all_routed_rows_minimum_sse",
+                            )
+                        else:
+                            coupled_selection = select_coupled_draw(
+                                coupled_draw_candidates,
+                                coupled_fit_sse,
+                                coupled_confirmation_sse,
+                                fit_documents=fit_documents,
+                                confirmation_documents=confirmation_documents,
+                                min_fit_documents=args.min_fit_documents,
+                                min_confirmation_documents=(
+                                    args.min_confirmation_documents
+                                ),
+                                minimum_improvement=args.minimum_improvement,
+                            )
                     else:
                         selected_draw = next(iter(candidate_by_draw))
                         coupled_selection = CoupledDrawSelection(
@@ -1339,6 +1553,9 @@ def encode_layer(
                     coupled_selection=coupled_selection,
                     coupled_fit_sse=coupled_fit_sse,
                     coupled_confirmation_sse=coupled_confirmation_sse,
+                    coupled_pooled_sse=coupled_pooled_sse,
+                    coupled_pooled_source_energy=coupled_pooled_source_energy,
+                    coupled_pooled_occurrences=coupled_pooled_occurrences,
                 )
                 for matrix, part in (
                     ("w1", "suh"),
@@ -1376,6 +1593,22 @@ def encode_layer(
                             str(draw): coupled_confirmation_sse[draw]
                             for draw in coupled_selection.evaluated_draws
                         },
+                        **(
+                            {
+                                "pooled_post_projection_sse": {
+                                    str(draw): coupled_pooled_sse[draw]
+                                    for draw in coupled_selection.evaluated_draws
+                                },
+                                "pooled_source_energy": (
+                                    coupled_pooled_source_energy
+                                ),
+                                "pooled_routed_occurrences": (
+                                    coupled_pooled_occurrences
+                                ),
+                            }
+                            if coupled_pooled_sse is not None
+                            else {}
+                        ),
                     }
                 completed += 1
                 elapsed = time.time() - started
@@ -1416,6 +1649,7 @@ def encode_layer(
         "permutation_policy": getattr(args, "permutation_policy", "h2_reverse"),
         "folded_scale_power": float(getattr(args, "folded_scale_power", 0.0)),
         "h2_contract": _h2_contract(args),
+        "down_target_contract": _down_target_contract(args),
         "selection_contract": {
             **_selection_contract(args),
             "fit_documents": len(partition.fit),
@@ -1436,7 +1670,11 @@ def encode_layer(
         "source_residency": (
             "complete_expert_reencode_per_coupled_draw"
             if _configured_coupled_draw_candidates(args)
-            else "w1_w3_once_then_w2_reused_across_conditional_r13_grid"
+            else (
+                "w1_w3_once_then_candidate_conditioned_w2_target_per_r13"
+                if args.down_target_policy == "functional_ridge"
+                else "w1_w3_once_then_w2_reused_across_conditional_r13_grid"
+            )
         ),
         "payload_write": "atomic_bounded_memory_safetensors_stream",
         "logical_trellis_schema": args.logical_trellis_schema,
@@ -1604,16 +1842,26 @@ def _merge_scheduled_layer(
     )
 
     if not metrics_path.exists():
+        coupled_contract = _coupled_manifest_contract(args)
+        metric_options = (
+            {
+                "coupled": True,
+                **(
+                    {"pooled_coupled": True}
+                    if coupled_contract.get("selection")
+                    == POOLED_ALL_ROW_SELECTION
+                    else {}
+                ),
+            }
+            if coupled_contract is not None
+            else {}
+        )
         merged_metrics = _allocate_metrics(
             list(range(C.NUM_EXPERTS)),
             args.mode_ids,
             len(partition.fit),
             len(partition.confirmation),
-            **(
-                {"coupled": True}
-                if _coupled_manifest_contract(args) is not None
-                else {}
-            ),
+            **metric_options,
         )
         expected_metric_keys = set(merged_metrics)
         for job in jobs:
@@ -1895,6 +2143,7 @@ def _manifest(args: argparse.Namespace) -> dict:
         "permutation_policy": getattr(args, "permutation_policy", "h2_reverse"),
         "folded_scale_power": float(getattr(args, "folded_scale_power", 0.0)),
         "h2_contract": _h2_contract(args),
+        "down_target_contract": _down_target_contract(args),
         **_selection_contract(args),
         "min_fit_documents": args.min_fit_documents,
         "min_confirmation_documents": args.min_confirmation_documents,
@@ -1997,6 +2246,10 @@ def _candidate_worker_command(
         args.permutation_policy,
         "--folded-scale-power",
         str(args.folded_scale_power),
+        "--down-target-policy",
+        args.down_target_policy,
+        "--w2-refit-regularization-ratio",
+        str(args.w2_refit_regularization_ratio),
         "--teacher-checkpoint",
         str(args.teacher_checkpoint),
         "--official-revision",
@@ -2054,6 +2307,15 @@ def _candidate_worker_command(
             (
                 "--coupled-draw-candidates",
                 ",".join(str(draw) for draw in args.coupled_draw_candidates),
+            )
+        )
+    if args.pooled_selection_capture is not None:
+        command.extend(
+            (
+                "--pooled-selection-capture",
+                str(args.pooled_selection_capture),
+                "--pooled-selection-batch-rows",
+                str(args.pooled_selection_batch_rows),
             )
         )
     if args.official_repo_dir is not None:
@@ -2357,6 +2619,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--down-target-policy",
+        choices=DOWN_TARGET_POLICIES,
+        default="source",
+        help=(
+            "source encodes the checkpoint W2; functional_ridge first fits one "
+            "W2 target to each decoded upstream candidate"
+        ),
+    )
+    parser.add_argument(
+        "--w2-refit-regularization-ratio",
+        type=float,
+        default=1e-2,
+        help=(
+            "ridge strength relative to the candidate hidden Gram trace per "
+            "dimension when --down-target-policy=functional_ridge"
+        ),
+    )
+    parser.add_argument(
         "--teacher-checkpoint",
         type=Path,
         default=Path("/models/Kimi-K3-EXL3-3p09-serve"),
@@ -2432,10 +2712,24 @@ def parse_args() -> argparse.Namespace:
         "--coupled-draw-candidates",
         type=_parse_ints,
         help=(
-            "expert-static coupled-transform draw portfolio; fit proposes one draw "
-            "and the disjoint confirmation fold may only accept it against "
-            "draw zero"
+            "expert-static coupled-transform draw portfolio; without a pooled "
+            "selection capture, fit proposes one draw and the disjoint "
+            "confirmation fold may only accept it against draw zero"
         ),
+    )
+    parser.add_argument(
+        "--pooled-selection-capture",
+        type=Path,
+        help=(
+            "finalized all-routed-row capture used to select the minimum "
+            "whole-expert post-projection SSE across coupled draws"
+        ),
+    )
+    parser.add_argument(
+        "--pooled-selection-batch-rows",
+        type=int,
+        default=512,
+        help="naturally routed expert occurrences scored per GPU batch",
     )
     parser.add_argument("--min-fit-documents", type=int, default=PHASE1_MIN_FIT_DOCUMENTS)
     parser.add_argument(
@@ -2517,6 +2811,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--cpu-threads must be positive")
     if not math.isfinite(args.folded_scale_power):
         parser.error("--folded-scale-power must be finite")
+    if (
+        not math.isfinite(args.w2_refit_regularization_ratio)
+        or args.w2_refit_regularization_ratio <= 0
+    ):
+        parser.error("--w2-refit-regularization-ratio must be finite and positive")
     if min(args.residual_rotation_draw, args.intermediate_rotation_draw) < 0:
         parser.error("rotation draw indices must be nonnegative")
     if args.rotation_plan is not None and (
@@ -2566,6 +2865,27 @@ def parse_args() -> argparse.Namespace:
         parser.error(
             "--coupled-draw-candidates must begin with zero and lie in 0..7"
         )
+    if args.pooled_selection_capture is not None:
+        if args.coupled_draw_candidates is None:
+            parser.error(
+                "--pooled-selection-capture requires --coupled-draw-candidates"
+            )
+        try:
+            pooled_manifest, pooled_geometry, _pooled_chunks = load_all_row_capture(
+                args.pooled_selection_capture,
+                verify_hashes=False,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            parser.error(f"invalid pooled selection capture: {exc}")
+        if (
+            tuple(pooled_geometry.layers) != tuple(C.MOE_LAYERS)
+            or pooled_geometry.input_size != C.LATENT
+            or pooled_geometry.top_k != C.TOP_K
+            or int(pooled_manifest.get("rows", 0)) <= 0
+        ):
+            parser.error("pooled selection capture has incompatible Kimi geometry")
+    if args.pooled_selection_batch_rows < 1:
+        parser.error("--pooled-selection-batch-rows must be positive")
     if not math.isfinite(args.minimum_improvement) or args.minimum_improvement < 0:
         parser.error("--minimum-improvement must be finite and nonnegative")
     if args.worker is None:

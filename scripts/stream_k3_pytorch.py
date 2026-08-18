@@ -47,6 +47,7 @@ from qsrt.kimi_stream import (
     write_trace_manifest,
     write_trace_tensor,
 )
+from qsrt.kimi_fisher_archive import KimiBoundaryArchiveWriter
 from qsrt.qsrt import (
     SCHEMA as QSRT_SCHEMA,
     PackedQSRTTrellis,
@@ -114,10 +115,10 @@ class QSRTArtifact:
                     f"{manifest_path}: {name}={manifest.get(name)!r}, "
                     f"expected {expected!r}"
                 )
-        codebook = manifest.get("trellis_codebook")
+        codebook = manifest.get("candidate_codebook")
         if codebook not in QSRT_CODEBOOKS:
             raise ValueError(
-                f"{manifest_path}: unsupported trellis_codebook {codebook!r}"
+                f"{manifest_path}: unsupported candidate_codebook {codebook!r}"
             )
         layers = manifest.get("layers")
         expected_layers = {str(layer) for layer in KQ_C.MOE_LAYERS}
@@ -191,7 +192,7 @@ class QSRTArtifact:
 
     @property
     def codebook(self) -> str:
-        return str(self.manifest["trellis_codebook"])
+        return str(self.manifest["candidate_codebook"])
 
 
 def _require_reference_dependencies() -> dict[str, Any]:
@@ -1531,11 +1532,64 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "trace_layers": list(trace_layers),
         "chunk_size": args.chunk_size,
         "capture_routed_post_situ": args.capture_routed_post_situ,
+        "boundary_archive": (
+            None
+            if args.boundary_archive is None
+            else str(args.boundary_archive.expanduser().resolve())
+        ),
         "device": str(device),
         "layers": [],
         "compatibility_fixes": [],
     }
     write_json(run_manifest_path, run_document)
+
+    boundary_writer = None
+    if args.boundary_archive is not None:
+        model_depth = int(config.num_hidden_layers)
+        if end_layer != model_depth:
+            raise ValueError(
+                "a replay archive must include every decoder layer"
+            )
+        residual_block_size = int(config.attn_res_block_size)
+        boundary_writer = KimiBoundaryArchiveWriter(
+            args.boundary_archive,
+            num_layers=model_depth,
+            residual_block_size=residual_block_size,
+            provenance={
+                "checkpoint": str(checkpoint),
+                "expert_checkpoint": str(expert_source_path),
+                "nonexpert_checkpoint": str(nonexpert_checkpoint),
+                "qsrt_manifest": (
+                    None
+                    if qsrt_artifact is None
+                    else str(qsrt_artifact.manifest_path)
+                ),
+                "qsrt_codebook": (
+                    None if qsrt_artifact is None else qsrt_artifact.codebook
+                ),
+                "input_suite": run_document["input_suite"],
+            },
+            resume=args.resume is not None,
+        )
+        if args.resume is None:
+            if start_layer != 0:
+                raise ValueError(
+                    "a new replay archive must begin before decoder layer zero"
+                )
+            boundary_writer.append(state)
+        elif (
+            not boundary_writer.records
+            or boundary_writer.records[-1].next_layer != start_layer
+        ):
+            archived_layer = (
+                None
+                if not boundary_writer.records
+                else boundary_writer.records[-1].next_layer
+            )
+            raise ValueError(
+                f"resume state is at boundary {start_layer}, but the replay "
+                f"archive ends at {archived_layer}"
+            )
 
     trace_root = output_dir / "trace"
     if not args.no_trace:
@@ -1678,6 +1732,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             hidden_states=layer_output,
             block_residual=block_output,
         )
+        if boundary_writer is not None:
+            boundary_writer.append(state)
         torch.cuda.synchronize(device)
         layer_record = {
             "layer": layer_idx,
@@ -1763,6 +1819,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if prefetcher is not None:
         prefetcher.close()
 
+    if boundary_writer is not None:
+        boundary_manifest = boundary_writer.seal()
+        run_document["boundary_archive_manifest"] = str(boundary_manifest)
+
     run_document.update(
         {
             "status": "complete",
@@ -1847,6 +1907,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-layer", type=int)
     parser.add_argument("--chunk-size", type=int, default=4)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument(
+        "--boundary-archive",
+        type=Path,
+        help=(
+            "write exact hidden-state boundaries and append-only attention "
+            "residuals for layerwise reverse replay"
+        ),
+    )
     parser.add_argument("--no-trace", action="store_true")
     parser.add_argument(
         "--trace-layers",

@@ -1,9 +1,11 @@
-"""Explore fixed-payload K2 allocation at 16x16 tile granularity.
+"""Evaluate fixed-payload K1/K2/K3 rate allocation for QSRT experts.
 
-This is an offline numerical experiment.  It does not define a serialized
-QSRT format.  Tile maps are selected from fit-document dense-H geometry, then
-the complete BlockLDLQ traversal is rerun with those fixed maps and scored on
-separate confirmation documents.
+The allocation screen encodes K1/K2/K3 candidates without cross-tile LDLQ
+feedback, then scores their decoded errors under the production dense Hessian.
+Every proposed mixed-rate schedule is encoded again from the canonical source
+with complete BlockLDLQ feedback.  Routed expert-output measurements are
+diagnostic; they do not select or reject a schedule.  This offline numerical
+experiment does not define a serialized QSRT format.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from qsrt.exl3_reference import (
     decode_regularized_weight,
     decode_qsrt_regularized_weight,
 )
+from qsrt.high_rate_allocation import dense_h_tile_error_contributions
 from qsrt.ldlq import SIGMA_REG, make_shared_h
 from qsrt.pack.qsrt_encoder import plan_qsrt_matrix
 from qsrt.qsrt import RATE_TRANSFER_MODES, expand_group_order
@@ -72,6 +75,15 @@ TRIPLE_MODES = (
     (3, 4, 2),
     (4, 2, 3),
     (4, 3, 2),
+)
+TWO_BIT_PROJECTION_MODES = (
+    (2, 2, 2),
+    (1, 2, 3),
+    (1, 3, 2),
+    (2, 1, 3),
+    (2, 3, 1),
+    (3, 1, 2),
+    (3, 2, 1),
 )
 OUTER_SLOPES = {
     "q31": 31.0 / 32.0,
@@ -368,6 +380,345 @@ def _qsrt_308_record_map(
     else:
         rate_map = torch.tensor(rates, dtype=torch.int8)[:, None].repeat(1, tiles_n)
     return tuple(int(value) for value in rate_map.flatten().tolist())
+
+
+def _p13_record_map(
+    shape: tuple[int, int],
+    donor_records: int,
+    *,
+    rate_axis: str,
+) -> tuple[int, ...]:
+    """Build an exact-average-two-bit K1/K2/K3 record schedule.
+
+    Records are ordered from low to high priority after the shared neuron
+    permutation.  ``donor_records`` records at the low end use K1, the same
+    number at the high end use K3, and every remaining record uses K2.  Every
+    coefficient strip therefore consumes exactly 48 bits across 24 records.
+    """
+
+    if rate_axis not in ("k", "n"):
+        raise ValueError("P13 map needs rate_axis 'k' or 'n'")
+    if not 0 <= donor_records <= 12:
+        raise ValueError("P13 donor count must lie in 0..12")
+    tiles_k, tiles_n = shape[0] // 16, shape[1] // 16
+    rate_tiles = tiles_k if rate_axis == "k" else tiles_n
+    if rate_tiles != 192:
+        raise ValueError("Kimi P13 maps require 24 128-channel records")
+    rates = (
+        (1,) * (8 * donor_records)
+        + (2,) * (8 * (24 - 2 * donor_records))
+        + (3,) * (8 * donor_records)
+    )
+    if len(rates) != rate_tiles or sum(rates) != 8 * 48:
+        raise AssertionError("invalid P13 record schedule")
+    if rate_axis == "n":
+        rate_map = torch.tensor(rates, dtype=torch.int8).repeat(tiles_k, 1)
+    else:
+        rate_map = torch.tensor(rates, dtype=torch.int8)[:, None].repeat(1, tiles_n)
+    return tuple(int(value) for value in rate_map.flatten().tolist())
+
+
+def _p13_record_map_from_rates(
+    shape: tuple[int, int],
+    record_rates: Sequence[int],
+    *,
+    rate_axis: str,
+) -> tuple[int, ...]:
+    """Expand 24 record rates into a K1/K2/K3 tile map."""
+
+    return _p13_channel_group_map_from_rates(
+        shape,
+        record_rates,
+        rate_axis=rate_axis,
+        channels_per_group=128,
+    )
+
+
+def _p13_channel_group_map_from_rates(
+    shape: tuple[int, int],
+    group_rates: Sequence[int],
+    *,
+    rate_axis: str,
+    channels_per_group: int,
+) -> tuple[int, ...]:
+    """Expand balanced channel-group rates into a K1/K2/K3 tile map."""
+
+    if rate_axis not in ("k", "n"):
+        raise ValueError("P13 channel-group map needs rate_axis 'k' or 'n'")
+    if channels_per_group <= 0 or channels_per_group % 16:
+        raise ValueError("P13 channel groups must contain whole 16-channel tiles")
+    rates = tuple(int(rate) for rate in group_rates)
+    expected_groups = 3072 // channels_per_group
+    if len(rates) != expected_groups or any(rate not in (1, 2, 3) for rate in rates):
+        raise ValueError("P13 channel-group rates have the wrong geometry")
+    if rates.count(1) != rates.count(3):
+        raise ValueError("P13 channel-group rates must balance K1 and K3")
+    if sum(rates) != 2 * expected_groups:
+        raise ValueError("P13 channel-group rates must retain a two-bit mean")
+    tiles_k, tiles_n = shape[0] // 16, shape[1] // 16
+    rate_tiles = tiles_k if rate_axis == "k" else tiles_n
+    if rate_tiles != 192:
+        raise ValueError("Kimi P13 maps require 24 128-channel records")
+    group_tiles = channels_per_group // 16
+    tile_rates = torch.tensor(rates, dtype=torch.int8).repeat_interleave(
+        group_tiles
+    )
+    if tile_rates.numel() != rate_tiles:
+        raise AssertionError("P13 channel-group rates do not cover the rate axis")
+    if rate_axis == "n":
+        rate_map = tile_rates.repeat(tiles_k, 1)
+    else:
+        rate_map = tile_rates[:, None].repeat(1, tiles_n)
+    return tuple(int(value) for value in rate_map.flatten().tolist())
+
+
+def _w2_record_traversal_variant(
+    prepared: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    rate_map: tuple[int, ...],
+    *,
+    policy: str,
+) -> tuple[
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    tuple[int, ...],
+    dict[str, object],
+]:
+    """Reorder intact W2 H128 records while preserving channel rate labels.
+
+    BlockLDLQ traverses encoder rows in reverse.  Moving complete 128-channel
+    records preserves the H128 conditioning groups and isolates traversal
+    order from tile membership.  The tile-rate rows travel with their original
+    channels, so every canonical W2 coefficient retains its assigned rate.
+    """
+
+    if policy not in ("baseline", "reverse", "donor_first", "recipient_first"):
+        raise ValueError(f"unsupported W2 traversal policy: {policy}")
+    weight, hessian, permutation = prepared
+    if weight.shape[0] != 3072 or hessian.shape != (3072, 3072):
+        raise ValueError("W2 traversal variants require 3,072 encoder rows")
+    if permutation.shape != (3072,):
+        raise ValueError("W2 traversal permutation has the wrong shape")
+    rates = torch.tensor(rate_map, dtype=torch.int8).reshape(192, 224)
+    record_mean_rates = rates.reshape(24, 8, 224).double().mean(dim=(1, 2))
+    if policy == "baseline":
+        record_order = list(range(24))
+    elif policy == "reverse":
+        record_order = list(range(23, -1, -1))
+    elif policy == "donor_first":
+        # Low-rate donor records occupy the high encoder indices visited first.
+        record_order = sorted(
+            range(24),
+            key=lambda record: (-float(record_mean_rates[record]), record),
+        )
+    else:
+        # High-rate recipient records occupy the high encoder indices visited first.
+        record_order = sorted(
+            range(24),
+            key=lambda record: (float(record_mean_rates[record]), record),
+        )
+
+    row_order = torch.cat(
+        [
+            torch.arange(
+                record * 128,
+                (record + 1) * 128,
+                device=weight.device,
+            )
+            for record in record_order
+        ]
+    )
+    hessian_order = row_order.to(device=hessian.device)
+    permutation_order = row_order.to(device=permutation.device)
+    tile_order = torch.cat(
+        [
+            torch.arange(record * 8, (record + 1) * 8)
+            for record in record_order
+        ]
+    )
+    reordered_rates = rates.index_select(0, tile_order).contiguous()
+    reordered = (
+        weight.index_select(0, row_order).contiguous(),
+        hessian.index_select(0, hessian_order)
+        .index_select(1, hessian_order)
+        .contiguous(),
+        permutation.index_select(0, permutation_order).contiguous(),
+    )
+    return reordered, tuple(int(value) for value in reordered_rates.flatten()), {
+        "policy": policy,
+        "encoder_record_order": record_order,
+        "blockldlq_visit_order": list(reversed(record_order)),
+        "record_mean_rates": [float(value) for value in record_mean_rates],
+        "preserves_h128_groups": True,
+        "preserves_canonical_channel_rates": True,
+    }
+
+
+def _balanced_p13_record_rates(
+    donor_delta: torch.Tensor,
+    recipient_delta: torch.Tensor,
+) -> tuple[dict[str, tuple[int, ...]], dict[str, object]]:
+    """Solve every equal-count K1/K3 record allocation exactly.
+
+    ``donor_delta`` is the cost of changing one record from K2 to K1;
+    ``recipient_delta`` is the cost of changing one record from K2 to K3.
+    The dynamic program enforces disjoint donor and recipient sets.
+    """
+
+    donor = donor_delta.detach().double().cpu().flatten()
+    recipient = recipient_delta.detach().double().cpu().flatten()
+    if donor.shape != (24,) or recipient.shape != (24,):
+        raise ValueError("P13 record allocation requires 24 donor and recipient costs")
+    if not bool(torch.all(torch.isfinite(donor))) or not bool(
+        torch.all(torch.isfinite(recipient))
+    ):
+        raise ValueError("P13 record costs must be finite")
+
+    # State values are (cost, record-rate prefix).  The state space is only
+    # 25 * 13 * 13, so retaining the exact deterministic path is inexpensive.
+    states: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {
+        (0, 0): (0.0, ())
+    }
+    for index in range(24):
+        updated: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {}
+        for (donors, recipients), (cost, path) in states.items():
+            choices = ((donors, recipients, 2, 0.0),)
+            if donors < 12:
+                choices += ((donors + 1, recipients, 1, float(donor[index])),)
+            if recipients < 12:
+                choices += (
+                    (
+                        donors,
+                        recipients + 1,
+                        3,
+                        float(recipient[index]),
+                    ),
+                )
+            for next_donors, next_recipients, rate, delta in choices:
+                key = (next_donors, next_recipients)
+                candidate = (cost + delta, (*path, rate))
+                current = updated.get(key)
+                if current is None or candidate < current:
+                    updated[key] = candidate
+        states = updated
+
+    maps: dict[str, tuple[int, ...]] = {}
+    allocations: dict[str, object] = {}
+    for count in range(13):
+        cost, rates = states[(count, count)]
+        maps[f"n{count}"] = rates
+        allocations[f"n{count}"] = {
+            "proxy_delta": cost,
+            "k1_records": [index for index, rate in enumerate(rates) if rate == 1],
+            "k3_records": [index for index, rate in enumerate(rates) if rate == 3],
+        }
+    return maps, {
+        "allocator": "exact_disjoint_record_dynamic_program",
+        "donor_delta": [float(value) for value in donor],
+        "recipient_delta": [float(value) for value in recipient],
+        "allocations": allocations,
+    }
+
+
+def _balanced_p13_unit_rates(
+    donor_delta: torch.Tensor,
+    recipient_delta: torch.Tensor,
+    *,
+    max_count: int | None = None,
+) -> dict[int, dict[str, object]]:
+    """Solve the minimum-cost disjoint allocation at every requested count."""
+
+    donor = donor_delta.detach().double().cpu().flatten()
+    recipient = recipient_delta.detach().double().cpu().flatten()
+    if donor.shape != recipient.shape or donor.numel() < 2:
+        raise ValueError("P13 unit costs must have equal nontrivial length")
+    if not bool(torch.all(torch.isfinite(donor))) or not bool(
+        torch.all(torch.isfinite(recipient))
+    ):
+        raise ValueError("P13 unit costs must be finite")
+
+    limit = donor.numel() // 2
+    if max_count is not None:
+        if not 0 <= max_count <= limit:
+            raise ValueError("P13 maximum unit count is out of range")
+        limit = max_count
+    states: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {
+        (0, 0): (0.0, ())
+    }
+    for index in range(donor.numel()):
+        updated: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {}
+        for (donors, recipients), (cost, path) in states.items():
+            choices = ((donors, recipients, 2, 0.0),)
+            if donors < limit:
+                choices += ((donors + 1, recipients, 1, float(donor[index])),)
+            if recipients < limit:
+                choices += (
+                    (
+                        donors,
+                        recipients + 1,
+                        3,
+                        float(recipient[index]),
+                    ),
+                )
+            for next_donors, next_recipients, rate, delta in choices:
+                key = (next_donors, next_recipients)
+                candidate = (cost + delta, (*path, rate))
+                current = updated.get(key)
+                if current is None or candidate < current:
+                    updated[key] = candidate
+        states = updated
+
+    return {
+        count: {
+            "allocator": "exact_disjoint_unit_dynamic_program_at_fixed_count",
+            "units": int(donor.numel()),
+            "k1_count": count,
+            "k3_count": count,
+            "delta": states[(count, count)][0],
+            "gain": -states[(count, count)][0],
+            "k1_units": [
+                index
+                for index, rate in enumerate(states[(count, count)][1])
+                if rate == 1
+            ],
+            "k3_units": [
+                index
+                for index, rate in enumerate(states[(count, count)][1])
+                if rate == 3
+            ],
+            "rates": list(states[(count, count)][1]),
+        }
+        for count in range(limit + 1)
+    }
+
+
+def _best_balanced_p13_units(
+    donor_delta: torch.Tensor,
+    recipient_delta: torch.Tensor,
+) -> dict[str, object]:
+    """Solve an unconstrained exact-average-two-bit allocation."""
+
+    by_count = _balanced_p13_unit_rates(donor_delta, recipient_delta)
+    count, result = min(
+        (
+            (count, candidate)
+            for count, candidate in by_count.items()
+        ),
+        key=lambda item: (
+            float(item[1]["delta"]),
+            item[0],
+            tuple(item[1]["rates"]),
+        ),
+    )
+    return {
+        "allocator": "exact_unconstrained_disjoint_unit_dynamic_program",
+        "units": result["units"],
+        "k1_count": count,
+        "k3_count": count,
+        "delta": result["delta"],
+        "gain": result["gain"],
+        "k1_units": result["k1_units"],
+        "k3_units": result["k3_units"],
+        "rates": result["rates"],
+    }
 
 
 def _qsrt_308_boundary_tile_map(
@@ -916,7 +1267,11 @@ def _quantize_maps(
     prepared: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     permutation_override: torch.Tensor | None = None,
     shared_scale_scope: str = "k2-tile-allocation",
+    scale_search_bits: int = 3,
+    h2_viterbi_refine_sweeps: Mapping[str, int] | None = None,
 ) -> tuple[dict[str, dict[str, object]], torch.Tensor]:
+    if scale_search_bits not in (1, 2, 3, 4):
+        raise ValueError("scale-search rate must lie in K1 through K4")
     if prepared is None and permutation_override is None:
         raise ValueError(
             "tile-funded experiments require an explicit frozen neuron permutation"
@@ -952,9 +1307,9 @@ def _quantize_maps(
         raise ValueError("two-dimensional rate map has the wrong tile count")
     transform_seed = layer * 1_000_000 + MATRICES.index(matrix)
     args_group = []
-    for rate_map in maps.values():
+    for name, rate_map in maps.items():
         args: dict[str, object] = {
-            "K": 3,
+            "K": scale_search_bits,
             "seed": transform_seed,
             "sv_seed": transform_seed + 499_979,
             "sigma_reg": SIGMA_REG,
@@ -999,6 +1354,14 @@ def _quantize_maps(
             args["g_scale_into_sv"] = True
         if g_scale_override is not None:
             args["g_scale_override"] = float(g_scale_override)
+        if h2_viterbi_refine_sweeps is not None:
+            sweeps = int(h2_viterbi_refine_sweeps.get(name, 0))
+            if sweeps < 0:
+                raise ValueError("H2 Viterbi refinement sweeps must be nonnegative")
+            if sweeps:
+                args["h2_viterbi_refine_sweeps"] = sweeps
+                args["h2_viterbi_refine_dither_scales"] = ()
+                args["h2_viterbi_refine_patterns"] = 0
         args_group.append(args)
     raw_group = quantizer_module.quantize_qsrt_batch(
         [weight], [shared_h], [args_group], return_weight_q=True
@@ -1038,6 +1401,9 @@ def _quantize_maps(
             "g_scale": float(raw["g_scale"]),
             "rate_map": rate_map,
             "permutation_sha256": permutation_identity,
+            "h2_viterbi_refine": raw.get(
+                "h2_viterbi_refine", {"enabled": False, "sweeps": []}
+            ),
         }
     return result, weight
 
@@ -1664,6 +2030,38 @@ def _tile_errors(
     return result
 
 
+def _dense_h_tile_errors(
+    encoder_weight: torch.Tensor,
+    encoder_hessian: torch.Tensor,
+    candidates: Mapping[int | str, Mapping[str, object]],
+) -> dict[int | str, torch.Tensor]:
+    """Return additive dense-H costs for independently decoded candidates."""
+
+    result: dict[int | str, torch.Tensor] = {}
+    for name, candidate in candidates.items():
+        regularized = candidate.get("regularized")
+        suh = candidate.get("suh")
+        svh = candidate.get("svh")
+        if not all(
+            isinstance(value, torch.Tensor)
+            for value in (regularized, suh, svh)
+        ):
+            raise TypeError("dense-H candidates require decoded weights and scales")
+        target = _target_regularized_weight(encoder_weight, suh, svh)
+        contributions = dense_h_tile_error_contributions(
+            target,
+            regularized,
+            encoder_hessian,
+            suh,
+            svh,
+        )
+        total = float(contributions.sum())
+        if not torch.isfinite(torch.tensor(total)) or total < -1e-4:
+            raise ValueError("dense-H candidate has an invalid total distortion")
+        result[name] = contributions
+    return result
+
+
 def _four_channel_group_errors(
     target: torch.Tensor,
     candidates: Mapping[int, Mapping[str, object]],
@@ -1753,7 +2151,7 @@ def _rate_response_group_features(
     families = (
         {
             bits: errors["w1"][bits] + errors["w3"][bits]
-            for bits in (2, 3, 4)
+            for bits in ((1, 2, 3, 4) if args.p13_search else (2, 3, 4))
         },
         errors["w2"],
     )
@@ -1797,8 +2195,15 @@ def _functional_proxy_tile_errors(
     inputs: torch.Tensor,
     gates: torch.Tensor,
     permutation: torch.Tensor,
+    rates: Sequence[int] = (2, 3, 4),
 ) -> dict[str, dict[int, torch.Tensor]]:
     """Build local activation/Hessian tile costs in the permuted neuron basis."""
+
+    rates = tuple(int(bits) for bits in rates)
+    if not rates or len(set(rates)) != len(rates):
+        raise ValueError("functional proxy rates must be unique and nonempty")
+    if any(bits not in (1, 2, 3, 4) for bits in rates):
+        raise ValueError("functional proxy rates must lie in K1 through K4")
 
     w1, w3, w2 = source
     gate_pre = F.linear(inputs, w1).float()
@@ -1847,7 +2252,7 @@ def _functional_proxy_tile_errors(
 
     upstream: dict[int, torch.Tensor] = {}
     downstream: dict[int, torch.Tensor] = {}
-    for bits in (2, 3, 4):
+    for bits in rates:
         r1 = uniform["w1"][bits]["reconstruction"]
         r3 = uniform["w3"][bits]["reconstruction"]
         r2 = uniform["w2"][bits]["reconstruction"]
@@ -1884,6 +2289,367 @@ def _functional_proxy_tile_errors(
     ):
         raise ValueError("functional proxy produced invalid tile costs")
     return {"w13": upstream, "w2": downstream}
+
+
+def _maximum_weight_pairing(scores: torch.Tensor) -> tuple[int, ...]:
+    """Return the exact deterministic column assignment for a square matrix."""
+
+    values = scores.detach().double().cpu()
+    if values.ndim != 2 or values.shape[0] != values.shape[1]:
+        raise ValueError("pairing scores must form a square matrix")
+    if values.shape[0] > 12:
+        raise ValueError("pairing search supports at most 12 records")
+    if not bool(torch.all(torch.isfinite(values))):
+        raise ValueError("pairing scores must be finite")
+
+    # State values are (score, assigned-column prefix).  At 12 records the
+    # exact bitmask dynamic program contains only 4096 states.
+    states: dict[int, tuple[float, tuple[int, ...]]] = {0: (0.0, ())}
+    for row in range(values.shape[0]):
+        updated: dict[int, tuple[float, tuple[int, ...]]] = {}
+        for mask, (score, path) in states.items():
+            for column in range(values.shape[1]):
+                bit = 1 << column
+                if mask & bit:
+                    continue
+                candidate = (score + float(values[row, column]), (*path, column))
+                next_mask = mask | bit
+                current = updated.get(next_mask)
+                if current is None or candidate[0] > current[0] or (
+                    candidate[0] == current[0] and candidate[1] < current[1]
+                ):
+                    updated[next_mask] = candidate
+        states = updated
+    return states[(1 << values.shape[0]) - 1][1]
+
+
+def _p13_fractional_tile_map(
+    errors: Mapping[int, torch.Tensor],
+    record_rates: Sequence[int],
+    *,
+    rate_axis: str,
+    pairing_policy: str = "maximum_weight",
+    positive_fraction: float = 1.0,
+) -> tuple[tuple[int, ...], dict[str, object]]:
+    """Choose P13 or P22 independently for paired 16x16 tiles.
+
+    The supplied record allocation determines the K1 donor and K3 recipient
+    records.  Donors and recipients are paired to maximize the sum of positive
+    tile-level P13 benefits.  Every selected tile pair consumes the same 1024
+    bits as P22, so the resulting map remains exactly two trellis bits per
+    weight.
+    """
+
+    if rate_axis not in ("k", "n"):
+        raise ValueError("fractional P13 map needs rate_axis 'k' or 'n'")
+    if not 0.0 <= positive_fraction <= 1.0:
+        raise ValueError("positive P13 tile fraction must lie in [0, 1]")
+    if set(errors) != {1, 2, 3}:
+        raise ValueError("fractional P13 needs K1, K2, and K3 tile costs")
+    shape = errors[2].shape
+    if any(value.shape != shape for value in errors.values()):
+        raise ValueError("fractional P13 tile cost grids do not align")
+    if any(not bool(torch.all(torch.isfinite(value))) for value in errors.values()):
+        raise ValueError("fractional P13 tile costs must be finite")
+    rates = tuple(int(rate) for rate in record_rates)
+    if len(rates) != 24 or rates.count(1) != rates.count(3):
+        raise ValueError("fractional P13 needs a balanced 24-record allocation")
+    if any(rate not in (1, 2, 3) for rate in rates):
+        raise ValueError("fractional P13 record rates must be K1, K2, or K3")
+
+    tiles_k, tiles_n = shape
+    rate_tiles = tiles_k if rate_axis == "k" else tiles_n
+    if rate_tiles != 192:
+        raise ValueError("Kimi fractional P13 needs 24 128-channel records")
+    donors = tuple(index for index, rate in enumerate(rates) if rate == 1)
+    recipients = tuple(index for index, rate in enumerate(rates) if rate == 3)
+    rate_map = torch.full(shape, 2, dtype=torch.int8)
+    if not donors:
+        return tuple(int(value) for value in rate_map.flatten().tolist()), {
+            "record_pairs": [],
+            "pair_tiles": 0,
+            "selected_pair_tiles": 0,
+            "selected_fraction": 0.0,
+            "selector_bits": 0,
+            "proxy_benefit": 0.0,
+        }
+
+    pair_benefits: list[list[torch.Tensor]] = []
+    pairing_scores = torch.empty((len(donors), len(recipients)), dtype=torch.float64)
+    for donor_index, donor in enumerate(donors):
+        row: list[torch.Tensor] = []
+        donor_slice = slice(8 * donor, 8 * (donor + 1))
+        for recipient_index, recipient in enumerate(recipients):
+            recipient_slice = slice(8 * recipient, 8 * (recipient + 1))
+            if rate_axis == "n":
+                benefit = (
+                    errors[2][:, donor_slice]
+                    + errors[2][:, recipient_slice]
+                    - errors[1][:, donor_slice]
+                    - errors[3][:, recipient_slice]
+                )
+            else:
+                benefit = (
+                    errors[2][donor_slice, :]
+                    + errors[2][recipient_slice, :]
+                    - errors[1][donor_slice, :]
+                    - errors[3][recipient_slice, :]
+                )
+            row.append(benefit)
+            pairing_scores[donor_index, recipient_index] = benefit.clamp_min(0).sum(
+                dtype=torch.float64
+            )
+        pair_benefits.append(row)
+
+    if pairing_policy == "maximum_weight":
+        assignment = _maximum_weight_pairing(pairing_scores)
+    elif pairing_policy == "mirror":
+        assignment = tuple(reversed(range(len(recipients))))
+    else:
+        raise ValueError(
+            "fractional P13 pairing policy must be maximum_weight or mirror"
+        )
+    assigned_benefits = [
+        pair_benefits[donor_index][recipient_index]
+        for donor_index, recipient_index in enumerate(assignment)
+    ]
+    flat_benefits = torch.cat(
+        [benefit.flatten() for benefit in assigned_benefits]
+    )
+    positive_count = int(torch.count_nonzero(flat_benefits > 0))
+    selected_count = int(round(positive_count * positive_fraction))
+    selected_flat = torch.zeros_like(flat_benefits, dtype=torch.bool)
+    if selected_count:
+        positive_indices = torch.nonzero(
+            flat_benefits > 0,
+            as_tuple=False,
+        ).flatten()
+        order = torch.argsort(
+            flat_benefits.index_select(0, positive_indices),
+            descending=True,
+            stable=True,
+        )
+        selected_flat[positive_indices.index_select(0, order[:selected_count])] = True
+    selected_total = 0
+    tile_total = 0
+    proxy_benefit = 0.0
+    record_pairs = []
+    selected_offset = 0
+    for donor_index, recipient_index in enumerate(assignment):
+        donor = donors[donor_index]
+        recipient = recipients[recipient_index]
+        benefit = pair_benefits[donor_index][recipient_index]
+        selected = selected_flat[
+            selected_offset : selected_offset + benefit.numel()
+        ].reshape_as(benefit)
+        selected_offset += benefit.numel()
+        selected_total += int(selected.sum())
+        tile_total += selected.numel()
+        proxy_benefit += float(benefit[selected].sum(dtype=torch.float64))
+        donor_slice = slice(8 * donor, 8 * (donor + 1))
+        recipient_slice = slice(8 * recipient, 8 * (recipient + 1))
+        if rate_axis == "n":
+            selected_cpu = selected.cpu()
+            donor_values = rate_map[:, donor_slice]
+            recipient_values = rate_map[:, recipient_slice]
+            donor_values[selected_cpu] = 1
+            recipient_values[selected_cpu] = 3
+        else:
+            selected_cpu = selected.cpu()
+            donor_values = rate_map[donor_slice, :]
+            recipient_values = rate_map[recipient_slice, :]
+            donor_values[selected_cpu] = 1
+            recipient_values[selected_cpu] = 3
+        record_pairs.append(
+            {
+                "donor": donor,
+                "recipient": recipient,
+                "pair_tiles": selected.numel(),
+                "selected_pair_tiles": int(selected.sum()),
+                "proxy_benefit": float(
+                    benefit[selected].sum(dtype=torch.float64)
+                ),
+            }
+        )
+
+    flat = tuple(int(value) for value in rate_map.flatten().tolist())
+    if sum(flat) != 2 * len(flat):
+        raise AssertionError("fractional P13 map does not retain two-bit mean")
+    return flat, {
+        "pairing_policy": pairing_policy,
+        "record_pairs": record_pairs,
+        "pair_tiles": tile_total,
+        "selected_pair_tiles": selected_total,
+        "selected_fraction": selected_total / tile_total,
+        "positive_pair_tiles": positive_count,
+        "selected_positive_fraction": positive_fraction,
+        "selector_bits": tile_total,
+        "proxy_benefit": proxy_benefit,
+    }
+
+
+def _p13_record_deltas_from_tile_errors(
+    errors: Mapping[int, torch.Tensor],
+    *,
+    rate_axis: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Aggregate dense-H tile costs into K1 donor and K3 recipient deltas."""
+
+    return _p13_channel_group_deltas_from_tile_errors(
+        errors,
+        rate_axis=rate_axis,
+        channels_per_group=128,
+    )
+
+
+def _p13_channel_group_deltas_from_tile_errors(
+    errors: Mapping[int, torch.Tensor],
+    *,
+    rate_axis: str,
+    channels_per_group: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Aggregate dense-H tile costs over fixed channel groups."""
+
+    if rate_axis not in ("k", "n"):
+        raise ValueError("P13 channel deltas need rate_axis 'k' or 'n'")
+    if set(errors) != {1, 2, 3}:
+        raise ValueError("P13 channel deltas need K1, K2, and K3 tile costs")
+    shape = errors[2].shape
+    if any(value.shape != shape for value in errors.values()):
+        raise ValueError("P13 channel tile grids do not align")
+    if channels_per_group <= 0 or channels_per_group % 16:
+        raise ValueError("P13 channel groups must contain whole 16-channel tiles")
+    tiles_k, tiles_n = shape
+    rate_tiles = tiles_k if rate_axis == "k" else tiles_n
+    group_tiles = channels_per_group // 16
+    if rate_tiles != 192 or rate_tiles % group_tiles:
+        raise ValueError("Kimi P13 channel groups must partition 3072 channels")
+
+    donor_tiles = errors[1].double() - errors[2].double()
+    recipient_tiles = errors[3].double() - errors[2].double()
+    if rate_axis == "n":
+        donor = donor_tiles.reshape(
+            tiles_k, rate_tiles // group_tiles, group_tiles
+        ).sum(dim=(0, 2))
+        recipient = recipient_tiles.reshape(
+            tiles_k, rate_tiles // group_tiles, group_tiles
+        ).sum(dim=(0, 2))
+    else:
+        donor = donor_tiles.reshape(
+            rate_tiles // group_tiles, group_tiles, tiles_n
+        ).sum(dim=(1, 2))
+        recipient = recipient_tiles.reshape(
+            rate_tiles // group_tiles, group_tiles, tiles_n
+        ).sum(dim=(1, 2))
+    return donor, recipient
+
+
+def _p13_tile_pair_diagnostics(
+    errors: Mapping[int, torch.Tensor],
+) -> dict[str, object]:
+    """Report exact profitable P13 pair statistics for 16x16 tiles."""
+
+    if set(errors) != {1, 2, 3}:
+        raise ValueError("P13 tile diagnostics need K1, K2, and K3 tile costs")
+    shape = errors[2].shape
+    if any(value.shape != shape for value in errors.values()):
+        raise ValueError("P13 tile cost grids do not align")
+    donor = (errors[1].double() - errors[2].double()).cpu().flatten()
+    gain = (errors[2].double() - errors[3].double()).cpu().flatten()
+    if donor.numel() < 2 or not bool(torch.all(torch.isfinite(donor))) or not bool(
+        torch.all(torch.isfinite(gain))
+    ):
+        raise ValueError("P13 tile costs must be finite and nontrivial")
+
+    donor_order = torch.argsort(donor, stable=True)
+    least = int(donor_order[0])
+    second = int(donor_order[1])
+    unit_ids = torch.arange(donor.numel())
+    best_other_donor = torch.where(
+        unit_ids == least,
+        donor[second],
+        donor[least],
+    )
+    margins = gain - best_other_donor
+    recipient = int(torch.argmax(margins))
+    selected_donor = second if recipient == least else least
+
+    sorted_donor = torch.sort(donor, stable=True).values
+    profitable_by_recipient = torch.searchsorted(
+        sorted_donor,
+        gain,
+        right=False,
+    ).to(torch.int64)
+    profitable_by_recipient -= (donor < gain).to(torch.int64)
+    profitable_pairs = int(profitable_by_recipient.sum())
+    return {
+        "units": int(donor.numel()),
+        "maximum_pair_margin": float(margins[recipient]),
+        "unconstrained_profitable_pairs": profitable_pairs,
+        "best_pair": {
+            "k1_tile": selected_donor,
+            "k3_tile": recipient,
+            "donor_cost": float(donor[selected_donor]),
+            "recipient_gain": float(gain[recipient]),
+        },
+        "balanced_total": {
+            "status": "not_computed",
+            "reason": (
+                "the exact disjoint balanced allocator is reserved for tile "
+                "families with at least one profitable pair"
+            ),
+        },
+    }
+
+
+def _p13_marginal_diagnostics(
+    donor_delta: torch.Tensor,
+    recipient_delta: torch.Tensor,
+) -> dict[str, object]:
+    """Summarize additive K1 donor costs and K3 recipient gains."""
+
+    donor = donor_delta.detach().double().cpu().flatten()
+    gain = -recipient_delta.detach().double().cpu().flatten()
+    if donor.shape != gain.shape or donor.numel() < 2:
+        raise ValueError("P13 marginal tables must have equal nontrivial length")
+    if not bool(torch.all(torch.isfinite(donor))) or not bool(
+        torch.all(torch.isfinite(gain))
+    ):
+        raise ValueError("P13 marginal tables must be finite")
+
+    def quantiles(values: torch.Tensor, points: Sequence[float]) -> dict[str, float]:
+        result = torch.quantile(
+            values,
+            torch.tensor(tuple(points), dtype=torch.float64),
+            interpolation="linear",
+        )
+        return {
+            f"p{int(round(point * 100))}": float(value)
+            for point, value in zip(points, result, strict=True)
+        }
+
+    pair_margin = gain[None, :] - donor[:, None]
+    pair_margin.fill_diagonal_(float("-inf"))
+    profitable = pair_margin > 0
+    best = _best_balanced_p13_units(donor, -gain)
+    best_delta = float(best["delta"])
+    return {
+        "units": int(donor.numel()),
+        "donor_cost": {
+            "minimum": float(donor.min()),
+            **quantiles(donor, (0.01, 0.05, 0.10, 0.50)),
+        },
+        "recipient_gain": {
+            **quantiles(gain, (0.90, 0.95, 0.99)),
+            "maximum": float(gain.max()),
+        },
+        "maximum_pair_margin": float(pair_margin.max()),
+        "unconstrained_profitable_pairs": int(profitable.sum()),
+        "best_balanced_allocation": f"n{best['k1_count']}",
+        "best_balanced_delta": best_delta,
+        "best_balanced_gain": -best_delta,
+        "best_balanced_units": best,
+    }
 
 
 def _fractional_pair_maps(
@@ -2549,6 +3315,214 @@ def _coupled_hadamard_k2(
             float(coupled_score["confirmation"]["sse"]),
             float(baseline_score["confirmation"]["sse"]),
         ),
+    }
+
+
+def _h2_viterbi_refinement(
+    source: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    *,
+    global_h13: torch.Tensor,
+    global_h2: torch.Tensor,
+    contexts: torch.Tensor,
+    layer: int,
+    expert: int,
+    device: torch.device,
+    quantizer_module,
+    ldlq_tf32: bool,
+    inputs: torch.Tensor,
+    gates: torch.Tensor,
+    request_steps: torch.Tensor,
+    baseline_permutation: torch.Tensor,
+    block_size: int,
+    preactivation_block_size: int,
+    postactivation_block_size: int,
+    pre_permutation: str,
+    residual_rotation_draw: int,
+    intermediate_rotation_draw: int,
+    refine_sweeps: int,
+) -> dict[str, object]:
+    """Refine canonical W2 K2 paths under its complete routed-row H2.
+
+    The baseline and refined W2 candidates share source weights, decoded
+    upstream activations, dense H2, scales, transforms, and initial BlockLDLQ
+    path.  Only the refined candidate receives conditional-target sweeps.
+    Every routed row available for the expert contributes to H2 and to the
+    mapped-output measurement; no document partition selects either payload.
+    """
+
+    basis = _prepare_coupled_search_basis(
+        source,
+        h13=global_h13,
+        h2=global_h2,
+        inputs=inputs,
+        selected_permutation=baseline_permutation,
+        block_size=block_size,
+        preactivation_block_size=preactivation_block_size,
+        postactivation_block_size=postactivation_block_size,
+        pre_permutation=pre_permutation,
+        residual_rotation_draw=residual_rotation_draw,
+        intermediate_rotation_draw=intermediate_rotation_draw,
+    )
+    uniform_maps = {
+        "w1": _uniform_tile_map((3584, 3072), 2),
+        "w3": _uniform_tile_map((3584, 3072), 2),
+        "w2": _uniform_tile_map((3072, 3584), 2),
+    }
+    upstream = []
+    upstream_evidence: dict[str, object] = {}
+    for matrix in ("w1", "w3"):
+        candidates, _ = _quantize_maps(
+            basis.source[MATRICES.index(matrix)],
+            basis.h13,
+            contexts,
+            matrix=matrix,
+            maps={"k2": uniform_maps[matrix]},
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            permutation_override=basis.permutation,
+            shared_scale_scope="h2-viterbi-refinement",
+        )
+        candidate = candidates["k2"]
+        reconstruction = candidate["reconstruction"]
+        if not isinstance(reconstruction, torch.Tensor):
+            raise TypeError("uniform K2 upstream reconstruction is missing")
+        upstream.append(reconstruction)
+        upstream_evidence[matrix] = {
+            "g_scale": float(candidate["g_scale"]),
+            "proxy": float(candidate["proxy"]),
+            "permutation_sha256": candidate["permutation_sha256"],
+        }
+
+    decoded_middle = basis.decode_middle(basis.inputs, upstream[0], upstream[1])
+    _, candidate_h2, h2_evidence = build_expert_hessians(
+        basis.inputs,
+        gates,
+        decoded_middle,
+        global_h13=basis.h13,
+        global_h2=basis.h2,
+        device=device,
+        h13_alpha=0.0,
+    )
+    down_candidates, _ = _quantize_maps(
+        basis.source[2],
+        candidate_h2,
+        contexts,
+        matrix="w2",
+        maps={
+            "baseline": uniform_maps["w2"],
+            "refined": uniform_maps["w2"],
+        },
+        layer=layer,
+        expert=expert,
+        device=device,
+        quantizer_module=quantizer_module,
+        ldlq_tf32=ldlq_tf32,
+        permutation_override=basis.permutation,
+        shared_scale_scope="h2-viterbi-refinement",
+        h2_viterbi_refine_sweeps={"refined": refine_sweeps},
+    )
+    baseline = down_candidates["baseline"]
+    refined = down_candidates["refined"]
+    baseline_down = baseline["reconstruction"]
+    refined_down = refined["reconstruction"]
+    baseline_states = baseline["states"]
+    refined_states = refined["states"]
+    if not all(
+        isinstance(value, torch.Tensor)
+        for value in (
+            baseline_down,
+            refined_down,
+            baseline_states,
+            refined_states,
+        )
+    ):
+        raise TypeError("W2 refinement candidates lack decoded tensors")
+    if float(baseline["g_scale"]) != float(refined["g_scale"]):
+        raise AssertionError("controlled W2 candidates chose different scales")
+    if not torch.equal(baseline["suh"], refined["suh"]) or not torch.equal(
+        baseline["svh"], refined["svh"]
+    ):
+        raise AssertionError("controlled W2 candidates chose different transforms")
+
+    baseline_triplet = (upstream[0], upstream[1], baseline_down)
+    refined_triplet = (upstream[0], upstream[1], refined_down)
+    baseline_output = basis.execute_triplet(basis.inputs, baseline_triplet)
+    refined_output = basis.execute_triplet(basis.inputs, refined_triplet)
+    reference = basis.reference_output
+    route_weights = gates.double().square()
+
+    def output_score(output: torch.Tensor) -> dict[str, float]:
+        error = output.double() - reference.double()
+        row_sse = error.square().sum(dim=1)
+        reference_energy = reference.double().square().sum(dim=1)
+        routed_sse = float((row_sse * route_weights).sum())
+        routed_energy = float((reference_energy * route_weights).sum())
+        return {
+            "routed_sse": routed_sse,
+            "routed_reference_energy": routed_energy,
+            "routed_nmse": routed_sse / max(routed_energy, 1.0e-30),
+            "unweighted_sse": float(row_sse.sum()),
+        }
+
+    baseline_score = output_score(baseline_output)
+    refined_score = output_score(refined_output)
+    receipt = refined["h2_viterbi_refine"]
+    if not isinstance(receipt, Mapping) or not receipt.get("enabled"):
+        raise AssertionError("refined W2 candidate lacks its refinement receipt")
+    sweeps = receipt.get("sweeps")
+    if not isinstance(sweeps, list) or len(sweeps) != refine_sweeps:
+        raise AssertionError(
+            "W2 refinement receipt does not match the requested sweep count"
+        )
+    proxy_relative = _relative(
+        float(refined["proxy"]), float(baseline["proxy"])
+    )
+    objective_relative = _relative(
+        float(sweeps[-1]["objective_after"]),
+        float(sweeps[0]["objective_before"]),
+    )
+    changed = baseline_states != refined_states
+    changed_tiles = changed.reshape(*changed.shape[:2], -1).any(dim=2)
+    return {
+        "rate": "uniform_k2",
+        "scope": "canonical_w2_target_only",
+        "row_population": "all_available_routed_rows",
+        "rows": int(inputs.shape[0]),
+        "documents": int(torch.unique(request_steps).numel()),
+        "basis": basis.evidence,
+        "upstream": upstream_evidence,
+        "conditional_h2": h2_evidence,
+        "baseline": {
+            "dense_h_proxy": float(baseline["proxy"]),
+            "mapped_output": baseline_score,
+        },
+        "refined": {
+            "dense_h_proxy": float(refined["proxy"]),
+            "mapped_output": refined_score,
+            "receipt": receipt,
+        },
+        "dense_h_relative_to_baseline": proxy_relative,
+        "refiner_objective_relative_to_baseline": objective_relative,
+        "proxy_objective_ratio_closure_absolute": abs(
+            proxy_relative - objective_relative
+        ),
+        "mapped_output_relative_to_baseline": _relative(
+            refined_score["routed_sse"], baseline_score["routed_sse"]
+        ),
+        "path_changes": {
+            "tiles": int(torch.count_nonzero(changed_tiles)),
+            "tile_fraction": float(changed_tiles.float().mean()),
+            "scalar_codes": int(torch.count_nonzero(changed)),
+            "scalar_code_fraction": float(changed.float().mean()),
+        },
+        "controlled_candidate_closure": {
+            "same_global_scale": True,
+            "same_input_transform": True,
+            "same_output_transform": True,
+        },
     }
 
 
@@ -3237,6 +4211,1371 @@ def _execute_standard_triplet(
         inputs, reconstruction[0], reconstruction[1]
     )
     return F.linear(middle, reconstruction[2])
+
+
+def _two_bit_projection_search(
+    source: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    *,
+    h13: torch.Tensor,
+    h2: torch.Tensor,
+    contexts: torch.Tensor,
+    layer: int,
+    expert: int,
+    device: torch.device,
+    quantizer_module,
+    ldlq_tf32: bool,
+    inputs: torch.Tensor,
+    gates: torch.Tensor,
+    fit_mask: torch.Tensor,
+    confirmation_mask: torch.Tensor,
+    permutation_override: torch.Tensor,
+    decode_middle: MiddleDecoder | None = None,
+    execute_triplet: TripletExecutor | None = None,
+    reference_output: torch.Tensor | None = None,
+    representation: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Compare exact-average-two-bit projection allocations.
+
+    Gate and up are encoded once at each of K1, K2, and K3.  Every projection
+    allocation then rebuilds the expert-local H2 from its decoded upstream
+    activations and independently encodes the canonical W2 target at the
+    requested rate.  No fitted replacement target enters the comparison.
+    """
+
+    middle_decoder = (
+        _decode_standard_middle if decode_middle is None else decode_middle
+    )
+    triplet_executor = (
+        _execute_standard_triplet if execute_triplet is None else execute_triplet
+    )
+    luts_by_bits = {
+        bits: sqg_xor_cheb_t12_bytes(bits, device=device)
+        for bits in (1, 2, 3)
+    }
+    fit_inputs = inputs[fit_mask]
+    fit_gates = gates[fit_mask]
+    fit_weights = fit_gates.float().square().unsqueeze(1)
+    confirmation_weights = gates[confirmation_mask].float().square().unsqueeze(1)
+    if reference_output is None:
+        reference_output = triplet_executor(inputs, source)
+    if reference_output.shape != (inputs.shape[0], source[2].shape[0]):
+        raise ValueError("reference output does not align with the expert rows")
+    fit_target = reference_output[fit_mask]
+    confirmation_target = reference_output[confirmation_mask]
+    fit_reference_energy = float(
+        (fit_target.square() * fit_weights).sum(dtype=torch.float64)
+    )
+    confirmation_reference_energy = float(
+        (confirmation_target.square() * confirmation_weights).sum(
+            dtype=torch.float64
+        )
+    )
+
+    prepared_upstream = {
+        matrix: _prepare_quantize_maps(
+            source[MATRICES.index(matrix)],
+            h13,
+            contexts,
+            matrix=matrix,
+            device=device,
+            permutation_override=permutation_override,
+        )
+        for matrix in ("w1", "w3")
+    }
+    upstream: dict[str, dict[int, dict[str, object]]] = {
+        "w1": {},
+        "w3": {},
+    }
+    for matrix in ("w1", "w3"):
+        for bits in (2, 1, 3):
+            candidate, _ = _quantize_maps(
+                source[MATRICES.index(matrix)],
+                h13,
+                contexts,
+                matrix=matrix,
+                maps={f"k{bits}": _uniform_tile_map((3584, 3072), bits)},
+                layer=layer,
+                expert=expert,
+                device=device,
+                quantizer_module=quantizer_module,
+                ldlq_tf32=ldlq_tf32,
+                luts_by_bits=luts_by_bits,
+                prepared=prepared_upstream[matrix],
+                shared_scale_scope="two-bit-projection-search",
+                scale_search_bits=bits,
+            )
+            upstream[matrix][bits] = candidate[f"k{bits}"]
+
+    scores: dict[str, dict[str, dict[str, float]]] = {}
+    matrix_evidence: dict[str, dict[str, object]] = {}
+    conditional_h2: dict[str, object] = {}
+    modes = ((1, 1, 1), *TWO_BIT_PROJECTION_MODES, (3, 3, 3))
+    for w1_bits, w3_bits, w2_bits in modes:
+        name = f"{w1_bits}{w3_bits}{w2_bits}"
+        w1 = upstream["w1"][w1_bits]["reconstruction"]
+        w3 = upstream["w3"][w3_bits]["reconstruction"]
+        if not isinstance(w1, torch.Tensor) or not isinstance(w3, torch.Tensor):
+            raise TypeError("projection-rate upstream reconstruction is missing")
+        decoded_middle = middle_decoder(fit_inputs, w1, w3)
+        _, candidate_h2, h2_evidence = build_expert_hessians(
+            fit_inputs,
+            fit_gates,
+            decoded_middle,
+            global_h13=h13,
+            global_h2=h2,
+            device=device,
+        )
+        down, _ = _quantize_maps(
+            source[2],
+            candidate_h2,
+            contexts,
+            matrix="w2",
+            maps={f"k{w2_bits}": _uniform_tile_map((3072, 3584), w2_bits)},
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            luts_by_bits=luts_by_bits,
+            permutation_override=permutation_override,
+            shared_scale_scope="two-bit-projection-search",
+            scale_search_bits=w2_bits,
+        )
+        w2_candidate = down[f"k{w2_bits}"]
+        w2 = w2_candidate["reconstruction"]
+        if not isinstance(w2, torch.Tensor):
+            raise TypeError("projection-rate down reconstruction is missing")
+        fit_sse = _weighted_functional_sse(
+            (w1, w3, w2),
+            inputs=fit_inputs,
+            reference=fit_target,
+            route_weights=fit_weights,
+            execute_triplet=triplet_executor,
+        )
+        confirmation_sse = _weighted_functional_sse(
+            (w1, w3, w2),
+            inputs=inputs[confirmation_mask],
+            reference=confirmation_target,
+            route_weights=confirmation_weights,
+            execute_triplet=triplet_executor,
+        )
+        scores[name] = {
+            "fit": {
+                "sse": fit_sse,
+                "reference_energy": fit_reference_energy,
+                "nmse": fit_sse / fit_reference_energy,
+            },
+            "confirmation": {
+                "sse": confirmation_sse,
+                "reference_energy": confirmation_reference_energy,
+                "nmse": confirmation_sse / confirmation_reference_energy,
+            },
+        }
+        matrix_evidence[name] = {
+            "w1_g_scale": float(upstream["w1"][w1_bits]["g_scale"]),
+            "w3_g_scale": float(upstream["w3"][w3_bits]["g_scale"]),
+            "w2_g_scale": float(w2_candidate["g_scale"]),
+            "w1_proxy": float(upstream["w1"][w1_bits]["proxy"]),
+            "w3_proxy": float(upstream["w3"][w3_bits]["proxy"]),
+            "w2_proxy": float(w2_candidate["proxy"]),
+        }
+        conditional_h2[name] = h2_evidence
+
+    equal_rate_names = tuple("".join(str(value) for value in mode) for mode in TWO_BIT_PROJECTION_MODES)
+    selected = min(
+        equal_rate_names,
+        key=lambda name: float(scores[name]["fit"]["sse"]),
+    )
+    confirmation_oracle = min(
+        equal_rate_names,
+        key=lambda name: float(scores[name]["confirmation"]["sse"]),
+    )
+    baseline_confirmation = float(scores["222"]["confirmation"]["sse"])
+    return {
+        "rates": {
+            "controls": ["111", "222", "333"],
+            "exact_average_two_bit_modes": list(equal_rate_names),
+            "trellis_bits_per_weight": 2.0,
+            "expert_static_mode_bits": 3,
+            "mode_metadata_bits_per_weight": 3 / (3 * 3072 * 3584),
+        },
+        "targets": "canonical_w1_w3_w2",
+        "scale_selection": "independent_per_matrix_and_rate",
+        "w2_hessian": "expert_local_conditioned_on_decoded_upstream_candidate",
+        "representation": (
+            {"basis": "production"}
+            if representation is None
+            else dict(representation)
+        ),
+        "scores": scores,
+        "matrix_evidence": matrix_evidence,
+        "conditional_h2": conditional_h2,
+        "selected_on_fit": selected,
+        "confirmation_oracle": confirmation_oracle,
+        "confirmation_relative_to_222": _relative(
+            float(scores[selected]["confirmation"]["sse"]),
+            baseline_confirmation,
+        ),
+        "confirmation_oracle_relative_to_222": _relative(
+            float(scores[confirmation_oracle]["confirmation"]["sse"]),
+            baseline_confirmation,
+        ),
+    }
+
+
+def _p13_functional_record_deltas(
+    source: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    uniform: Mapping[str, Mapping[int, Mapping[str, object]]],
+    *,
+    inputs: torch.Tensor,
+    reference: torch.Tensor,
+    route_weights: torch.Tensor,
+    permutation: torch.Tensor,
+    execute_triplet: TripletExecutor,
+) -> dict[str, object]:
+    """Measure single-record K1 donor costs and K3 recipient gains.
+
+    Each hybrid changes one physical 128-channel encoder record from the
+    uniform-K2 reconstruction.  Gate and up change together; down changes
+    independently.  The complete decoded expert function supplies the fit
+    loss, including the coupled activation-boundary transform when active.
+    """
+
+    reconstructions: dict[str, dict[int, torch.Tensor]] = {}
+    for matrix in MATRICES:
+        by_rate: dict[int, torch.Tensor] = {}
+        for bits in (1, 2, 3):
+            value = uniform[matrix][bits].get("reconstruction")
+            if not isinstance(value, torch.Tensor):
+                raise TypeError("P13 uniform candidate lacks a reconstruction")
+            by_rate[bits] = value
+        reconstructions[matrix] = by_rate
+    permutation = permutation.to(device=inputs.device, dtype=torch.long)
+    if permutation.shape != (3072,) or not torch.equal(
+        torch.sort(permutation).values,
+        torch.arange(3072, device=permutation.device),
+    ):
+        raise ValueError("P13 record attribution requires a 3072-channel bijection")
+
+    baseline = tuple(reconstructions[matrix][2] for matrix in MATRICES)
+    baseline_sse = _weighted_functional_sse(
+        baseline,
+        inputs=inputs,
+        reference=reference,
+        route_weights=route_weights,
+        execute_triplet=execute_triplet,
+    )
+    hybrid_sse = {
+        "w13": {1: [], 3: []},
+        "w2": {1: [], 3: []},
+    }
+    for record in range(24):
+        indices = permutation[record * 128 : (record + 1) * 128]
+        for bits in (1, 3):
+            w1 = baseline[0].clone()
+            w3 = baseline[1].clone()
+            w1.index_copy_(
+                0, indices, reconstructions["w1"][bits].index_select(0, indices)
+            )
+            w3.index_copy_(
+                0, indices, reconstructions["w3"][bits].index_select(0, indices)
+            )
+            hybrid_sse["w13"][bits].append(
+                _weighted_functional_sse(
+                    (w1, w3, baseline[2]),
+                    inputs=inputs,
+                    reference=reference,
+                    route_weights=route_weights,
+                    execute_triplet=execute_triplet,
+                )
+            )
+
+            w2 = baseline[2].clone()
+            w2.index_copy_(
+                1, indices, reconstructions["w2"][bits].index_select(1, indices)
+            )
+            hybrid_sse["w2"][bits].append(
+                _weighted_functional_sse(
+                    (baseline[0], baseline[1], w2),
+                    inputs=inputs,
+                    reference=reference,
+                    route_weights=route_weights,
+                    execute_triplet=execute_triplet,
+                )
+            )
+
+    result: dict[str, object] = {"baseline_sse": baseline_sse}
+    for family in ("w13", "w2"):
+        donor = torch.tensor(hybrid_sse[family][1], dtype=torch.float64) - baseline_sse
+        recipient = (
+            torch.tensor(hybrid_sse[family][3], dtype=torch.float64) - baseline_sse
+        )
+        result[family] = {
+            "k1_hybrid_sse": hybrid_sse[family][1],
+            "k3_hybrid_sse": hybrid_sse[family][3],
+            "donor_delta": donor,
+            "recipient_delta": recipient,
+        }
+    return result
+
+
+def _p13_record_search(
+    source: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    *,
+    h13: torch.Tensor,
+    h2: torch.Tensor,
+    contexts: torch.Tensor,
+    layer: int,
+    expert: int,
+    device: torch.device,
+    quantizer_module,
+    ldlq_tf32: bool,
+    inputs: torch.Tensor,
+    gates: torch.Tensor,
+    fit_mask: torch.Tensor,
+    confirmation_mask: torch.Tensor,
+    permutation_override: torch.Tensor,
+    decode_middle: MiddleDecoder | None = None,
+    execute_triplet: TripletExecutor | None = None,
+    reference_output: torch.Tensor | None = None,
+    representation: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Search channel-record P13 schedules with absolute dense-H loss."""
+
+    middle_decoder = (
+        _decode_standard_middle if decode_middle is None else decode_middle
+    )
+    triplet_executor = (
+        _execute_standard_triplet if execute_triplet is None else execute_triplet
+    )
+    luts_by_bits = {
+        bits: sqg_xor_cheb_t12_bytes(bits, device=device)
+        for bits in (1, 2, 3)
+    }
+    if reference_output is None:
+        reference_output = triplet_executor(inputs, source)
+    fit_inputs = inputs[fit_mask]
+    fit_weights = gates[fit_mask].float().square().unsqueeze(1)
+    confirmation_inputs = inputs[confirmation_mask]
+    confirmation_weights = (
+        gates[confirmation_mask].float().square().unsqueeze(1)
+    )
+    fit_target = reference_output[fit_mask]
+    confirmation_target = reference_output[confirmation_mask]
+
+    def score(
+        reconstruction: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ) -> dict[str, dict[str, float]]:
+        result: dict[str, dict[str, float]] = {}
+        for name, local_inputs, local_target, weights in (
+            ("fit", fit_inputs, fit_target, fit_weights),
+            (
+                "confirmation",
+                confirmation_inputs,
+                confirmation_target,
+                confirmation_weights,
+            ),
+        ):
+            reference_energy = float(
+                (local_target.square() * weights).sum(dtype=torch.float64)
+            )
+            sse = _weighted_functional_sse(
+                reconstruction,
+                inputs=local_inputs,
+                reference=local_target,
+                route_weights=weights,
+                execute_triplet=triplet_executor,
+            )
+            result[name] = {
+                "sse": sse,
+                "reference_energy": reference_energy,
+                "nmse": sse / reference_energy,
+            }
+        return result
+
+    def encode_rate_curves(
+        matrix: str,
+        hessian: torch.Tensor,
+        prepared: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        *,
+        scope: str,
+    ) -> tuple[
+        dict[int, dict[str, object]],
+        dict[int, torch.Tensor],
+        dict[int, dict[str, object]],
+        dict[int, torch.Tensor],
+        dict[str, object],
+    ]:
+        shape = (3584, 3072) if matrix in ("w1", "w3") else (3072, 3584)
+        source_matrix = source[MATRICES.index(matrix)]
+        native: dict[int, dict[str, object]] = {}
+        for bits in (1, 2, 3):
+            candidates, _ = _quantize_maps(
+                source_matrix,
+                hessian,
+                contexts,
+                matrix=matrix,
+                maps={f"k{bits}": _uniform_tile_map(shape, bits)},
+                layer=layer,
+                expert=expert,
+                device=device,
+                quantizer_module=quantizer_module,
+                ldlq_tf32=ldlq_tf32,
+                luts_by_bits=luts_by_bits,
+                prepared=prepared,
+                shared_scale_scope=f"{scope}-independent",
+                scale_search_bits=bits,
+            )
+            native[bits] = candidates[f"k{bits}"]
+        shared_group, _ = _quantize_maps(
+            source_matrix,
+            hessian,
+            contexts,
+            matrix=matrix,
+            maps={
+                f"k{bits}": _uniform_tile_map(shape, bits)
+                for bits in (1, 2, 3)
+            },
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            luts_by_bits=luts_by_bits,
+            prepared=prepared,
+            shared_scale_scope=f"{scope}-shared",
+            scale_search_bits=2,
+        )
+        shared = {bits: shared_group[f"k{bits}"] for bits in (1, 2, 3)}
+        encoder_weight, encoder_hessian, _ = prepared
+        native_errors = _dense_h_tile_errors(
+            encoder_weight, encoder_hessian, native
+        )
+        shared_errors = _dense_h_tile_errors(
+            encoder_weight, encoder_hessian, shared
+        )
+        optimized: dict[int, dict[str, object]] = {}
+        optimized_errors: dict[int, torch.Tensor] = {}
+        scale_search: dict[str, object] = {}
+        grid_specs = {
+            1: (33, 0.75, float(shared[2]["g_scale"])),
+            2: (9, 0.25, float(native[2]["g_scale"])),
+            3: (9, 0.25, float(native[3]["g_scale"])),
+        }
+        for bits in (1, 2, 3):
+            count, half_width_octaves, center = grid_specs[bits]
+            scales = [
+                center
+                * 2.0
+                ** (
+                    -half_width_octaves
+                    + 2.0 * half_width_octaves * index / (count - 1)
+                )
+                for index in range(count)
+            ]
+            scales.extend(
+                (
+                    float(native[bits]["g_scale"]),
+                    float(shared[bits]["g_scale"]),
+                )
+            )
+            unique_scales = sorted({round(value, 12) for value in scales})
+            best_candidate = native[bits]
+            best_error = native_errors[bits]
+            best_total = float(best_error.sum())
+            best_scale = float(best_candidate["g_scale"])
+            path_hashes: set[str] = set()
+            evaluated = 0
+            for scale_value in unique_scales:
+                if abs(scale_value - float(native[bits]["g_scale"])) <= 1e-11:
+                    candidate = native[bits]
+                    candidate_error = native_errors[bits]
+                elif abs(scale_value - float(shared[bits]["g_scale"])) <= 1e-11:
+                    candidate = shared[bits]
+                    candidate_error = shared_errors[bits]
+                else:
+                    group, _ = _quantize_maps(
+                        source_matrix,
+                        hessian,
+                        contexts,
+                        matrix=matrix,
+                        maps={f"k{bits}": _uniform_tile_map(shape, bits)},
+                        layer=layer,
+                        expert=expert,
+                        device=device,
+                        quantizer_module=quantizer_module,
+                        ldlq_tf32=ldlq_tf32,
+                        g_scale_override=scale_value,
+                        luts_by_bits=luts_by_bits,
+                        prepared=prepared,
+                        shared_scale_scope=f"{scope}-dense-h-grid-k{bits}",
+                        scale_search_bits=bits,
+                    )
+                    candidate = group[f"k{bits}"]
+                    candidate_error = _dense_h_tile_errors(
+                        encoder_weight,
+                        encoder_hessian,
+                        {bits: candidate},
+                    )[bits]
+                states = candidate.get("states")
+                if not isinstance(states, torch.Tensor):
+                    raise TypeError("scale-search candidate lacks trellis states")
+                path_hashes.add(
+                    hashlib.sha256(
+                        states.detach().cpu().contiguous().numpy().tobytes()
+                    ).hexdigest()
+                )
+                evaluated += 1
+                total = float(candidate_error.sum())
+                candidate_scale = float(candidate["g_scale"])
+                if (total, candidate_scale) < (best_total, best_scale):
+                    best_candidate = candidate
+                    best_error = candidate_error
+                    best_total = total
+                    best_scale = candidate_scale
+            optimized[bits] = best_candidate
+            optimized_errors[bits] = best_error
+            scale_search[str(bits)] = {
+                "selection_metric": "absolute_dense_h_blockldlq_distortion",
+                "evaluated_scales": evaluated,
+                "distinct_trellis_paths": len(path_hashes),
+                "minimum_scale": min(unique_scales),
+                "maximum_scale": max(unique_scales),
+                "native_scale": float(native[bits]["g_scale"]),
+                "native_dense_h_loss": float(native_errors[bits].sum()),
+                "shared_k2_oriented_scale": float(shared[bits]["g_scale"]),
+                "shared_k2_oriented_dense_h_loss": float(
+                    shared_errors[bits].sum()
+                ),
+                "selected_scale": best_scale,
+                "selected_dense_h_loss": best_total,
+            }
+        return (
+            optimized,
+            optimized_errors,
+            shared,
+            shared_errors,
+            scale_search,
+        )
+
+    def encode_zero_feedback_rate_curves(
+        matrix: str,
+        hessian: torch.Tensor,
+        prepared: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        *,
+        scope: str,
+    ) -> tuple[
+        dict[int, dict[str, object]],
+        dict[int, torch.Tensor],
+        dict[str, object],
+    ]:
+        """Construct an order-neutral rate surface for schedule proposals.
+
+        An identity encoder Hessian makes the off-diagonal BlockLDLQ feedback
+        exactly zero while retaining the production transforms, scalar law,
+        common K2-oriented scale search, tail-biting Viterbi, and decode path.
+        The resulting decoded candidates are scored with the actual dense
+        Hessian.  They are never accepted as final payloads.
+        """
+
+        encoder_weight, encoder_hessian, permutation = prepared
+        identity_hessian = torch.eye(
+            encoder_weight.shape[0],
+            dtype=encoder_hessian.dtype,
+            device=encoder_hessian.device,
+        )
+        group, _ = _quantize_maps(
+            source[MATRICES.index(matrix)],
+            hessian,
+            contexts,
+            matrix=matrix,
+            maps={
+                f"k{bits}": _uniform_tile_map(
+                    (3584, 3072) if matrix in ("w1", "w3") else (3072, 3584),
+                    bits,
+                )
+                for bits in (1, 2, 3)
+            },
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            luts_by_bits=luts_by_bits,
+            prepared=(encoder_weight, identity_hessian, permutation),
+            shared_scale_scope=f"{scope}-zero-feedback",
+            scale_search_bits=2,
+        )
+        candidates = {bits: group[f"k{bits}"] for bits in (1, 2, 3)}
+        errors = _dense_h_tile_errors(
+            encoder_weight,
+            encoder_hessian,
+            candidates,
+        )
+        return candidates, errors, {
+            "candidate_construction": (
+                "identity_hessian_with_zero_cross_tile_ldlq_feedback"
+            ),
+            "candidate_scoring": "decoded_absolute_dense_h_distortion",
+            "scale_policy": "one_zero_feedback_k2_oriented_scale_per_matrix",
+            "g_scale": float(candidates[2]["g_scale"]),
+            "rates": curve_evidence(candidates, errors),
+        }
+
+    def curve_evidence(
+        candidates: Mapping[int, Mapping[str, object]],
+        errors: Mapping[int, torch.Tensor],
+    ) -> dict[str, object]:
+        return {
+            str(bits): {
+                "g_scale": float(candidates[bits]["g_scale"]),
+                "absolute_dense_h_loss": float(errors[bits].sum()),
+                "normalized_encoder_proxy": float(candidates[bits]["proxy"]),
+            }
+            for bits in (1, 2, 3)
+        }
+
+    def family_allocation(
+        errors: Mapping[int, torch.Tensor],
+        *,
+        rate_axis: str,
+    ) -> tuple[dict[str, tuple[int, ...]], dict[str, object]]:
+        donor, recipient = _p13_record_deltas_from_tile_errors(
+            errors, rate_axis=rate_axis
+        )
+        maps, allocation = _balanced_p13_record_rates(donor, recipient)
+        return maps, {
+            "marginals": _p13_marginal_diagnostics(donor, recipient),
+            **allocation,
+        }
+
+    def granularity_oracles(
+        errors: Mapping[int, torch.Tensor],
+        *,
+        rate_axis: str,
+    ) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for channels in (128, 64, 16):
+            donor, recipient = _p13_channel_group_deltas_from_tile_errors(
+                errors,
+                rate_axis=rate_axis,
+                channels_per_group=channels,
+            )
+            result[f"channel_group_{channels}"] = _p13_marginal_diagnostics(
+                donor,
+                recipient,
+            )
+        result["tile_16x16"] = _p13_tile_pair_diagnostics(errors)
+        return result
+
+    prepared_upstream = {
+        matrix: _prepare_quantize_maps(
+            source[MATRICES.index(matrix)],
+            h13,
+            contexts,
+            matrix=matrix,
+            device=device,
+            permutation_override=permutation_override,
+        )
+        for matrix in ("w1", "w3")
+    }
+    independent: dict[str, dict[int, dict[str, object]]] = {}
+    independent_errors: dict[str, dict[int, torch.Tensor]] = {}
+    shared: dict[str, dict[int, dict[str, object]]] = {}
+    shared_errors: dict[str, dict[int, torch.Tensor]] = {}
+    zero_feedback: dict[str, dict[int, dict[str, object]]] = {}
+    zero_feedback_errors: dict[str, dict[int, torch.Tensor]] = {}
+    zero_feedback_evidence: dict[str, object] = {}
+    dense_h_scale_search: dict[str, object] = {}
+    for matrix in ("w1", "w3"):
+        (
+            independent[matrix],
+            independent_errors[matrix],
+            shared[matrix],
+            shared_errors[matrix],
+            dense_h_scale_search[matrix],
+        ) = encode_rate_curves(
+            matrix,
+            h13,
+            prepared_upstream[matrix],
+            scope="p13-upstream-rate-curves",
+        )
+        (
+            zero_feedback[matrix],
+            zero_feedback_errors[matrix],
+            zero_feedback_evidence[matrix],
+        ) = encode_zero_feedback_rate_curves(
+            matrix,
+            h13,
+            prepared_upstream[matrix],
+            scope="p13-upstream-proposal-surface",
+        )
+
+    baseline_w1 = shared["w1"][2]["reconstruction"]
+    baseline_w3 = shared["w3"][2]["reconstruction"]
+    if not isinstance(baseline_w1, torch.Tensor) or not isinstance(
+        baseline_w3, torch.Tensor
+    ):
+        raise TypeError("P13 uniform K2 upstream reconstruction is missing")
+    baseline_middle = middle_decoder(inputs, baseline_w1, baseline_w3)
+    _, baseline_h2, baseline_h2_evidence = build_expert_hessians(
+        inputs,
+        gates,
+        baseline_middle,
+        global_h13=h13,
+        global_h2=h2,
+        device=device,
+    )
+    prepared_down = _prepare_quantize_maps(
+        source[2],
+        baseline_h2,
+        contexts,
+        matrix="w2",
+        device=device,
+        permutation_override=permutation_override,
+    )
+    (
+        independent["w2"],
+        independent_errors["w2"],
+        shared["w2"],
+        shared_errors["w2"],
+        dense_h_scale_search["w2"],
+    ) = encode_rate_curves(
+        "w2",
+        baseline_h2,
+        prepared_down,
+        scope="p13-down-rate-curves",
+    )
+    (
+        zero_feedback["w2"],
+        zero_feedback_errors["w2"],
+        zero_feedback_evidence["w2"],
+    ) = encode_zero_feedback_rate_curves(
+        "w2",
+        baseline_h2,
+        prepared_down,
+        scope="p13-down-proposal-surface-uniform-upstream",
+    )
+
+    def allocation_oracles(
+        errors: Mapping[str, Mapping[int, torch.Tensor]],
+    ) -> dict[str, object]:
+        matrix_marginals: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        for matrix, rate_axis in (("w1", "n"), ("w3", "n"), ("w2", "k")):
+            matrix_marginals[matrix] = _p13_record_deltas_from_tile_errors(
+                errors[matrix], rate_axis=rate_axis
+            )
+        return {
+            "cross_projection_oracle": {
+                "status": "not_computed",
+                "required_metric": (
+                    "one additive mapped-expert-output objective shared by "
+                    "W1, W3, and W2"
+                ),
+                "reason": (
+                    "matrix-native dense-H losses are additive within one "
+                    "projection but are not cross-projection functional units"
+                ),
+            },
+            "per_matrix": {
+                matrix: {
+                    "marginals": _p13_marginal_diagnostics(*matrix_marginals[matrix]),
+                    "allocation": _best_balanced_p13_units(
+                        *matrix_marginals[matrix]
+                    ),
+                }
+                for matrix in MATRICES
+            },
+        }
+
+    independent_oracles = allocation_oracles(independent_errors)
+    shared_oracles = allocation_oracles(shared_errors)
+    independent_w13 = {
+        bits: independent_errors["w1"][bits]
+        + independent_errors["w3"][bits]
+        for bits in (1, 2, 3)
+    }
+    shared_w13 = {
+        bits: shared_errors["w1"][bits] + shared_errors["w3"][bits]
+        for bits in (1, 2, 3)
+    }
+    zero_feedback_w13 = {
+        bits: (
+            zero_feedback_errors["w1"][bits]
+            + zero_feedback_errors["w3"][bits]
+        )
+        for bits in (1, 2, 3)
+    }
+    _, independent_w13_allocation = family_allocation(
+        independent_w13, rate_axis="n"
+    )
+    _, independent_w2_allocation = family_allocation(
+        independent_errors["w2"], rate_axis="k"
+    )
+    _, shared_w13_allocation = family_allocation(shared_w13, rate_axis="n")
+    upstream_record_rates, zero_feedback_w13_allocation = family_allocation(
+        zero_feedback_w13, rate_axis="n"
+    )
+    _, shared_w2_baseline_allocation = family_allocation(
+        shared_errors["w2"], rate_axis="k"
+    )
+
+    upstream_maps = {
+        name: _p13_record_map_from_rates(
+            (3584, 3072), rates, rate_axis="n"
+        )
+        for name, rates in upstream_record_rates.items()
+    }
+    encoded_upstream: dict[str, dict[str, dict[str, object]]] = {}
+    encoded_upstream_errors: dict[str, dict[str, torch.Tensor]] = {}
+    for matrix in ("w1", "w3"):
+        encoded_upstream[matrix], _ = _quantize_maps(
+            source[MATRICES.index(matrix)],
+            h13,
+            contexts,
+            matrix=matrix,
+            maps=upstream_maps,
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            g_scale_override=float(shared[matrix][2]["g_scale"]),
+            luts_by_bits=luts_by_bits,
+            prepared=prepared_upstream[matrix],
+            shared_scale_scope="p13-upstream-mixed-schedules",
+            scale_search_bits=2,
+        )
+        encoded_upstream_errors[matrix] = _dense_h_tile_errors(
+            prepared_upstream[matrix][0],
+            prepared_upstream[matrix][1],
+            encoded_upstream[matrix],
+        )
+    upstream_dense_h = {
+        name: float(
+            encoded_upstream_errors["w1"][name].sum()
+            + encoded_upstream_errors["w3"][name].sum()
+        )
+        for name in upstream_maps
+    }
+    selected_upstream = min(
+        upstream_dense_h,
+        key=lambda name: (upstream_dense_h[name], name),
+    )
+    selected_w1 = encoded_upstream["w1"][selected_upstream]["reconstruction"]
+    selected_w3 = encoded_upstream["w3"][selected_upstream]["reconstruction"]
+    if not isinstance(selected_w1, torch.Tensor) or not isinstance(
+        selected_w3, torch.Tensor
+    ):
+        raise TypeError("selected P13 upstream reconstruction is missing")
+    selected_middle = middle_decoder(inputs, selected_w1, selected_w3)
+    _, selected_h2, selected_h2_evidence = build_expert_hessians(
+        inputs,
+        gates,
+        selected_middle,
+        global_h13=h13,
+        global_h2=h2,
+        device=device,
+    )
+
+    prepared_selected_down = _prepare_quantize_maps(
+        source[2],
+        selected_h2,
+        contexts,
+        matrix="w2",
+        device=device,
+        permutation_override=permutation_override,
+    )
+    selected_down_group, _ = _quantize_maps(
+        source[2],
+        selected_h2,
+        contexts,
+        matrix="w2",
+        maps={
+            f"k{bits}": _uniform_tile_map((3072, 3584), bits)
+            for bits in (1, 2, 3)
+        },
+        layer=layer,
+        expert=expert,
+        device=device,
+        quantizer_module=quantizer_module,
+        ldlq_tf32=ldlq_tf32,
+        luts_by_bits=luts_by_bits,
+        prepared=prepared_selected_down,
+        shared_scale_scope="p13-selected-down-rate-curves",
+        scale_search_bits=2,
+    )
+    selected_down_uniform = {
+        bits: selected_down_group[f"k{bits}"] for bits in (1, 2, 3)
+    }
+    selected_down_errors = _dense_h_tile_errors(
+        prepared_selected_down[0],
+        prepared_selected_down[1],
+        selected_down_uniform,
+    )
+    (
+        selected_down_zero_feedback,
+        selected_down_zero_feedback_errors,
+        selected_down_zero_feedback_evidence,
+    ) = encode_zero_feedback_rate_curves(
+        "w2",
+        selected_h2,
+        prepared_selected_down,
+        scope="p13-down-proposal-surface-selected-upstream",
+    )
+    fine_down_plans: dict[str, dict[str, object]] = {}
+    fine_down_maps: dict[str, tuple[int, ...]] = {}
+    for channels in (64, 16):
+        donor, recipient = _p13_channel_group_deltas_from_tile_errors(
+            selected_down_zero_feedback_errors,
+            rate_axis="k",
+            channels_per_group=channels,
+        )
+        maximum = 4 if channels == 64 else 8
+        plans_by_count = _balanced_p13_unit_rates(
+            donor,
+            recipient,
+            max_count=maximum,
+        )
+        best_count = min(
+            plans_by_count,
+            key=lambda count: (
+                float(plans_by_count[count]["delta"]),
+                count,
+            ),
+        )
+        counts = sorted({1, 2, 4, maximum, best_count})
+        for count in counts:
+            plan = plans_by_count[count]
+            name = f"channel{channels}_n{count}"
+            rates = plan["rates"]
+            if not isinstance(rates, list):
+                raise TypeError("P13 channel-group allocation is missing rates")
+            fine_down_plans[name] = plan
+            fine_down_maps[name] = _p13_channel_group_map_from_rates(
+                (3072, 3584),
+                rates,
+                rate_axis="k",
+                channels_per_group=channels,
+            )
+
+    tile_down_plans: dict[str, dict[str, object]] = {}
+    tile_down_maps: dict[str, tuple[int, ...]] = {}
+    tile_record_rates = (*((1,) * 12), *((3,) * 12))
+    for pairing_policy in ("mirror", "maximum_weight"):
+        for numerator, denominator in ((1, 16), (1, 8), (1, 4), (1, 2), (1, 1)):
+            fraction = numerator / denominator
+            tile_map, plan = _p13_fractional_tile_map(
+                selected_down_zero_feedback_errors,
+                tile_record_rates,
+                rate_axis="k",
+                pairing_policy=pairing_policy,
+                positive_fraction=fraction,
+            )
+            if int(plan["selected_pair_tiles"]) == 0:
+                continue
+            name = f"tile_{pairing_policy}_p{numerator}of{denominator}"
+            tile_down_plans[name] = plan
+            tile_down_maps[name] = tile_map
+
+    fine_encoded_down: dict[str, dict[str, object]] = {}
+    fine_down_dense_h: dict[str, float] = {}
+    fine_down_scores: dict[str, dict[str, object]] = {}
+    all_fine_down_maps = {**fine_down_maps, **tile_down_maps}
+    if all_fine_down_maps:
+        fine_encoded_down, _ = _quantize_maps(
+            source[2],
+            selected_h2,
+            contexts,
+            matrix="w2",
+            maps=all_fine_down_maps,
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            g_scale_override=float(selected_down_uniform[2]["g_scale"]),
+            luts_by_bits=luts_by_bits,
+            prepared=prepared_selected_down,
+            shared_scale_scope="p13-down-channel-group-schedules",
+            scale_search_bits=2,
+        )
+        fine_down_errors = _dense_h_tile_errors(
+            prepared_selected_down[0],
+            prepared_selected_down[1],
+            fine_encoded_down,
+        )
+        fine_down_dense_h = {
+            name: float(value.sum()) for name, value in fine_down_errors.items()
+        }
+    down_record_rates, selected_down_allocation = family_allocation(
+        selected_down_zero_feedback_errors, rate_axis="k"
+    )
+    down_maps = {
+        name: _p13_record_map_from_rates(
+            (3072, 3584), rates, rate_axis="k"
+        )
+        for name, rates in down_record_rates.items()
+    }
+    encoded_down, _ = _quantize_maps(
+        source[2],
+        selected_h2,
+        contexts,
+        matrix="w2",
+        maps=down_maps,
+        layer=layer,
+        expert=expert,
+        device=device,
+        quantizer_module=quantizer_module,
+        ldlq_tf32=ldlq_tf32,
+        g_scale_override=float(selected_down_uniform[2]["g_scale"]),
+        luts_by_bits=luts_by_bits,
+        prepared=prepared_selected_down,
+        shared_scale_scope="p13-down-mixed-schedules",
+        scale_search_bits=2,
+    )
+    encoded_down_errors = _dense_h_tile_errors(
+        prepared_selected_down[0],
+        prepared_selected_down[1],
+        encoded_down,
+    )
+    down_dense_h = {
+        name: float(value.sum()) for name, value in encoded_down_errors.items()
+    }
+
+    def encode_w2_traversal_variant(
+        rate_map: tuple[int, ...],
+        *,
+        policy: str,
+        scope: str,
+    ) -> tuple[dict[str, object], float, dict[str, object]]:
+        ordered_prepared, ordered_map, evidence = _w2_record_traversal_variant(
+            prepared_selected_down,
+            rate_map,
+            policy=policy,
+        )
+        group, _ = _quantize_maps(
+            source[2],
+            selected_h2,
+            contexts,
+            matrix="w2",
+            maps={"candidate": ordered_map},
+            layer=layer,
+            expert=expert,
+            device=device,
+            quantizer_module=quantizer_module,
+            ldlq_tf32=ldlq_tf32,
+            g_scale_override=float(selected_down_uniform[2]["g_scale"]),
+            luts_by_bits=luts_by_bits,
+            prepared=ordered_prepared,
+            shared_scale_scope=scope,
+            scale_search_bits=2,
+        )
+        candidate = group["candidate"]
+        dense_h = float(
+            _dense_h_tile_errors(
+                ordered_prepared[0],
+                ordered_prepared[1],
+                {"candidate": candidate},
+            )["candidate"].sum()
+        )
+        reconstruction = candidate.get("reconstruction")
+        if not isinstance(reconstruction, torch.Tensor):
+            raise TypeError("W2 traversal candidate reconstruction is missing")
+        evidence["dense_h"] = dense_h
+        evidence["routed_expert_output_diagnostic"] = score(
+            (selected_w1, selected_w3, reconstruction)
+        )
+        return candidate, dense_h, evidence
+
+    uniform_reverse_candidate, uniform_reverse_dense_h, uniform_reverse_evidence = (
+        encode_w2_traversal_variant(
+            down_maps["n0"],
+            policy="reverse",
+            scope="p13-w2-uniform-k2-reverse-record-traversal",
+        )
+    )
+    del uniform_reverse_candidate
+    mixed_order_sources = {
+        **{
+            f"record_{name}": (rate_map, down_dense_h[name])
+            for name, rate_map in down_maps.items()
+            if name != "n0"
+        },
+        **{
+            f"fine_{name}": (rate_map, fine_down_dense_h[name])
+            for name, rate_map in all_fine_down_maps.items()
+        },
+    }
+    mixed_order_study: dict[str, object]
+    if mixed_order_sources:
+        mixed_source = min(
+            mixed_order_sources,
+            key=lambda name: (mixed_order_sources[name][1], name),
+        )
+        mixed_rate_map, mixed_base_dense_h = mixed_order_sources[mixed_source]
+        mixed_variants: dict[str, object] = {
+            "baseline": {
+                "dense_h": mixed_base_dense_h,
+                "relative_to_uniform_k2": _relative(
+                    mixed_base_dense_h,
+                    down_dense_h["n0"],
+                ),
+            }
+        }
+        for policy in ("donor_first", "recipient_first"):
+            _, dense_h, evidence = encode_w2_traversal_variant(
+                mixed_rate_map,
+                policy=policy,
+                scope=f"p13-w2-{mixed_source}-{policy}-record-traversal",
+            )
+            mixed_variants[policy] = {
+                **evidence,
+                "relative_to_uniform_k2": _relative(
+                    dense_h,
+                    down_dense_h["n0"],
+                ),
+                "relative_to_baseline_order": _relative(
+                    dense_h,
+                    mixed_base_dense_h,
+                ),
+            }
+        mixed_order_study = {
+            "status": "evaluated",
+            "schedule": mixed_source,
+            "variants": mixed_variants,
+        }
+    else:
+        mixed_order_study = {"status": "no_nonuniform_schedule_proposed"}
+
+    selected_down = min(
+        down_dense_h,
+        key=lambda name: (down_dense_h[name], name),
+    )
+    selected_w2 = encoded_down[selected_down]["reconstruction"]
+    baseline_w2 = shared["w2"][2]["reconstruction"]
+    if not isinstance(selected_w2, torch.Tensor) or not isinstance(
+        baseline_w2, torch.Tensor
+    ):
+        raise TypeError("P13 down reconstruction is missing")
+    baseline = score((baseline_w1, baseline_w3, baseline_w2))
+    selected_score = score((selected_w1, selected_w3, selected_w2))
+    for name, candidate in fine_encoded_down.items():
+        reconstruction = candidate.get("reconstruction")
+        if not isinstance(reconstruction, torch.Tensor):
+            raise TypeError("P13 channel-group W2 reconstruction is missing")
+        fine_down_scores[name] = score(
+            (selected_w1, selected_w3, reconstruction)
+        )
+    selected_name = f"u{selected_upstream}/d{selected_down}"
+    baseline_dense_h = (
+        upstream_dense_h["n0"] + float(shared_errors["w2"][2].sum())
+    )
+    selected_dense_h = (
+        upstream_dense_h[selected_upstream] + down_dense_h[selected_down]
+    )
+
+    return {
+        "allocation_unit": "128_channel_record",
+        "schedule": (
+            "K1 donors and K3 recipients are proposed from decoded "
+            "zero-feedback rate surfaces, then every proposed mixed schedule "
+            "is encoded from the canonical source with complete BlockLDLQ."
+        ),
+        "trellis_bits_per_weight": 2.0,
+        "w13_rate_map": "shared",
+        "w2_rate_map": "independent",
+        "selector": {
+            "grammar": "disjoint K1 and K3 record masks for W13 and W2",
+            "bits_per_expert": 96,
+            "bytes_per_expert": 12,
+            "bits_per_weight": 96 / (3 * 3072 * 3584),
+        },
+        "targets": "canonical_w1_w3_w2",
+        "selection_metric": (
+            "complete_mixed_rate_blockldlq_absolute_dense_h_distortion"
+        ),
+        "proposal_metric": (
+            "zero_feedback_decoded_candidates_scored_by_absolute_dense_h"
+        ),
+        "document_partition_used_for_selection": False,
+        "zero_feedback_schedule_screen": {
+            "role": "proposal_only",
+            "cross_tile_feedback": False,
+            "matrices_at_uniform_k2_upstream": zero_feedback_evidence,
+            "w2_at_selected_upstream": selected_down_zero_feedback_evidence,
+            "deployed_family_constraints": {
+                "w13": zero_feedback_w13_allocation,
+                "w2_at_selected_upstream": selected_down_allocation,
+            },
+            "granularity_oracles": {
+                "w13": granularity_oracles(
+                    zero_feedback_w13,
+                    rate_axis="n",
+                ),
+                "w2_at_uniform_k2_upstream": granularity_oracles(
+                    zero_feedback_errors["w2"],
+                    rate_axis="k",
+                ),
+                "w2_at_selected_upstream": granularity_oracles(
+                    selected_down_zero_feedback_errors,
+                    rate_axis="k",
+                ),
+            },
+        },
+        "scale_oracles": {
+            "independent_rate_scales": {
+                "dense_h_scale_search": dense_h_scale_search,
+                "matrices": {
+                    matrix: curve_evidence(
+                        independent[matrix], independent_errors[matrix]
+                    )
+                    for matrix in MATRICES
+                },
+                "allocation_oracles": independent_oracles,
+                "deployed_family_constraints": {
+                    "w13": independent_w13_allocation,
+                    "w2": independent_w2_allocation,
+                },
+                "granularity_oracles": {
+                    "w13": granularity_oracles(
+                        independent_w13,
+                        rate_axis="n",
+                    ),
+                    "w2": granularity_oracles(
+                        independent_errors["w2"],
+                        rate_axis="k",
+                    ),
+                },
+            },
+            "one_shared_deployable_scale_per_matrix": {
+                "matrices": {
+                    matrix: curve_evidence(shared[matrix], shared_errors[matrix])
+                    for matrix in MATRICES
+                },
+                "allocation_oracles": shared_oracles,
+                "deployed_family_constraints": {
+                    "w13": shared_w13_allocation,
+                    "w2_at_uniform_k2_upstream": shared_w2_baseline_allocation,
+                },
+                "granularity_oracles": {
+                    "w13": granularity_oracles(
+                        shared_w13,
+                        rate_axis="n",
+                    ),
+                    "w2_at_uniform_k2_upstream": granularity_oracles(
+                        shared_errors["w2"],
+                        rate_axis="k",
+                    ),
+                    "w2_at_selected_upstream": granularity_oracles(
+                        selected_down_errors,
+                        rate_axis="k",
+                    ),
+                },
+            },
+        },
+        "selected_on_dense_h": selected_name,
+        "selected_rate_records": {
+            "w13": zero_feedback_w13_allocation["allocations"][selected_upstream],
+            "w2": selected_down_allocation["allocations"][selected_down],
+        },
+        "mixed_schedule_dense_h": {
+            "baseline_p22": baseline_dense_h,
+            "selected": selected_dense_h,
+            "relative_to_p22": _relative(selected_dense_h, baseline_dense_h),
+            "upstream_by_schedule": upstream_dense_h,
+            "down_by_schedule": down_dense_h,
+        },
+        "w2_record_traversal_order": {
+            "status": "research_only",
+            "invariant": (
+                "complete_128_channel_hadamard_records_and_canonical_channel_"
+                "rate_assignments_are_preserved"
+            ),
+            "uniform_k2": {
+                "baseline_dense_h": down_dense_h["n0"],
+                "reverse_record_order": {
+                    **uniform_reverse_evidence,
+                    "relative_to_baseline": _relative(
+                        uniform_reverse_dense_h,
+                        down_dense_h["n0"],
+                    ),
+                },
+            },
+            "mixed_rate": mixed_order_study,
+        },
+        "channel_group_reencode": {
+            "status": "evaluated" if fine_down_maps else "no_profitable_marginal",
+            "proposal_metric": (
+                "zero_feedback_decoded_candidates_scored_by_absolute_dense_h"
+            ),
+            "evaluation_metric": (
+                "complete_mixed_rate_blockldlq_absolute_dense_h_distortion"
+            ),
+            "baseline_w2_dense_h": down_dense_h["n0"],
+            "candidates": {
+                name: {
+                    "allocation": fine_down_plans[name],
+                    "dense_h": fine_down_dense_h[name],
+                    "dense_h_relative_to_k2": _relative(
+                        fine_down_dense_h[name],
+                        down_dense_h["n0"],
+                    ),
+                    "routed_expert_output_diagnostic": fine_down_scores[name],
+                }
+                for name in fine_down_maps
+            },
+        },
+        "tile_pair_reencode": {
+            "status": "evaluated" if tile_down_maps else "no_profitable_pair",
+            "proposal_metric": (
+                "zero_feedback_decoded_candidates_scored_by_absolute_dense_h"
+            ),
+            "evaluation_metric": (
+                "complete_mixed_rate_blockldlq_absolute_dense_h_distortion"
+            ),
+            "baseline_w2_dense_h": down_dense_h["n0"],
+            "selector": {
+                "grammar": (
+                    "one P22-or-P13 bit for each corresponding 16x16 tile "
+                    "pair in twelve low/high 128-channel record pairs"
+                ),
+                "bits_per_expert": 12 * 8 * 224,
+                "bytes_per_expert": (12 * 8 * 224) // 8,
+                "bits_per_weight": (12 * 8 * 224) / (3 * 3072 * 3584),
+            },
+            "candidates": {
+                name: {
+                    "allocation": tile_down_plans[name],
+                    "dense_h": fine_down_dense_h[name],
+                    "dense_h_relative_to_k2": _relative(
+                        fine_down_dense_h[name],
+                        down_dense_h["n0"],
+                    ),
+                    "routed_expert_output_diagnostic": fine_down_scores[name],
+                }
+                for name in tile_down_maps
+            },
+        },
+        "w2_hessian": "expert_local_conditioned_on_decoded_upstream_candidate",
+        "h2_evidence": {
+            "uniform_k2_upstream": baseline_h2_evidence,
+            "selected_upstream": selected_h2_evidence,
+        },
+        "representation": (
+            {"basis": "production"}
+            if representation is None
+            else dict(representation)
+        ),
+        "routed_expert_output_diagnostic": {
+            "baseline_p22": baseline,
+            "selected": selected_score,
+            "confirmation_relative_to_p22": _relative(
+                float(selected_score["confirmation"]["sse"]),
+                float(baseline["confirmation"]["sse"]),
+            ),
+        },
+    }
 
 
 def _weighted_functional_sse(
@@ -4872,6 +7211,8 @@ def _run_expert(
     switched_luts: Mapping[str, Mapping[int, torch.Tensor]],
     k2_codebook_menu: bool,
     coupled_hadamard_k2: bool,
+    h2_viterbi_refine: bool,
+    h2_viterbi_refine_sweeps: int,
     coupled_hadamard_block_size: int,
     coupled_hadamard_preactivation_block_size: int,
     coupled_hadamard_postactivation_block_size: int,
@@ -4879,6 +7220,7 @@ def _run_expert(
     coupled_residual_draw: int,
     coupled_intermediate_draws: Mapping[int, int],
     functional_tile_search: bool,
+    p13_search: bool,
     qsrt_308_search: bool,
     qsrt_308_tile_fractions: bool,
     qsrt_308_boundary_tile_search: bool,
@@ -4898,7 +7240,10 @@ def _run_expert(
     confirmation_documents = int(
         torch.unique(all_rows.request_steps[confirmation_mask_cpu]).numel()
     )
-    if fit_documents < 6 or confirmation_documents < 4:
+    if (
+        not h2_viterbi_refine
+        and (fit_documents < 6 or confirmation_documents < 4)
+    ):
         return {
             "skipped": True,
             "reason": "insufficient document support",
@@ -5141,7 +7486,51 @@ def _run_expert(
         codec_features=codec_features.to(device=geometry_scores.device),
     )
 
-    if coupled_hadamard_k2 and not qsrt_308_search and not k2_codebook_menu:
+    if h2_viterbi_refine:
+        return {
+            "skipped": False,
+            "support": {
+                "rows": int(inputs.shape[0]),
+                "documents": int(torch.unique(request_steps).numel()),
+                "fit_rows_descriptive": int(fit_mask.sum()),
+                "confirmation_rows_descriptive": int(confirmation_mask.sum()),
+            },
+            "permutation_policy": permutation_policy,
+            "permutation_sha256": permutation_sha256,
+            "h2_viterbi_refinement": _h2_viterbi_refinement(
+                source,
+                global_h13=global_h13,
+                global_h2=global_h2,
+                contexts=contexts,
+                layer=layer,
+                expert=expert,
+                device=device,
+                quantizer_module=quantizer_module,
+                ldlq_tf32=ldlq_tf32,
+                inputs=inputs,
+                gates=gates,
+                request_steps=request_steps,
+                baseline_permutation=selected_permutation,
+                block_size=coupled_hadamard_block_size,
+                preactivation_block_size=(
+                    coupled_hadamard_preactivation_block_size
+                ),
+                postactivation_block_size=(
+                    coupled_hadamard_postactivation_block_size
+                ),
+                pre_permutation=coupled_hadamard_pre_permutation,
+                residual_rotation_draw=coupled_residual_draw,
+                intermediate_rotation_draw=coupled_intermediate_draws.get(
+                    expert, 0
+                ),
+                refine_sweeps=h2_viterbi_refine_sweeps,
+            ),
+        }
+
+    if (
+        coupled_hadamard_k2
+        and not (p13_search or qsrt_308_search or k2_codebook_menu)
+    ):
         return {
             "skipped": False,
             "support": {
@@ -5317,6 +7706,48 @@ def _run_expert(
         research_reference_output = coupled_search_basis.reference_output
         research_decode_middle = coupled_search_basis.decode_middle
         research_execute_triplet = coupled_search_basis.execute_triplet
+
+    if p13_search:
+        shared_search_args = {
+            "h13": research_h13,
+            "h2": research_h2,
+            "contexts": contexts,
+            "layer": layer,
+            "expert": expert,
+            "device": device,
+            "quantizer_module": quantizer_module,
+            "ldlq_tf32": ldlq_tf32,
+            "inputs": research_inputs,
+            "gates": gates,
+            "fit_mask": fit_mask,
+            "confirmation_mask": confirmation_mask,
+            "permutation_override": research_permutation,
+            "decode_middle": research_decode_middle,
+            "execute_triplet": research_execute_triplet,
+            "reference_output": research_reference_output,
+            "representation": (
+                coupled_search_basis.evidence
+                if coupled_search_basis is not None
+                else None
+            ),
+        }
+        return {
+            "skipped": False,
+            "support": {
+                "fit_rows": int(fit_mask.sum()),
+                "fit_documents": fit_documents,
+                "confirmation_rows": int(confirmation_mask.sum()),
+                "confirmation_documents": confirmation_documents,
+            },
+            "covariance": covariance,
+            "permutation_policy": permutation_policy,
+            "permutation_sha256": permutation_sha256,
+            "permutation_tile_geometry": permutation_geometry,
+            "p13_record_rates": _p13_record_search(
+                research_source,
+                **shared_search_args,
+            ),
+        }
 
     uniform: dict[str, dict[int, dict[str, object]]] = {}
     targets: dict[str, torch.Tensor] = {}
@@ -5861,7 +8292,7 @@ def run(args: argparse.Namespace) -> dict:
             f"k{bits}_direct_labels": hashlib.sha256(
                 sqg_xor_cheb_t12_bytes(bits).cpu().numpy().tobytes()
             ).hexdigest()
-            for bits in (2, 3, 4)
+            for bits in (1, 2, 3, 4)
         },
     }
     payload: dict[str, object] = {
@@ -5882,12 +8313,29 @@ def run(args: argparse.Namespace) -> dict:
             "codebook_sha256": codebook_sha256,
             "official_revision": args.official_revision,
             "ldlq_tf32": args.ldlq_tf32,
-            "selection": "fit-document dense-H tile geometry",
-            "evaluation": "document-disjoint confirmation partition",
+            "selection": (
+                "strict exact dense-H improvement; no document partition selection"
+                if args.h2_viterbi_refine
+                else (
+                    "zero-feedback schedule proposal followed by complete "
+                    "mixed-rate BlockLDLQ dense-H selection"
+                )
+                if args.p13_search
+                else "fit-document dense-H tile geometry"
+            ),
+            "evaluation": (
+                "all available routed rows; same-population mechanism measurement"
+                if args.h2_viterbi_refine
+                else (
+                    "routed document partitions are diagnostic only"
+                    if args.p13_search
+                    else "document-disjoint confirmation partition"
+                )
+            ),
             "external_validation": external_contract,
             "w2_hessian": (
-                "3.08-bpw and boundary candidates rebuild expert-local H2 from "
-                "their decoded upstream reconstruction and shrink only toward "
+                "mixed-rate candidates rebuild expert-local H2 from their "
+                "decoded upstream reconstruction and shrink only toward "
                 "scaled identity"
             ),
             "permutation_policy": args.permutation_policy,
@@ -5899,8 +8347,11 @@ def run(args: argparse.Namespace) -> dict:
                 "qsrt_308_max_donors": args.qsrt_308_max_donors,
                 "qsrt_308_scale_closure": args.qsrt_308_scale_closure,
                 "functional_tile_search": args.functional_tile_search,
+                "p13_search": args.p13_search,
                 "k2_codebook_menu": args.k2_codebook_menu,
                 "coupled_hadamard_k2": args.coupled_hadamard_k2,
+                "h2_viterbi_refine": args.h2_viterbi_refine,
+                "h2_viterbi_refine_sweeps": args.h2_viterbi_refine_sweeps,
                 "coupled_hadamard_block_size": (
                     args.coupled_hadamard_block_size
                 ),
@@ -5972,6 +8423,8 @@ def run(args: argparse.Namespace) -> dict:
             switched_luts=switched_luts,
             k2_codebook_menu=args.k2_codebook_menu,
             coupled_hadamard_k2=args.coupled_hadamard_k2,
+            h2_viterbi_refine=args.h2_viterbi_refine,
+            h2_viterbi_refine_sweeps=args.h2_viterbi_refine_sweeps,
             coupled_hadamard_block_size=args.coupled_hadamard_block_size,
             coupled_hadamard_preactivation_block_size=(
                 args.coupled_hadamard_preactivation_block_size
@@ -5985,6 +8438,7 @@ def run(args: argparse.Namespace) -> dict:
             coupled_residual_draw=args.coupled_residual_draw,
             coupled_intermediate_draws=args.coupled_intermediate_draws,
             functional_tile_search=args.functional_tile_search,
+            p13_search=args.p13_search,
             qsrt_308_search=args.qsrt_308_search,
             qsrt_308_tile_fractions=args.qsrt_308_tile_fractions,
             qsrt_308_boundary_tile_search=args.qsrt_308_boundary_tile_search,
@@ -5999,10 +8453,26 @@ def run(args: argparse.Namespace) -> dict:
         payload["results"][str(expert)] = result
         _atomic_write(args.output, payload)
         if not result["skipped"]:
+            if args.h2_viterbi_refine:
+                refinement = result["h2_viterbi_refinement"]
+                print(
+                    f"layer {args.layer} expert {expert}: "
+                    f"h2-viterbi dense-h="
+                    f"{100 * refinement['dense_h_relative_to_baseline']:+.3f}% "
+                    f"mapped="
+                    f"{100 * refinement['mapped_output_relative_to_baseline']:+.3f}% "
+                    f"changed={refinement['path_changes']['tiles']} tiles",
+                    flush=True,
+                )
+                torch.cuda.empty_cache()
+                continue
             if (
                 args.coupled_hadamard_k2
-                and not args.qsrt_308_search
-                and not args.k2_codebook_menu
+                and not (
+                    args.p13_search
+                    or args.qsrt_308_search
+                    or args.k2_codebook_menu
+                )
             ):
                 coupled = result["coupled_hadamard_k2"]
                 print(
@@ -6045,6 +8515,20 @@ def run(args: argparse.Namespace) -> dict:
                     f"qsrt-3.08={qsrt_308['selected_on_fit']} "
                     f"confirm="
                     f"{100 * qsrt_308['confirmation_relative_to_p33']:+.3f}%",
+                    flush=True,
+                )
+                torch.cuda.empty_cache()
+                continue
+            if args.p13_search:
+                records = result["p13_record_rates"]
+                dense_h = records["mixed_schedule_dense_h"]
+                routed = records["routed_expert_output_diagnostic"]
+                print(
+                    f"layer {args.layer} expert {expert}: "
+                    f"records={records['selected_on_dense_h']} "
+                    f"dense-h={100 * dense_h['relative_to_p22']:+.3f}% "
+                    f"confirmation-diagnostic="
+                    f"{100 * routed['confirmation_relative_to_p22']:+.3f}%",
                     flush=True,
                 )
                 torch.cuda.empty_cache()
@@ -6127,6 +8611,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-tile-triplet-oracle", action="store_true")
     parser.add_argument("--functional-tile-search", action="store_true")
     parser.add_argument(
+        "--p13-search",
+        action="store_true",
+        help=(
+            "compare uniform K2 with every gate/up/down permutation of "
+            "K1/K2/K3 at exact average two-bit trellis rate"
+        ),
+    )
+    parser.add_argument(
         "--k2-codebook-menu",
         action="store_true",
         help=(
@@ -6143,6 +8635,20 @@ def parse_args() -> argparse.Namespace:
             "--qsrt-308-search, run that allocator entirely in the coupled "
             "basis instead"
         ),
+    )
+    parser.add_argument(
+        "--h2-viterbi-refine",
+        action="store_true",
+        help=(
+            "compare the qualified coupled-Hadamard uniform-K2 W2 encode "
+            "with exact dense-H conditional-target path refinement"
+        ),
+    )
+    parser.add_argument(
+        "--h2-viterbi-refine-sweeps",
+        type=int,
+        default=1,
+        help="number of exact conditional-target coordinate-descent sweeps",
     )
     parser.add_argument(
         "--coupled-hadamard-block-size",
@@ -6251,6 +8757,21 @@ def parse_args() -> argparse.Namespace:
         parser.error("--qsrt-308-max-donors must lie in 0..11")
     if args.coupled_residual_draw < 0:
         parser.error("--coupled-residual-draw must be nonnegative")
+    if args.h2_viterbi_refine and not args.coupled_hadamard_k2:
+        parser.error("--h2-viterbi-refine requires --coupled-hadamard-k2")
+    if args.h2_viterbi_refine_sweeps <= 0:
+        parser.error("--h2-viterbi-refine-sweeps must be positive")
+    if args.h2_viterbi_refine and (
+        args.coupled_hadamard_block_size != 512
+        or args.coupled_hadamard_preactivation_block_size != 128
+        or args.coupled_hadamard_postactivation_block_size != 128
+        or args.coupled_hadamard_pre_permutation != "identity"
+        or args.coupled_residual_draw != 0
+    ):
+        parser.error(
+            "--h2-viterbi-refine requires the qualified H512/H128/H128 "
+            "coupled basis, identity pre-permutation, and residual draw zero"
+        )
     if any(
         expert not in args.experts or draw < 0
         for expert, draw in args.coupled_intermediate_draws.items()
@@ -6269,17 +8790,25 @@ def parse_args() -> argparse.Namespace:
     experiment_count = sum(
         (
             args.functional_tile_search,
+            args.p13_search,
             args.qsrt_308_search,
             args.k2_codebook_menu,
+            args.h2_viterbi_refine,
             args.coupled_hadamard_k2
-            and not (args.qsrt_308_search or args.k2_codebook_menu),
+            and not args.h2_viterbi_refine
+            and not (
+                args.p13_search
+                or args.qsrt_308_search
+                or args.k2_codebook_menu
+            ),
         )
     )
     if experiment_count > 1:
         parser.error(
-            "functional tile, 3.08-bpw, and K2 codebook-menu searches are "
-            "separate experiments; coupled Hadamard may qualify the 3.08-bpw "
-            "search or run as its own uniform-K2 control"
+            "functional tile, exact-average-two-bit, 3.08-bpw, K2 "
+            "codebook-menu, and H2 path-refinement searches are separate "
+            "experiments; coupled Hadamard may qualify one search or run as "
+            "its own uniform-K2 control"
         )
     return args
 

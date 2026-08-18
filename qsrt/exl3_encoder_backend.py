@@ -17,6 +17,11 @@ from ....util.tensor import save_tensor_image
 from functools import lru_cache
 import threading
 
+from qsrt.h2_viterbi_refine import (
+    config_from_quant_args,
+    refine_h2_viterbi_paths,
+)
+from qsrt.rng import seeded_normal
 from qsrt.two_sided_ldlq import two_sided_block_ldlq
 
 # Constant
@@ -534,6 +539,114 @@ def ldlq(
     return weight_q, encoded
 
 
+def ldlq_periodic(
+    weight: torch.Tensor,
+    L: torch.Tensor,
+    quant_args: dict,
+    pb: ProgressBar | None = None,
+):
+    """Dense-H LDLQ with one immutable per-symbol rate schedule per tile.
+
+    Tile classes are assigned by the row-major 16x16 tile index.  The
+    quantizer emits one complete closed L16 path per tile, while its branch
+    width varies at each of the 256 tensor-core traversal positions.
+    """
+
+    schedules = tuple(tuple(int(bits) for bits in row) for row in quant_args[
+        "periodic_rate_schedules"
+    ])
+    if not schedules or any(len(row) != 256 for row in schedules):
+        raise ValueError("periodic rate schedules must have shape [classes, 256]")
+    if any(bits not in (2, 3, 4) for row in schedules for bits in row):
+        raise ValueError("periodic rate schedules support only K2, K3, and K4")
+
+    devices = quant_args["devices"]
+    for quant_device in devices:
+        torch.cuda.synchronize(quant_device)
+    main_stream = get_quant_stream(devices[0])
+    with torch.cuda.stream(main_stream):
+        device = L.device
+        if device != torch.device(devices[0]):
+            raise ValueError("periodic LDLQ decomposition is on the wrong device")
+        buffer_device = weight.device
+        size_k, size_n = weight.shape
+        if size_k % 16 or size_n % 16:
+            raise ValueError("periodic LDLQ input must be 16x16 tile aligned")
+        tiles_k = size_k // 16
+        tiles_n = size_n // 16
+
+        buffer_rows = max(quant_args.get("buf_size_k", 128), 16)
+        if buffer_rows % 16 or size_k % buffer_rows:
+            raise ValueError("periodic LDLQ buffer must tile the EXL K dimension")
+
+        product_cache = torch.zeros((size_k, size_n), dtype=torch.float, device=device)
+        weight_q = torch.zeros((size_k, size_n), dtype=torch.float, device=buffer_device)
+        encoded_q = torch.empty(
+            (tiles_k, tiles_n, 256), dtype=torch.int16, device=buffer_device
+        )
+        perm = tensor_core_perm(device)
+        perm_i = tensor_core_perm_i(device)
+        progress_row = 0
+
+        for end in range(size_k, 0, -buffer_rows):
+            begin = end - buffer_rows
+            block_weight = weight[begin:end].to(device)
+            block_weight_q = (
+                weight_q[begin:end]
+                if buffer_device == device
+                else torch.zeros_like(block_weight, device=device)
+            )
+            block_encoded = (
+                encoded_q[begin // 16:end // 16]
+                if buffer_device == device
+                else torch.empty(
+                    (buffer_rows // 16, tiles_n, 256),
+                    dtype=torch.int16,
+                    device=device,
+                )
+            )
+            block_product = product_cache[begin:end]
+            block_ldl = L[begin:end]
+
+            for block_end in range(buffer_rows, 0, -16):
+                block_begin = block_end - 16
+                error = block_weight[block_end:] - block_weight_q[block_end:]
+                local_ldl = block_ldl[
+                    block_end:, begin + block_begin:begin + block_end
+                ]
+                compensation = block_product[block_begin:block_end]
+                compensation.addmm_(local_ldl.T, error, alpha=1.0, beta=1.0)
+                rows = block_weight[block_begin:block_end] + compensation
+                tiles = (
+                    rows.reshape(16, tiles_n, 16)
+                    .permute(1, 0, 2)
+                    .reshape(tiles_n, 256)
+                )[:, perm]
+                local_args = dict(quant_args)
+                global_tile = ((begin + block_begin) // 16) * tiles_n
+                local_args["periodic_tile_offset"] = global_tile
+                quantized, indices = quantize_tiles_multigpu(tiles, local_args)
+                block_encoded[block_begin // 16] = indices
+                quantized = quantized[:, perm_i]
+                quantized = (
+                    quantized.reshape(tiles_n, 16, 16)
+                    .permute(1, 0, 2)
+                    .reshape(16, size_n)
+                )
+                block_weight_q[block_begin:block_end] = quantized
+                if pb:
+                    progress_row += 1
+                    pb.update(progress_row)
+
+            if buffer_device != device:
+                weight_q[begin:end] = block_weight_q.to(buffer_device)
+                encoded_q[begin // 16:end // 16] = block_encoded.to(buffer_device)
+            block_error = block_weight - block_weight_q
+            product_cache.addmm_(block_ldl.T, block_error, alpha=1.0, beta=1.0)
+
+    for quant_device in devices:
+        torch.cuda.synchronize(quant_device)
+    return weight_q, encoded_q
 def ldlq_two_sided(
     weight: torch.Tensor,
     input_factor: torch.Tensor,
@@ -622,7 +735,7 @@ def ldlq_two_sided(
 
 
 def mixed_rate_spec(size_k: int, size_n: int, quant_args: dict):
-    """Validate and normalize a heterogeneous K2/K3/K4 tile-rate map.
+    """Validate and normalize a heterogeneous K1/K2/K3/K4 tile-rate map.
 
     ``mixed_rate_axis`` names the logical EXL tile axis whose entries receive
     distinct trellis rates.  ``mixed_tile_bits`` contains one K value per tile
@@ -650,10 +763,12 @@ def mixed_rate_spec(size_k: int, size_n: int, quant_args: dict):
             f"mixed_tile_bits has {len(tile_bits)} entries; expected {rate_tiles}"
         )
     if any(
-        isinstance(bits, bool) or not isinstance(bits, int) or bits not in (2, 3, 4)
+        isinstance(bits, bool)
+        or not isinstance(bits, int)
+        or bits not in (1, 2, 3, 4)
         for bits in tile_bits
     ):
-        raise ValueError("mixed-rate LDLQ supports only integer K2, K3, and K4")
+        raise ValueError("mixed-rate LDLQ supports only integer K1 through K4")
     return rate_axis, tile_bits
 
 
@@ -687,8 +802,8 @@ def mixed_codebook_spec(
     ids = tuple(raw_ids)
     if len(ids) != len(tile_bits):
         raise ValueError("mixed tile codebook IDs do not align with tile bits")
-    if not isinstance(banks, dict) or set(banks) - {2, 3, 4}:
-        raise ValueError("SQG LUT banks must be keyed only by K2, K3, or K4")
+    if not isinstance(banks, dict) or set(banks) - {1, 2, 3, 4}:
+        raise ValueError("SQG LUT banks must be keyed only by K1 through K4")
     for bits, codebook_id in zip(tile_bits, ids, strict=True):
         if (
             isinstance(codebook_id, bool)
@@ -722,6 +837,64 @@ def _select_mixed_codebook(quant_args: dict, key) -> dict:
     return local_args
 
 
+def refine_uniform_h2_candidate(
+    weight: torch.Tensor,
+    hessian: torch.Tensor,
+    weight_q: torch.Tensor,
+    encoded: torch.Tensor,
+    quant_args: dict,
+    *,
+    guidance=None,
+):
+    """Revisit a uniform-rate candidate under its exact dense-H proxy.
+
+    The path proposal uses the same rate, reconstruction table, and
+    tail-biting quantizer as the stored candidate.  Mixed-rate and
+    selector-varying candidates are rejected because one callback cannot
+    reproduce their tile-local quantizer contracts.
+    """
+
+    sweeps = int(quant_args.get("h2_viterbi_refine_sweeps", 0))
+    if sweeps <= 0:
+        return weight_q, encoded, {"enabled": False, "sweeps": []}
+    if quant_args.get("periodic_rate_schedules") is not None:
+        raise ValueError("dense-H path refinement requires one fixed tile rate")
+    if len(quant_args["devices"]) != 1:
+        raise ValueError("dense-H path refinement requires one quantizer device")
+
+    local_args = dict(quant_args)
+    if "mixed_rate_axis" in quant_args or "mixed_tile_bits" in quant_args:
+        _, tile_bits = mixed_rate_spec(weight.shape[0], weight.shape[1], quant_args)
+        distinct_rates = set(tile_bits)
+        if len(distinct_rates) != 1:
+            raise ValueError("dense-H path refinement requires a uniform rate map")
+        local_args["K"] = distinct_rates.pop()
+    if quant_args.get("mixed_tile_codebook_ids") is not None:
+        raise ValueError(
+            "dense-H path refinement does not support tile-local codebook selectors"
+        )
+
+    config = config_from_quant_args(local_args)
+
+    def quantizer(tiles: torch.Tensor):
+        return quantize_tiles_multigpu(tiles, local_args)
+
+    result = refine_h2_viterbi_paths(
+        weight,
+        hessian.to(device=weight.device),
+        weight_q,
+        encoded,
+        quantizer,
+        config,
+        guidance=guidance,
+    )
+    return result.weight_q, result.encoded, {
+        "enabled": True,
+        "rate_bits": int(local_args["K"]),
+        **result.stats_dict(),
+    }
+
+
 def ldlq_mixed(
     weight: torch.Tensor,
     L: torch.Tensor,
@@ -732,7 +905,7 @@ def ldlq_mixed(
 
     This is the heterogeneous-rate equivalent of :func:`ldlq`.  It preserves
     the same backward block traversal and error-feedback state.  In
-    particular, K2/K3/K4 partitions are not quantized as independent matrix
+    particular, rate partitions are not quantized as independent matrix
     calls, so off-diagonal Hessian coupling remains active across rate
     boundaries.
     """
@@ -1053,7 +1226,7 @@ def ldlq_mixed_batched(
     ``[B]``.  Only the small row slices needed by the current LDLQ step are
     then gathered; the multi-gigabyte source and dense-H tensors are never
     copied once per live rate state.  All members must use the same logical
-    rate axis, matrix shape, and device, but may carry different K2/K3/K4 maps
+    rate axis, matrix shape, and device, but may carry different K1--K4 maps
     on that axis.
     """
 
@@ -1900,6 +2073,7 @@ def ldlq_batched(
 
 finalize_capture_H_mutex = threading.Lock()
 
+
 def _prepare_capture_H(H_data: dict, quant_args: dict, verbose: bool):
     """Normalize and damp a captured Hessian without choosing its basis.
 
@@ -1930,7 +2104,14 @@ def _prepare_capture_H(H_data: dict, quant_args: dict, verbose: bool):
 
     k = H.shape[0]
     su = (
-        (torch.randn(k, device=H.device).sign() + 1e-5)
+        (
+            seeded_normal(
+                k,
+                device=H.device,
+                seed=quant_args.get("seed"),
+            ).sign()
+            + 1e-5
+        )
         .sign()
         .to(torch.float)
         .unsqueeze(1)
@@ -2028,7 +2209,19 @@ def finalize_capture_H(H_data: dict, quant_args: dict, verbose: bool):
 
             H = H_data["H"]
             k = H.shape[0]
-            su = (torch.randn(k, device = H_data["device"]).sign() + 1e-5).sign().to(torch.float).unsqueeze(1)
+            su = (
+                (
+                    seeded_normal(
+                        k,
+                        device=torch.device(H_data["device"]),
+                        seed=quant_args.get("seed"),
+                    ).sign()
+                    + 1e-5
+                )
+                .sign()
+                .to(torch.float)
+                .unsqueeze(1)
+            )
             H_data["su"] = su
 
             return True, None, None, su, None
@@ -2369,10 +2562,15 @@ _SHARED_INPUT_SCALES: dict = {}
 def output_signs(n: int, device: torch.device, quant_args: dict) -> torch.Tensor:
     """Draw output signs from an optional transform-specific RNG stream."""
 
-    if "sv_seed" in quant_args:
-        torch.manual_seed(quant_args["sv_seed"])
     return (
-        (torch.randn(n, device=device).sign() + 1e-5)
+        (
+            seeded_normal(
+                n,
+                device=device,
+                seed=quant_args.get("sv_seed"),
+            ).sign()
+            + 1e-5
+        )
         .sign()
         .to(torch.float)
         .unsqueeze(0)
@@ -2577,7 +2775,7 @@ def quantize_qsrt(
          - seed: integer seed for random sign flips etc.
          - sigma_reg: regularization factor
          - mixed_rate_axis: optional ``"k"`` or ``"n"`` tile-rate axis
-         - mixed_tile_bits: optional K2/K3/K4 value per tile on that axis
+         - mixed_tile_bits: optional K1/K2/K3/K4 value per tile on that axis
          - pack_trellis_fn: optional callback for a heterogeneous payload
 
     :param return_weight_q:
@@ -2607,9 +2805,6 @@ def quantize_qsrt(
 
         assert weight.dtype == torch.float
         tiles_k = weight.shape[0] // 16
-
-        if "seed" in quant_args:
-            torch.manual_seed(quant_args["seed"])
 
         devices = quant_args["devices"]
         if weight.device != torch.device(devices[0]):
@@ -2727,15 +2922,31 @@ def quantize_qsrt(
         mixed_rate = (
             "mixed_rate_axis" in quant_args or "mixed_tile_bits" in quant_args
         )
+        periodic_rate = "periodic_rate_schedules" in quant_args
         if quant_args.get("return_trellis_diagnostics"):
             quant_args["trellis_diagnostics_ldlq_active"] = True
         try:
             if not q_fallback:
-                if mixed_rate:
-                    if output_factor is not None:
-                        raise ValueError(
-                            "two-sided curvature does not yet support mixed-rate tiles"
-                        )
+                if mixed_rate and periodic_rate:
+                    raise ValueError(
+                        "tile-rate maps and periodic rate schedules are exclusive"
+                    )
+                if output_factor is not None and (mixed_rate or periodic_rate):
+                    raise ValueError(
+                        "two-sided curvature requires one uniform tile rate"
+                    )
+                if output_factor is not None and int(
+                    quant_args.get("h2_viterbi_refine_sweeps", 0)
+                ) > 0:
+                    raise ValueError(
+                        "two-sided curvature cannot be combined with input-only "
+                        "dense-H path refinement"
+                    )
+                if periodic_rate:
+                    weight_q, encoded_q = ldlq_periodic(
+                        weight_r, L, quant_args, pb
+                    )
+                elif mixed_rate:
                     weight_q, encoded_q = ldlq_mixed(weight_r, L, quant_args, pb)
                 elif output_factor is not None:
                     weight_q, encoded_q = ldlq_two_sided(
@@ -2750,10 +2961,26 @@ def quantize_qsrt(
                 del L
                 if output_factor is not None:
                     del output_factor
+                    refine_receipt = {
+                        "enabled": False,
+                        "reason": "two_sided_curvature",
+                        "sweeps": [],
+                    }
+                else:
+                    weight_q, encoded_q, refine_receipt = (
+                        refine_uniform_h2_candidate(
+                            weight_r,
+                            H,
+                            weight_q,
+                            encoded_q,
+                            quant_args,
+                        )
+                    )
+                quant_args["h2_viterbi_refine_receipt"] = refine_receipt
             else:
-                if mixed_rate:
+                if mixed_rate or periodic_rate:
                     raise ValueError(
-                        "mixed-rate quantization requires a non-fallback dense Hessian"
+                        "variable-rate quantization requires a non-fallback dense Hessian"
                     )
                 weight_q, encoded_q, mse_err = fallback_quant(
                     weight_r, device, quant_args, pb
@@ -2919,8 +3146,6 @@ def quantize_qsrt_batch(
         zip(weights, H_datas, quant_args_groups)
     ):
         args = group[0]
-        if "seed" in args:
-            torch.manual_seed(args["seed"])
         q_fallback, _, su, H_diag = prepare_capture_H_for_conditioning(
             H_data, args, verbose
         )
@@ -3068,6 +3293,24 @@ def quantize_qsrt_batch(
         )
         del Ls_batch
 
+    refinement_receipts = []
+    for flat, (source, candidate) in enumerate(flat_members):
+        source_weight = (
+            source_weights[source]
+            if source_weights is not None
+            else weights_batch[flat]
+        )
+        refined_weight, refined_encoded, receipt = refine_uniform_h2_candidate(
+            source_weight,
+            prepared[source]["H"],
+            weights_q[flat],
+            encoded_q[flat],
+            quant_args_groups[source][candidate],
+        )
+        weights_q[flat] = refined_weight
+        encoded_q[flat] = refined_encoded
+        refinement_receipts.append(receipt)
+
     # Dense-H proxy values are descriptive evidence; the Viterbi traversal is
     # already complete.  Reading every column-block scalar with ``.item()``
     # here used to introduce thousands of serial GPU synchronizations per
@@ -3113,7 +3356,14 @@ def quantize_qsrt_batch(
             }
         )
         pending_results.append(
-            (source, reconstruction, encoded_q[flat].contiguous(), suh, svh)
+            (
+                source,
+                reconstruction,
+                encoded_q[flat].contiguous(),
+                suh,
+                svh,
+                refinement_receipts[flat],
+            )
         )
 
     trace_rows = torch.stack((*denominator_parts, *numerator_parts)).cpu()
@@ -3128,7 +3378,7 @@ def quantize_qsrt_batch(
 
     results = [[] for _ in range(source_count)]
     for numerator, pending in zip(numerators, pending_results):
-        source, reconstruction, encoded, suh, svh = pending
+        source, reconstruction, encoded, suh, svh, refinement_receipt = pending
         proxy_err = numerator / max(denominators[source], 1e-8)
         results[source].append(
             {
@@ -3138,6 +3388,7 @@ def quantize_qsrt_batch(
                 "svh": svh,
                 "proxy": proxy_err,
                 "g_scale": prepared[source]["g_scale"],
+                "h2_viterbi_refine": refinement_receipt,
             }
         )
     return results
@@ -3199,8 +3450,6 @@ def quantize_uniform_batch(
         batch_idx = []
         for t in range(n_t):
             qa = quant_args_list[t]
-            if "seed" in qa:
-                torch.manual_seed(qa["seed"])
             q_fallback, H, L, su, H_diag = finalize_capture_H(H_datas[t], qa, verbose)
             if q_fallback:
                 finalized.append(None)
@@ -3219,8 +3468,6 @@ def quantize_uniform_batch(
         regs = {}
         for t in batch_idx:
             qa = quant_args_list[t]
-            if "seed" in qa:
-                torch.manual_seed(qa["seed"])
             H, L, su, H_diag = finalized[t]
             weight = weights[t]
             if weight.device != device:

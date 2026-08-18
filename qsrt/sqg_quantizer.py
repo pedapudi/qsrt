@@ -331,11 +331,36 @@ def _debug_check_trellis_closure(indices: torch.Tensor, bits: int) -> None:
         )
 
 
+def _debug_check_periodic_trellis_closure(
+    indices: torch.Tensor,
+    rates: torch.Tensor,
+) -> None:
+    """Verify every variable-rate codeword joins the following codeword."""
+
+    words = indices.to(torch.int64) & 0xFFFF
+    next_words = torch.roll(words, shifts=-1, dims=-1)
+    next_rates = torch.roll(rates.to(torch.int64), shifts=-1, dims=-1)
+    next_masks = (1 << (16 - next_rates)) - 1
+    successor = words & next_masks
+    next_history = next_words >> next_rates
+    mismatch = successor != next_history
+    if bool(torch.any(mismatch)):
+        count = int(torch.count_nonzero(mismatch))
+        first = tuple(
+            int(value)
+            for value in torch.nonzero(mismatch, as_tuple=False)[0].cpu().tolist()
+        )
+        raise RuntimeError(
+            "periodic SQG tile kernel emitted a non-closing trellis path: "
+            f"{count} transitions differ; first at {first}"
+        )
+
+
 @lru_cache(maxsize=1)
 def _extension():
     project = Path(__file__).resolve().parents[1]
     return load(
-        name="qsrt_sqg_quantize_ext_v25",
+        name="qsrt_sqg_quantize_ext_v30",
         sources=[
             str(project / "qsrt/csrc/sqg_quantize.cpp"),
             str(project / "qsrt/csrc/sqg_quantize.cu"),
@@ -352,6 +377,33 @@ def _extension():
             "--diag_suppress=20012",
         ],
         verbose=False,
+    )
+
+
+def apply_bakron_block_update(
+    workspace: torch.Tensor,
+    quantized: torch.Tensor,
+    output_factor: torch.Tensor,
+    input_factor: torch.Tensor,
+    intermediate: torch.Tensor,
+    *,
+    first_diagonal: int,
+    middle_diagonal: int,
+    last_diagonal: int,
+    block_size: int,
+) -> None:
+    """Apply one fused FP32 recursive BaKron block-band update."""
+
+    _extension().bakron_block_update(
+        workspace,
+        quantized,
+        output_factor,
+        input_factor,
+        intermediate,
+        int(first_diagonal),
+        int(middle_diagonal),
+        int(last_diagonal),
+        int(block_size),
     )
 
 
@@ -375,6 +427,35 @@ def _sqg_temp_buffers(device: torch.device, bits: int):
     return costs, traceback
 
 
+@lru_cache(maxsize=None)
+def _periodic_traceback_buffer(device: torch.device):
+    """Allocate the research periodic encoder's worst-case packed traceback."""
+
+    multiprocessors = torch.cuda.get_device_properties(device).multi_processor_count
+    free_bytes, _ = torch.cuda.mem_get_info(device)
+    bytes_per_tile = 256 * 8192
+    affordable = max(1, int(free_bytes * 0.25) // bytes_per_tile)
+    batch = min(multiprocessors, affordable)
+    return torch.empty((batch, 256, 8192), dtype=torch.uint8, device=device)
+
+
+def _periodic_rates(
+    schedules: object,
+    *,
+    tiles: int,
+    offset: int,
+    device: torch.device,
+) -> torch.Tensor:
+    schedule = torch.as_tensor(schedules, dtype=torch.uint8)
+    if schedule.ndim != 2 or schedule.shape[1] != 256 or schedule.shape[0] < 1:
+        raise ValueError("periodic rate schedules must have shape [classes, 256]")
+    if not bool(torch.all((schedule >= 2) & (schedule <= 4))):
+        raise ValueError("periodic rate schedules support only K2, K3, and K4")
+    classes = schedule.shape[0]
+    selection = (torch.arange(tiles, dtype=torch.long) + int(offset)) % classes
+    return schedule.index_select(0, selection).to(device=device).contiguous()
+
+
 def install_sqg_quantizer(quantizer_module) -> None:
     """Teach a loaded EXL encoder module to consume ``sqg_e4m3_lut``.
 
@@ -391,15 +472,18 @@ def install_sqg_quantizer(quantizer_module) -> None:
 
     device_luts: dict[tuple[str, int, str], torch.Tensor] = {}
     transposed_sqg_luts: dict[
-        tuple[str, int, int], tuple[torch.Tensor, torch.Tensor]
+        tuple[str, int, int], tuple[torch.Tensor, torch.Tensor, float]
     ] = {}
 
     def quantize_tiles(tiles: torch.Tensor, quant_args: dict):
+        periodic_schedules = quant_args.get("periodic_rate_schedules")
         codebook = quant_args.get("sqg_e4m3_lut")
         fp16_codebook = quant_args.get("sqg_fp16_lut")
         rate_codebooks = quant_args.get("sqg_e4m3_luts_by_bits")
         mode = quant_args.get("sqg_e4m3_mode")
         if (
+            periodic_schedules is None
+            and
             codebook is None
             and fp16_codebook is None
             and rate_codebooks is None
@@ -415,6 +499,41 @@ def install_sqg_quantizer(quantizer_module) -> None:
         tiles = tiles.contiguous()
         if tiles.dtype != torch.float32 or tiles.ndim != 2 or tiles.shape[1] != 256:
             raise ValueError("SQG tiles must be contiguous FP32 [N, 256]")
+        if periodic_schedules is not None:
+            if codebook is not None or fp16_codebook is not None or mode is not None:
+                raise ValueError(
+                    "periodic rates require the K2/K3/K4 SQG codebook mapping"
+                )
+            if not isinstance(rate_codebooks, Mapping) or set(rate_codebooks) != {2, 3, 4}:
+                raise ValueError("periodic rates require K2, K3, and K4 SQG LUTs")
+            if any(rate_codebooks[bits] is None for bits in (2, 3, 4)):
+                raise ValueError("periodic rates do not support procedural codebook entries")
+            codebooks = torch.stack(
+                [
+                    rate_codebooks[bits].to(dtype=torch.uint8, device=tiles.device)
+                    for bits in (2, 3, 4)
+                ]
+            ).contiguous()
+            rates = _periodic_rates(
+                periodic_schedules,
+                tiles=tiles.shape[0],
+                offset=int(quant_args.get("periodic_tile_offset", 0)),
+                device=tiles.device,
+            )
+            output = torch.empty_like(tiles)
+            indices = torch.empty_like(tiles, dtype=torch.int16)
+            _extension().quantize_tiles_periodic(
+                tiles,
+                output,
+                indices,
+                _periodic_traceback_buffer(tiles.device),
+                codebooks,
+                rates,
+                int(quant_args.get("tailbite_context", 128)),
+            )
+            if os.environ.get("QSRT_DEBUG_TILE_CLOSURE") == "1":
+                _debug_check_periodic_trellis_closure(indices, rates)
+            return output, indices
         bits = int(quant_args["K"])
 
         def finish(output: torch.Tensor, indices: torch.Tensor):
@@ -456,8 +575,8 @@ def install_sqg_quantizer(quantizer_module) -> None:
                 )
             if not isinstance(rate_codebooks, Mapping):
                 raise TypeError("sqg_e4m3_luts_by_bits must be a mapping")
-            if set(rate_codebooks) - {2, 3, 4}:
-                raise ValueError("rate-specific SQG LUT keys must be K2, K3, or K4")
+            if set(rate_codebooks) - {1, 2, 3, 4}:
+                raise ValueError("rate-specific SQG LUT keys must be K1 through K4")
             try:
                 codebook = rate_codebooks[bits]
             except KeyError as exc:
@@ -489,11 +608,15 @@ def install_sqg_quantizer(quantizer_module) -> None:
         indices = torch.empty_like(tiles, dtype=torch.int16)
         costs, edges = _sqg_temp_buffers(tiles.device, bits)
         lut = codebook.to(device=tiles.device, dtype=torch.uint8).contiguous()
+        lut_abs_max = None
         if bits in (2, 3, 4):
             source_key = codebook.data_ptr() if codebook.is_cuda else id(codebook)
             cache_key = (str(tiles.device), bits, source_key)
             cached = transposed_sqg_luts.get(cache_key)
             if cached is None or cached[0] is not codebook:
+                lut_abs_max = float(
+                    lut.view(torch.float8_e4m3fn).to(torch.float32).abs().amax()
+                )
                 # [predecessor, out-edge-pair, pair-byte] ->
                 # [out-edge-pair, predecessor, pair-byte].  Each CUDA thread
                 # can then fetch all predecessor labels in one uint2 (K2),
@@ -507,9 +630,14 @@ def install_sqg_quantizer(quantizer_module) -> None:
                     .contiguous()
                     .reshape(-1)
                 )
-                transposed_sqg_luts[cache_key] = (codebook, lut)
+                transposed_sqg_luts[cache_key] = (codebook, lut, lut_abs_max)
             else:
                 lut = cached[1]
+                lut_abs_max = cached[2]
+        if lut_abs_max is None:
+            lut_abs_max = float(
+                lut.view(torch.float8_e4m3fn).to(torch.float32).abs().amax()
+            )
         _extension().quantize_tiles_sqg(
             tiles,
             output,
@@ -519,6 +647,7 @@ def install_sqg_quantizer(quantizer_module) -> None:
             lut,
             bits,
             int(quant_args.get("tailbite_context", 128)),
+            lut_abs_max,
         )
         if os.environ.get("QSRT_DEBUG_TILE_CLOSURE") == "1":
             _debug_check_trellis_closure(indices, bits)

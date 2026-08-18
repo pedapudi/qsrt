@@ -22,13 +22,17 @@ cannot establish complete-checkpoint quality or generalization to other
 documents, layers, experts, or serving kernels.
 
 The bounded source tensors and published reporting logits name different
-GLM-5.2 revisions. The five-shard source window and sealed tensor inventory
-name revision `b4734de4facf877f85769a911abafc5283eab3d9`. The published
-reference-logit manifest names teacher revision
-`4d67f66cc64d3219133b767c253b2ad1425c6c88`. Every candidate and EXL3 use the
-same source lineage and the same reporting teacher, so their panel comparison
-remains paired. The available evidence does not prove that the two official
-revisions contain byte-identical weights.
+GLM-5.2 revisions. The source window and sealed tensor inventory name revision
+`b4734de4facf877f85769a911abafc5283eab3d9`. The published reference-logit
+manifest names teacher revision
+`4d67f66cc64d3219133b767c253b2ad1425c6c88`. A metadata-only Hugging Face
+inventory on 2026-08-18 proved that the two revisions have the same
+safetensors index and the same content SHA-256 and byte count for every
+official weight shard. The source weights are therefore byte-identical. The
+teacher revision omits the source revision's explicit
+`moe_router_dtype: float32` configuration field, so runtime configuration
+identity remains a separate requirement. Every comparison below uses the same
+reporting teacher and runtime contract.
 
 The measurement uses vLLM's eager, dense-attention, per-expert EXL3 correctness
 path on four RTX Pro 6000 GPUs. It does not use the production fused mixture-of-
@@ -55,6 +59,8 @@ candidate process produced the same resident EXL3 KLD vector bit for bit.
 | K3 selected with one-sided routed-input covariance | 0.0638412662800 | +4.5304% | +2.3453% | Reject |
 | K3 with reconstructed-activation down refit | 0.0612386895257 | +0.2691% | −1.8269% | Confirm on more documents |
 | Fixed twelve-promotion mixed K3/K4 over the down-refit base | 0.0659634015775 | +8.0051% | +5.7474% | Reject |
+| Ten-promotion mixed K3/K4 selected by complete-expert error, with one shared down-refit target per expert | 0.0636258118201 | +4.1776% | +1.9999% | Reject this construction |
+| Fixed twelve-promotion mixed K3/K4, with one shared down-refit target per expert | 0.0639669166209 | +4.7362% | +2.5468% | Reject this construction |
 
 The down refit recovered 87.3960% of uniform K3's excess mean KLD above EXL3.
 It did not beat EXL3. Its position-level changes were also heavy-tailed: 1,004
@@ -68,6 +74,32 @@ base tensor in each promoted cell. A promoted down projection therefore did
 not retain the K3 refit's continuous target. The result rejects that fixed
 allocation and target combination. It does not test selection-data allocation
 or K4 encoding of the reconstructed-activation down target.
+
+The later rate-pool controls preserved each accepted down-refit target when
+the down projection changed from K3 to K4. Complete-expert error on frozen
+selection documents chose ten K4 projections. That candidate was 3.8981%
+worse than the K3 down-refit base and 4.1776% worse than EXL3 on the reporting
+context. The fixed twelve-promotion control was 4.4551% worse than the K3
+down-refit base and 4.7362% worse than EXL3.
+
+Both rate-pool controls fitted one down target from K3 gate and K3 up
+activations, then reused that target when either upstream projection changed
+rate. They therefore do not test a coherent rate-conditioned down refit. The
+next construction must rebuild the down input, metric, and target separately
+for each gate/up rate pair before encoding the down target at K3 and K4.
+
+The one-context tail statistics reinforce the rejection while illustrating why
+p99 alone is insufficient:
+
+| Representation | p99 forward KLD | CVaR1% forward KLD |
+|---|---:|---:|
+| Resident EXL3 | 1.0996727300 | 1.9557645264 |
+| Ten-promotion selection-data candidate | 1.0611624646 | 2.0247655369 |
+| Fixed twelve-promotion rate-pool control | 1.0236869001 | 2.1575191191 |
+
+Both candidates lowered p99 but worsened the mean loss among their 21
+worst-scoring positions. These token-level values come from one document and
+cannot supply a document-level non-inferiority verdict.
 
 ## Interpretation by mechanism
 
@@ -134,7 +166,7 @@ stored representation remains an ordinary K3 down matrix. The one-context gain
 is large enough to justify more reference documents, but it is not evidence for
 a complete checkpoint.
 
-### Fixed mixed K3/K4 allocation
+### Mixed K3/K4 allocation
 
 Reject the pre-registered fixed rate-stratified allocation. It promoted twelve
 projections selected from EXL3's immutable rate map and did not inspect QSRT
@@ -150,13 +182,18 @@ test must rank complete-expert candidates on the frozen selection documents
 and encode accepted down-refit targets at both K3 and K4 before comparing
 rates.
 
-The corrective mixed-rate implementation is locally validated. It recomputes
-each accepted continuous down target, requires its repeated K3 encode to equal
-the stored refit, and encodes the same target at K4. It then scores all eight
-K3/K4 rate tuples for each complete expert on the frozen selection documents.
-Its immutable registration records the source and reporting-teacher revisions
-separately. The four-GPU host was unreachable after the implementation passed
-all 697 CPU tests, so no corrective candidate or KLD measurement exists yet.
+The later rate-pool implementation recomputed each accepted continuous down
+target, required its repeated K3 encode to equal the stored refit, and encoded
+the same target at K4. It scored all eight K3/K4 rate tuples for each complete
+expert on frozen selection documents. Both the fixed allocation and the
+selection-data allocation failed on the reporting context.
+
+This second failure is narrower than a rejection of mixed rates. The rate pool
+held the down target fixed while changing gate or up rate. A coherent pool has
+four upstream rate pairs: K3/K3, K3/K4, K4/K3, and K4/K4. Each pair produces a
+different reconstructed down input and therefore needs its own down fit. Each
+fitted target then needs K3 and K4 encodes, producing eight internally
+consistent complete-expert candidates.
 
 ## Logical byte comparison
 
@@ -174,6 +211,10 @@ The twelve-promotion mixed candidate occupies 132,517,888 charged logical
 bytes. This leaves a 1,273,856-byte margin below EXL3 before a complete
 serialized container charges headers, directories, alignment, and padding.
 The KLD regression rejects the candidate regardless of that logical margin.
+
+The ten-promotion selection-data candidate occupies 129,372,160 charged
+logical bytes and leaves a 4,419,584-byte margin below EXL3. Its KLD regression
+also rejects it regardless of the larger logical margin.
 
 Uniform K3 saves 20,148,224 logical bytes across the panel. Uniform K3,
 one-sided curvature, and down refitting use the same K3 payload size. The
@@ -193,6 +234,8 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | One-sided routed-input covariance | `results/glm52-layer3-frozen8-routed-input-curvature-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `dc4df5478363582faa7ebca5d088e1d43a85a06d7e600d49c4cefc7c32ee373e` |
 | Reconstructed-activation down refit | `results/glm52-layer3-frozen8-reconstructed-activation-down-refit-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `d54093ec11d88664419039afa58bb7703a244ec8e0c0aa597db42a5c17cef21a` |
 | Fixed mixed K3/K4 over the down-refit base | `results/glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit-paired-bf16-reference-kld-engine-per-expert-correctness/` | `c366b25f8e3c4e1f231b0018dba241b25602dea98ad37ae337136756185f34c4` |
+| Ten-promotion selection-data rate-pool control | `results/glm52-layer3-frozen8-selection-data-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `99a447ed2f0243679b24a98414b632a39c7830010d1b9fc96e8ca90f6d32d07e` |
+| Fixed twelve-promotion rate-pool control | `results/glm52-layer3-frozen8-fixed-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `41ef7cf67ff0e9fc6bd977ead289c057ec2917fe35ff98cc4f5f41bca3aee6b9` |
 
 The codec-mechanism reports below do not contain new model KLD vectors.
 
@@ -210,17 +253,20 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 
 ## Next admissible experiments
 
-1. Run the prepared rate-preserving K3/K4 pool when the four-GPU host is
-   available. Materialize both the frozen EXL3-stratified allocation and the
-   allocation selected by complete-expert output error. Measure each frozen
-   candidate against EXL3, uniform K3, and K3 down refitting.
+1. Build a coherent rate-conditioned pool. Reconstruct the down input and fit
+   a separate down target for each gate/up rate pair, then encode each target
+   at K3 and K4. Use complete-expert error only to shortlist configurations;
+   use selection-document KLD to freeze the panel candidate.
 2. Acquire or produce BF16 reference logits for multiple document-disjoint
    contexts without downloading the full BF16 checkpoint, then repeat uniform
    K3 and down refitting with clustered document-level uncertainty.
-3. Add bounded output-gradient capture, build expert-local two-sided factors,
-   and test whether their score predicts held-out KLD better than routed
-   squared error before accepting any changed path.
-4. Extend a confirmed panel across early, middle, and late mixture layers
-   before building a complete candidate.
-5. Freeze a GLM QSRT container and count every serialized byte before making a
+3. Complete the four-cell down-construction comparison: identity or
+   reconstructed-input metric crossed with source or refitted target. Include
+   stronger ridge and per-expert fallback controls for tail damage.
+4. Test the same frozen construction on error-blind panels from layers 52, 60,
+   63, and 64. Layers 60 and 64 are an external sensitivity prior; layers 52
+   and 63 are nearby controls.
+5. Add bounded output-gradient capture only if complete-expert fidelity
+   improves with stable routes while document-replicated KLD still worsens.
+6. Freeze a GLM QSRT container and count every serialized byte before making a
    model-size comparison.

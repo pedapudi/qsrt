@@ -100,6 +100,36 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _prompt_hash(tokens: list[int] | tuple[int, ...]) -> str:
+    encoded = b"".join(int(token).to_bytes(4, "little") for token in tokens)
+    return hashlib.blake2b(encoded, digest_size=16).hexdigest()
+
+
+def _load_excluded_token_files(
+    paths: list[Path],
+) -> tuple[set[str], list[dict[str, object]]]:
+    prompt_hashes: set[str] = set()
+    identities: list[dict[str, object]] = []
+    for raw_path in paths:
+        path = raw_path.resolve()
+        value = json.loads(path.read_text())
+        if not isinstance(value, list) or not value or any(
+            not isinstance(token, int) or token < 0 for token in value
+        ):
+            raise ValueError(f"{path} is not a nonempty token-ID array")
+        prompt_hash = _prompt_hash(value)
+        prompt_hashes.add(prompt_hash)
+        identities.append(
+            {
+                "path": str(path),
+                "sha256": _sha256(path),
+                "tokens": len(value),
+                "prompt_hash": prompt_hash,
+            }
+        )
+    return prompt_hashes, identities
+
+
 def _load_excluded_documents(
     reports: list[Path],
 ) -> tuple[set[str], set[str], list[dict[str, object]]]:
@@ -111,7 +141,10 @@ def _load_excluded_documents(
     for raw_path in reports:
         path = raw_path.resolve()
         report = json.loads(path.read_text())
-        if report.get("kind") != "qsrt_interim_calibration_corpus_run":
+        if report.get("kind") not in (
+            "qsrt_interim_calibration_corpus_run",
+            "kquant_interim_calibration_corpus_run",
+        ):
             raise ValueError(f"{path} is not a calibration corpus report")
         documents = report.get("documents")
         if not isinstance(documents, list):
@@ -276,8 +309,7 @@ def _source_requests(
         tokens = tokens[: min(max_prompt_tokens, remaining)]
         if not tokens:
             break
-        prompt_bytes = b"".join(int(token).to_bytes(4, "little") for token in tokens)
-        prompt_hash = hashlib.blake2b(prompt_bytes, digest_size=16).hexdigest()
+        prompt_hash = _prompt_hash(tokens)
         if prompt_hash in seen_prompt_hashes:
             continue
         seen_prompt_hashes.add(prompt_hash)
@@ -420,11 +452,15 @@ def _validate_live_capture(
     model_dir: Path,
     *,
     expected_source: str,
+    expected_plan_sha256: str,
     timeout: float,
     allow_complete: bool = False,
 ) -> dict:
     manifest = _wait_for_capture_manifest(capture_dir, timeout)
-    if manifest.get("kind") != "qsrt_vllm_b12x_capture":
+    if manifest.get("kind") not in (
+        "qsrt_vllm_b12x_capture",
+        "qsrt_all_routed_rows",
+    ):
         raise ValueError("live server does not expose a QSRT capture manifest")
     if manifest.get("source") != expected_source:
         raise ValueError(
@@ -436,6 +472,10 @@ def _validate_live_capture(
         raise ValueError(f"capture teacher is {teacher}, expected {model_dir}")
     if manifest.get("complete") and not allow_complete:
         raise ValueError("capture is already finalized")
+    if manifest.get("corpus_manifest_sha256") != expected_plan_sha256:
+        raise ValueError(
+            "capture corpus identity differs from the immutable request plan"
+        )
     return manifest
 
 
@@ -444,12 +484,15 @@ def _post_completion(
     *,
     model: str,
     prompt_tokens: tuple[int, ...],
+    request_index: int,
+    document_hash: str,
     timeout: float,
 ) -> dict:
     body = json.dumps(
         {
             "model": model,
             "prompt": list(prompt_tokens),
+            "request_id": f"qsrtcap-{request_index}-{document_hash}",
             "max_tokens": 1,
             "temperature": 0,
         }
@@ -483,8 +526,9 @@ def _plan_report(
     excluded_reports: list[dict[str, object]],
     excluded_document_hashes: set[str],
     excluded_prompt_hashes: set[str],
+    excluded_token_files: list[dict[str, object]],
 ) -> dict:
-    return {
+    report = {
         "kind": "qsrt_interim_calibration_corpus_run",
         "schema_version": 1,
         "constraint": "resident teacher only; official MXFP4 source not loaded",
@@ -509,6 +553,7 @@ def _plan_report(
             "unit": "whole JSONL record by content hash",
         },
         "excluded_corpus_reports": excluded_reports,
+        "excluded_token_files": excluded_token_files,
         "excluded_document_hashes": sorted(excluded_document_hashes),
         "excluded_prompt_hashes": sorted(excluded_prompt_hashes),
         "seed": args.seed,
@@ -529,6 +574,31 @@ def _plan_report(
         "reported_completion_tokens": 0,
         "finalized": False,
     }
+    immutable = {
+        key: report[key]
+        for key in (
+            "kind",
+            "schema_version",
+            "expected_capture_source",
+            "model_dir",
+            "capture_dir",
+            "sources",
+            "fold",
+            "excluded_corpus_reports",
+            "excluded_token_files",
+            "excluded_document_hashes",
+            "excluded_prompt_hashes",
+            "seed",
+            "target_tokens",
+            "planned_tokens",
+            "planned_requests",
+            "documents",
+        )
+    }
+    report["plan_sha256"] = hashlib.sha256(
+        json.dumps(immutable, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return report
 
 
 def _resume_report(path: Path, planned: dict) -> dict:
@@ -543,6 +613,7 @@ def _resume_report(path: Path, planned: dict) -> dict:
         "sources",
         "fold",
         "excluded_corpus_reports",
+        "excluded_token_files",
         "excluded_document_hashes",
         "excluded_prompt_hashes",
         "seed",
@@ -550,6 +621,7 @@ def _resume_report(path: Path, planned: dict) -> dict:
         "planned_tokens",
         "planned_requests",
         "documents",
+        "plan_sha256",
     )
     mismatched = [key for key in immutable if previous.get(key) != planned.get(key)]
     if mismatched:
@@ -579,6 +651,10 @@ def run(args: argparse.Namespace) -> dict:
         excluded_prompt_hashes,
         excluded_reports,
     ) = _load_excluded_documents(args.exclude_report)
+    token_prompt_hashes, excluded_token_files = _load_excluded_token_files(
+        args.exclude_token_file
+    )
+    excluded_prompt_hashes.update(token_prompt_hashes)
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -605,6 +681,7 @@ def run(args: argparse.Namespace) -> dict:
         excluded_reports,
         excluded_hashes,
         excluded_prompt_hashes,
+        excluded_token_files,
     )
     if args.resume:
         if not args.report.is_file():
@@ -627,6 +704,7 @@ def run(args: argparse.Namespace) -> dict:
         args.capture_dir,
         model_dir,
         expected_source=args.expected_capture_source,
+        expected_plan_sha256=report["plan_sha256"],
         timeout=args.health_timeout,
         allow_complete=completed_before_connect and sentinel_recorded,
     )
@@ -636,6 +714,17 @@ def run(args: argparse.Namespace) -> dict:
         report["finalized"] = True
         _write_report(args.report, report)
         return report
+    if live_manifest.get("kind") == "qsrt_all_routed_rows":
+        sealed = int(live_manifest.get("sealed_request_index", -1))
+        durable_requests = sealed + 1
+        if durable_requests < report["completed_requests"]:
+            report["completed_requests"] = durable_requests
+            report["reported_prompt_tokens"] = sum(
+                request.tokens for request in plan[:durable_requests]
+            )
+            report["reported_completion_tokens"] = durable_requests
+            report["resume_rewound_to_sealed_request"] = sealed
+            _write_report(args.report, report)
     models = _read_json(f"{args.base_url}/v1/models", timeout=args.request_timeout)
     served_ids = {
         entry.get("id") for entry in models.get("data", []) if isinstance(entry, dict)
@@ -668,6 +757,8 @@ def run(args: argparse.Namespace) -> dict:
             args.base_url,
             model=args.model,
             prompt_tokens=planned.prompt_tokens,
+            request_index=index,
+            document_hash=planned.document_hash,
             timeout=args.request_timeout,
         )
         usage = response.get("usage") or {}
@@ -724,6 +815,13 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help="exclude every document named by a prior corpus report; repeatable",
+    )
+    parser.add_argument(
+        "--exclude-token-file",
+        type=Path,
+        action="append",
+        default=[],
+        help="exclude an exact JSON token-ID sequence; repeatable",
     )
     parser.add_argument("--seed", type=int, default=20260801)
     parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)

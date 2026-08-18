@@ -34,13 +34,19 @@ from qsrt.pack.qsrt_pool import (
     choose_qsrt_raw_keep_allocation,
     keep_mask_from_allocation_document,
     raw_keep_container_bytes,
+    validate_pooled_fixed_profile_ledger_evidence,
+    validate_pooled_fixed_profile_metrics,
     validate_candidate_pool_completion,
     validate_coupled_rotation_metrics,
     validate_layer_metrics,
     validate_selection_ledger_evidence,
     write_candidate_pool_completion,
 )
-from qsrt.qsrt_coupled_plan import PRODUCTION_SELECTION, select_coupled_draw
+from qsrt.qsrt_coupled_plan import (
+    POOLED_ALL_ROW_SELECTION,
+    PRODUCTION_SELECTION,
+    select_coupled_draw,
+)
 from qsrt.pack.qsrt_candidates import (
     CANDIDATE_POOL_SCHEMA_VERSION,
     OFFICIAL_SOURCE_DAMAGE_METRIC,
@@ -108,6 +114,93 @@ def _metrics() -> dict[str, torch.Tensor]:
         ),
         OFFICIAL_SOURCE_DAMAGE_METRIC: damage,
     }
+
+
+def _pooled_fixed_metrics() -> dict[str, torch.Tensor]:
+    experts = (2, 7)
+    fixed = torch.full((2,), K2.mode_id, dtype=torch.uint8)
+    return {
+        "expert_ids": torch.tensor(experts, dtype=torch.int16),
+        "mode_ids": torch.tensor([K2.mode_id], dtype=torch.uint8),
+        "selected_r13": fixed.clone(),
+        "selected_r2": fixed.clone(),
+        "proposed_r13": fixed.clone(),
+        "proposed_r2": fixed.clone(),
+        "format_evaluated": torch.ones((2, 1, 1), dtype=torch.bool),
+        "pooled_baseline_sse": torch.tensor([10.0, 20.0], dtype=torch.float64),
+        "pooled_replacement_sse": torch.tensor([8.0, 21.0], dtype=torch.float64),
+        "pooled_selected_sse": torch.tensor([8.0, 20.0], dtype=torch.float64),
+        OFFICIAL_SOURCE_DAMAGE_METRIC: torch.tensor(
+            [8.0, 20.0], dtype=torch.float64
+        ),
+        "pooled_source_energy": torch.tensor([100.0, 200.0], dtype=torch.float64),
+        "routed_occurrences": torch.tensor([1000, 2000], dtype=torch.int64),
+        "effective_sample_size": torch.tensor([50.0, 75.0], dtype=torch.float64),
+        "selected_functional_refit": torch.tensor([True, False]),
+        "coupled_draw_selected": torch.tensor([0, 6], dtype=torch.uint8),
+    }
+
+
+def test_pooled_fixed_profile_metrics_close_exact_selection() -> None:
+    metrics = _pooled_fixed_metrics()
+    validated = validate_pooled_fixed_profile_metrics(
+        metrics,
+        mode_ids=(K2.mode_id,),
+        expert_ids=(2, 7),
+        expected_coupled_draws=(0, 6),
+    )
+    assert validated["damage"].tolist() == [8.0, 20.0]
+    assert validated["evaluated_format_count"].tolist() == [1, 1]
+
+    metrics["pooled_selected_sse"][1] = 19.0
+    with pytest.raises(ValueError, match="exact minimum"):
+        validate_pooled_fixed_profile_metrics(
+            metrics,
+            mode_ids=(K2.mode_id,),
+            expert_ids=(2, 7),
+        )
+
+
+def test_pooled_fixed_profile_ledger_is_bound_to_metrics() -> None:
+    metrics = _pooled_fixed_metrics()
+    ledger = {
+        "logical_trellis_schema": SCHEMA,
+        "selections": {
+            "2": {
+                "selected_down_target": "functional_ridge",
+                "coupled_draw": 0,
+                "routed_occurrences": 1000,
+                "effective_sample_size": 50.0,
+                "baseline_sse": 10.0,
+                "replacement_sse": 8.0,
+                "selected_sse": 8.0,
+                "source_energy": 100.0,
+            },
+            "7": {
+                "selected_down_target": "source_pool",
+                "coupled_draw": 6,
+                "routed_occurrences": 2000,
+                "effective_sample_size": 75.0,
+                "baseline_sse": 20.0,
+                "replacement_sse": 21.0,
+                "selected_sse": 20.0,
+                "source_energy": 200.0,
+            },
+        },
+    }
+    assert validate_pooled_fixed_profile_ledger_evidence(
+        ledger,
+        metrics,
+        expert_ids=(2, 7),
+    ) == SCHEMA
+
+    ledger["selections"]["7"]["source_energy"] = 199.0
+    with pytest.raises(ValueError, match="source_energy drifted"):
+        validate_pooled_fixed_profile_ledger_evidence(
+            ledger,
+            metrics,
+            expert_ids=(2, 7),
+        )
 
 
 def test_payload_metadata_binds_tailbite_context_when_declared() -> None:
@@ -334,6 +427,81 @@ def test_coupled_draw_metrics_recompute_disjoint_fold_decision(
             min_confirmation_documents=1,
             minimum_improvement=0.0,
         )
+
+
+def test_coupled_draw_metrics_recompute_pooled_all_row_decision() -> None:
+    metrics = {
+        "fit_counts": torch.ones((1, 2), dtype=torch.int32),
+        "confirmation_counts": torch.ones((1, 1), dtype=torch.int32),
+        "fit_sse": torch.tensor([[[[4.0, 5.0]]]], dtype=torch.float64),
+        "confirmation_sse": torch.tensor([[[[7.5]]]], dtype=torch.float64),
+        "coupled_draw_evaluated": torch.tensor(
+            [[True, False, False, False, False, False, True, False]]
+        ),
+        "coupled_draw_fit_sse": torch.tensor(
+            [[10.0, *([float("nan")] * 5), 9.0, float("nan")]],
+            dtype=torch.float64,
+        ),
+        "coupled_draw_confirmation_sse": torch.tensor(
+            [[8.0, *([float("nan")] * 5), 7.5, float("nan")]],
+            dtype=torch.float64,
+        ),
+        "coupled_draw_proposed": torch.tensor([6], dtype=torch.uint8),
+        "coupled_draw_selected": torch.tensor([6], dtype=torch.uint8),
+        "coupled_draw_confirmation_improvement": torch.tensor(
+            [float("nan")], dtype=torch.float64
+        ),
+        "coupled_draw_pooled_sse": torch.tensor(
+            [[6.0, *([float("nan")] * 5), 5.0, float("nan")]],
+            dtype=torch.float64,
+        ),
+        "coupled_draw_pooled_source_energy": torch.tensor(
+            [100.0], dtype=torch.float64
+        ),
+        "coupled_draw_pooled_occurrences": torch.tensor(
+            [1234], dtype=torch.int64
+        ),
+    }
+    decision = {
+        "evaluated_draws": [0, 6],
+        "proposed_draw": 6,
+        "selected_draw": 6,
+        "fit_documents": 2,
+        "confirmation_documents": 1,
+        "confirmation_relative_improvement": None,
+        "accepted": True,
+        "reason": "pooled_all_routed_rows_minimum_sse",
+    }
+    ledger = {
+        "selections": {
+            "7": {
+                "coupled_rotation": {
+                    **decision,
+                    "fit_post_projection_sse": {"0": 10.0, "6": 9.0},
+                    "confirmation_post_projection_sse": {"0": 8.0, "6": 7.5},
+                    "pooled_post_projection_sse": {"0": 6.0, "6": 5.0},
+                    "pooled_source_energy": 100.0,
+                    "pooled_routed_occurrences": 1234,
+                }
+            }
+        }
+    }
+    validated = validate_coupled_rotation_metrics(
+        metrics,
+        {
+            "source": "candidate_pool_selection",
+            "selection": POOLED_ALL_ROW_SELECTION,
+            "draw_candidates": [0, 6],
+        },
+        layer=1,
+        expert_ids=(7,),
+        min_fit_documents=1,
+        min_confirmation_documents=1,
+        minimum_improvement=0.0,
+        ledger=ledger,
+    )
+    assert validated is not None
+    assert validated["selected"].tolist() == [6]
 
 
 def _format_coding(r13: int, r2: int) -> dict:

@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-17T07:28:00Z`. It
+This repository is a source snapshot updated at `2026-08-18T17:55:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -59,12 +59,11 @@ The source checkout was
 commit was:
 
 ```text
-453b4834332d2735c5a326ca57fb6a8b36e776bf
+7902469f071a4f68089eaacfb59d41be0a674e41
 ```
 
-The base commit and its upstream branch were synchronized when the snapshot
-was taken. The source checkout also contained eleven modified tracked files
-and 99 untracked research files. Those working-tree files are included in this
+The source checkout also contained eleven modified tracked files and 76
+untracked research files. Those working-tree files are included in this
 repository and committed together so a collaborator receives one coherent
 state. The machine-readable manifest records every original Git status entry.
 The publication adds this guide, a manifest generator and verifier, the
@@ -80,10 +79,15 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The exported source passed 697 tests with four skips in the local CPU-only
-environment. The complete real-matrix zero-output-feedback control also passed
-bit equivalence before the mixed-rate experiment. Model-level KLD still needs
-the remote artifacts described below.
+The GLM source-manifest, down-refit rate-pool, allocation, paired-KLD,
+intervention-runtime, and reconstructed-activation refit tests pass. The local
+CPU-only environment completed 50 tests in 0.50 seconds. Repository-wide
+collection now requires the optional Triton and InstantTensor packages used by
+newly pulled upstream recovery code. It also exposes two upstream script/test
+imports that are not present in `qsrt.pack.qsrt_candidates`.
+Install the optional dependencies or reconcile those imports before treating
+a repository-wide result as authoritative; do not hide the collection errors
+by deleting tests.
 
 Verify the published source files before using them:
 
@@ -133,15 +137,25 @@ A verified host-local copy exists below the experiment root. Use the exact path
 recorded in the journal. Never change the USB copy in place and never download
 the EXL3 files again.
 
-The only official BF16 weight source allowed by this experiment is the five-
-shard layer-3 window at:
+The first official BF16 source window is the five-shard layer-3 window at:
 
 ```text
 /home/sunil/usb-mnt/zai-org/GLM-5.2-b4734de-layer003-source-window
 ```
 
-Do not download the complete GLM-5.2 BF16 checkpoint. The bounded window is
-sufficient for the eight layer-3 experts in the frozen panel. The panel is
+The second bounded source window contains only the 17 official shards needed
+for expert tensors in layers 52, 60, 63, and 64. It is stored on kossel's
+internal NVMe at:
+
+```text
+/home/sunil/qsrt-glm52-experiments/source-windows/glm52-b4734de-layers-52-60-63-64
+```
+
+The 17-shard transfer is resumable and verifies every immutable shard hash.
+Its frozen manifest is
+[`experiments/glm52_layers_52_60_63_64_source_shards.json`](experiments/glm52_layers_52_60_63_64_source_shards.json).
+Do not download the complete GLM-5.2 BF16 checkpoint. The layer-3 window is
+sufficient for the eight experts in the frozen mechanism panel. The panel is
 defined by
 [`experiments/glm52_layer3_rate_pattern_panel.json`](experiments/glm52_layer3_rate_pattern_panel.json).
 
@@ -180,13 +194,15 @@ and four bits per weight. The published BF16 reference contains one
 These results can screen mechanisms, but they cannot establish document-level
 generalization.
 
-The bounded BF16 source window names revision
+The bounded BF16 source windows name revision
 `b4734de4facf877f85769a911abafc5283eab3d9`. The published reporting-logit
 manifest names teacher revision
-`4d67f66cc64d3219133b767c253b2ad1425c6c88`. EXL3 and every candidate use the
-same source lineage and reporting teacher. The available files do not prove
-that the two official revisions have byte-identical weights. The immutable
-rate-preserving experiment registration records both roles at
+`4d67f66cc64d3219133b767c253b2ad1425c6c88`. Metadata inspection proved that
+the two revisions have byte-identical safetensors indexes and identical
+content SHA-256 and byte count for every official weight shard. The source
+config explicitly sets `moe_router_dtype: float32`; the reporting config omits
+that field, so runtime identity remains separate from weight identity. The
+immutable rate-preserving experiment registration records both roles at
 [`experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json`](experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json).
 
 | Eight-expert representation | Mean forward KLD | Change from uniform K3 | Decision |
@@ -197,6 +213,8 @@ rate-preserving experiment registration records both roles at
 | K3 selected with routed-input covariance | `0.0638412662800` | `+2.3453%` | Rejected |
 | K3 with reconstructed-activation down refit | `0.0612386895257` | `-1.8269%` | Confirm on more documents |
 | Fixed twelve-promotion mixed K3/K4 over the down-refit base | `0.0659634015775` | `+5.7474%` | Rejected |
+| Ten-promotion K3/K4 control selected by complete-expert error, using one down target per expert | `0.0636258118201` | `+1.9999%` | Rejected construction |
+| Fixed twelve-promotion K3/K4 control using one down target per expert | `0.0639669166209` | `+2.5468%` | Rejected construction |
 
 The down refit trains the down-projection target against activations rebuilt
 from quantized gate and up projections. It recovered 87.3960 percent of
@@ -212,6 +230,15 @@ down-refitted K3 base. Promoted down projections used ordinary source-target
 K4 tensors and therefore replaced their K3 refits. This result rejects the
 fixed allocation and target combination. It does not test K4 encoding of the
 refitted down target or an allocation selected by complete-expert output error.
+
+The later rate pool preserved a refitted down target when the down projection
+changed rate. Its selection-data allocation used ten K4 projections, occupied
+129,372,160 logical bytes, and was 4.1776 percent worse than EXL3. Its matched
+fixed control used twelve K4 projections and was 4.7362 percent worse than
+EXL3. Both lowered p99 while worsening CVaR1%, so p99 alone would have accepted
+the wrong tail direction. Both reused one target fitted from K3/K3 upstream
+activations when gate or up changed rate. They therefore do not test coherent
+rate-conditioned refitting.
 
 Three other findings constrain the next experiments:
 
@@ -246,42 +273,18 @@ The GLM-5.2 QSRT container format does not exist yet, so headers, alignment,
 padding, and serving-directory overhead remain unmeasured. A complete
 serialized artifact must retain a positive size margin after those costs.
 
-## Work that should proceed when the GPU host returns
+## Active GLM-5.2 work
 
-### Preserve the down-refit target across rate changes
+### Build coherent rate-conditioned down candidates
 
-The completed fixed mixed-rate artifact used source-target K4 tensors for
-promoted projections. A promoted down cell therefore replaced its accepted K3
-refit. The corrective implementation is in
+The measured one-target control implementation is in
 [`qsrt/glm52_down_refit_rate_pool.py`](qsrt/glm52_down_refit_rate_pool.py).
-It recomputes each accepted continuous target from the captured fit rows and
-stored ridge factor. It refuses output unless the repeated K3 encode matches
-the stored refit, then encodes the same target at K4.
-
-When kossel is available, synchronize the bounded file set from a local clone:
-
-```bash
-bash experiments/sync_glm52_rate_preserving_down_refit_source_to_kossel.sh
-```
-
-The sync launcher deletes no remote file and checks every copied SHA-256.
-Then run these commands in kossel's indexed source directory:
-
-```bash
-bash experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh
-# Wait for all four named containers to exit zero.
-bash experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh
-bash experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh \
-  fixed-rate-preserving-down-refit-k3-k4
-bash experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh \
-  selection-data-rate-preserving-down-refit-k3-k4
-```
-
-The merged pool scores all eight K3/K4 rate tuples per expert on the frozen
-candidate-selection documents. The materializer emits the pre-registered
-EXL3-stratified control and a complete-expert selection-data allocation under
-the twelve-promotion budget. The published reporting context may measure each
-frozen allocation. It cannot select rates or refit targets.
+It is retained as a negative control. The next builder must reconstruct the
+down input and fit an independent down target for each of the K3/K3, K3/K4,
+K4/K3, and K4/K4 gate/up pairs. Each target then receives K3 and K4 encodes.
+The result is eight internally consistent complete-expert candidates. Use
+complete-expert error only to shortlist candidates, then use KLD on eight
+selection contexts to freeze one panel configuration.
 
 ### Confirm down refitting on multiple documents
 

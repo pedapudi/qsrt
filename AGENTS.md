@@ -53,14 +53,14 @@ or external EXL encoder APIs.
   but `H2` must be built from expert-stratified routed rows and shrunk toward
   identity. Unsupported experts fall back to identity.
 - The source-controlled 1,000,000-token training capture is complete at
-  `/data/kquant/captures/k3-denseh-broad-v6-1m-train.kqcapture` (298 GiB,
+  `/data/datasets/kquant/captures/k3-denseh-broad-v6-1m-train.kqcapture` (298 GiB,
   1,226 documents, zero dropped rows). It is the first scale-up from the
   65,536-token pilot, not the final corpus. Mode-selection and final-validation
   captures must remain document- and prompt-disjoint.
 - Its reusable `H13`/identity-prior bundle is
-  `/data/kquant/hessians/k3-denseh-broad-v6-1m-train-h13-identity-v1.kqhess`;
+  `/data/datasets/kquant/hessians/k3-denseh-broad-v6-1m-train-h13-identity-v1.kqhess`;
   the layer-indexed route/input cache is
-  `/data/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples`.
+  `/data/datasets/kquant/captures/k3-denseh-broad-v6-1m-train-input-v1.kqsamples`.
   On this host they build in about 9 and 13 seconds respectively once the raw
   capture is available.
 - The offline SQG tile encoder now uses predecessor-major E4M3 label loads,
@@ -238,8 +238,11 @@ adapter and explicit format version, not weaken Kimi-K3's frozen codec contract.
 - Use `.venv/bin/python` and `.venv/bin/pytest`.
 - Never commit checkpoint payloads, captures, generated traces, `out/`,
   `__pycache__`, or `*.pyc`.
-- Treat `/models` and `/data/kquant` artifacts as valuable. Use a fresh path for
-  every changed corpus, Hessian policy, codebook, allocation, or encoder build.
+- Treat `/models`, `/data/datasets/kquant`, and `/data/kquant` artifacts as
+  valuable. Store reusable corpora, captures, and Hessians under
+  `/data/datasets/kquant`; store derived experiments under `/data/kquant`. Use a
+  fresh path for every changed corpus, Hessian policy, codebook, allocation, or
+  encoder build.
 - Candidate layers are atomic and an identical all-layer build is resumable.
   Never mix settings in an existing destination.
 - Before a 12-GPU run, verify GPU enumeration, free memory, host RAM/swap,

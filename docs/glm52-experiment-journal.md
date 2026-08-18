@@ -366,6 +366,10 @@ and traces remain outside the Git repository.
 | 2026-08-17 07:17 UTC | Prepared and validated a K3/K4 pool that preserves accepted down-refit targets | The immutable K3 artifact, accepted K3 down-refit artifact, reusable source-target K4 pool, bounded BF16 source window, and frozen fit and candidate-selection captures | The initial rate-pool module, three command-line programs, two kossel launchers, the extended KLD launcher, and focused tests | All shell launchers passed `bash -n`; the complete CPU suite passed 695 tests with four skips in 22.00 seconds. | The builder recomputes each accepted continuous down target and refuses output unless its K3 re-encode equals the stored refit. It encodes the same target at K4, scores all eight complete-expert K3/K4 tuples on candidate-selection documents, and closes every tensor and metric by hash and schema. No GPU candidate, container, model, capture, result, or image was produced because `kossel.lan` timed out on port 22. |
 | 2026-08-17 07:19 UTC | Published the locally validated rate-preserving implementation | The publication-safe export at `/tmp/qsrt-github-export-20260816-z5d86H` | Public GitHub repository `pedapudi/qsrt`, branch `main`, commit `fd5e1dcb281ba33eab94d9afe9e74d32d73543bc` | The source manifest covers 284 non-self files occupying 5,812,227 bytes and has SHA-256 `5117df74aba5ca55b250d1dd369febdc5f0de1144a26961e28d288df08731084`. The exported suite passed 695 tests with four skips. | The snapshot excludes model weights, captures, logits, Hessians, generated tensor results, container layers, caches, and credentials. The remote `main` branch matched the local export after the push. |
 | 2026-08-17 07:28 UTC | Corrected the source-versus-teacher revision boundary before rate-preserving K4 measurement | The bounded BF16 source inventory, published reference-logit manifest, historical allocation registration, and paired-KLD report | A new immutable rate-preserving allocation registration, revised validators and materializer, a nondeleting source-sync launcher, and focused tests listed below | The bounded source revision is `b4734de4facf877f85769a911abafc5283eab3d9`. The published reference-logit manifest names teacher revision `4d67f66cc64d3219133b767c253b2ad1425c6c88`. The new registration SHA-256 is `d9f34c83e1d152018ae9305cc6f9835c3efd0e380ed43e99d81a7c6490d0aa3b`. The complete suite passed 697 tests with four skips in 21.43 seconds. | The historical registration had placed the teacher revision in its source-weight field. It remains frozen as a record of the rejected source-target K4 control. The corrective registration assigns each revision to its actual role and does not assert byte identity between revisions. Kossel returned `No route to host`, so the correction produced no remote file, GPU artifact, container, download, or image. |
+| 2026-08-18 17:30 UTC | Closed official source-weight identity and inventoried available reporting references without downloading model weights | Hugging Face metadata for source revision `b4734de4facf877f85769a911abafc5283eab3d9` and reporting revision `4d67f66cc64d3219133b767c253b2ad1425c6c88`, plus the public GLM-5.2 KLD-reference dataset | `metadata/glm52-source-and-reference-inventory-20260818/` on kossel | Both revisions have byte-identical safetensors indexes and identical content SHA-256 and byte count for every official weight shard. The index SHA-256 is `5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e`; the per-shard identity-list SHA-256 is `03cabd828856c27a2586b125710cdd94887625db3dcfee2a11866b7ad3bc66bd`. The public reference dataset contains one `2,047 × 154,880` FP32 logit tensor. | Weight identity is closed. Runtime identity remains separate because the source config explicitly sets `moe_router_dtype: float32` and the reporting config omits the field. Producing eight selection and at least 32 confirmation contexts requires a remote host that can run the BF16 teacher; the complete BF16 checkpoint remains prohibited on kossel. |
+| 2026-08-18 17:31 UTC | Started the bounded BF16 source transfer for layers 52, 60, 63, and 64 | Seventeen official shards selected from the byte-identical source index | `source-windows/glm52-b4734de-layers-52-60-63-64/` on kossel's internal NVMe, with launch records under `launch-records/glm52-layers-52-60-63-64-source-download/` | The frozen manifest contains 3,072 routed-expert tensors and 91,142,336,944 bytes. Manifest SHA-256 is `847733dd4f085ed25357432b5f6cec425fa2e51722f11b73c88511d354de71b8`; the sorted source-shard list SHA-256 is `1c25eaa7b399a36434c8ef1ef09fc6a3902e7464109946f67aba01c1ed2ebd38`. Four resumable streams verify each shard before removing its `.partial` suffix. | The transfer excludes every other official shard and does not contain the complete BF16 model. The internal NVMe has enough space for the 91.1 GB payload plus a 32 GiB safety reserve. The USB mount has about 104 GB free and cannot satisfy that reserve, so the transfer does not use it. Completion and final hashes remain pending. |
+| 2026-08-18 17:33–17:35 UTC | Built and materialized the K3/K4 down-refit rate-pool controls | The frozen eight-expert layer-3 panel, accepted K3 down refits, source-target gate/up K3 and K4 tensors, and frozen fit and selection captures | Four network-disabled two-expert GPU slices; merged pool `results/glm52-layer3-frozen8-down-refit-k3-k4-rate-pool-merged/`; fixed and selection-data dense intervention artifacts | All four workers exited zero. Seven of eight down refits were accepted. Merged manifest/report SHA-256 values are `f5f6ab51262c3679a1cdf11536ebf3a8492b36fa5fe66edd162a121e05bcdcb6` and `546ef85e69d9393cbd7d26880f2bdf141658d5811b7ab3632b2afc75a3b62b8c`. The fixed artifact contains twelve K4 projections and 132,517,888 logical bytes; its manifest/report SHA-256 values are `0ccf6cfe9597c57a121314a2d28417168fadcf2a0ddb819c95d537150e99be5b` and `bde933225609628f92fad257d4eeb9c3d4bfa69767ecccec7be5e46beb99f283`. The selection-data artifact contains ten K4 projections and 129,372,160 logical bytes; its manifest/report SHA-256 values are `6549b9b910b54faff78c6d7c3aae274f733dd155f0c56e1af370f3975b0a9720` and `e3a6160e72ece627c8e7ecbfa0e61d8f992acff1663d86188b5b5d08f4169019`. | This pool preserves a down-refit target when only the down rate changes. It reuses one target fitted from K3/K3 upstream activations when gate or up changes rate. It is a pipeline and allocation control, not the coherent rate-conditioned construction required for acceptance. |
+| 2026-08-18 17:36–17:50 UTC | Measured both one-target K3/K4 rate-pool controls against the published BF16 reference | The two dense intervention artifacts, immutable host-local EXL3 checkpoint, one published 2,048-token context, and the network-disabled v39 correctness runtime | Paired-KLD result directories for the selection-data and fixed rate-pool controls | Repeat and direct-return controls were bit-identical in both processes. The ten-promotion selection-data candidate had mean KLD `0.0636258118201`: 4.1776% worse than EXL3, 1.9999% worse than uniform K3, and 3.8981% worse than K3 down refitting. Its report SHA-256 is `99a447ed2f0243679b24a98414b632a39c7830010d1b9fc96e8ca90f6d32d07e`. The fixed twelve-promotion control had mean KLD `0.0639669166209`: 4.7362% worse than EXL3, 2.5468% worse than uniform K3, and 4.4551% worse than K3 down refitting. Its report SHA-256 is `41ef7cf67ff0e9fc6bd977ead289c057ec2917fe35ff98cc4f5f41bca3aee6b9`. Both changed downstream routes. | Reject both one-target constructions. Their p99 values improved while CVaR1% worsened, so p99 alone would have given the wrong tail signal. These are decisive one-context negatives for the materialized interventions, not document-replicated results and not evidence against a separately fitted down target for every gate/up rate pair. No model or container image was downloaded. |
 
 ## Evidence sequence and present status
 
@@ -409,30 +413,32 @@ and traces remain outside the Git repository.
     EXL3, but mean KLD became 8.0051% worse than EXL3. Promoted down
     projections replaced their K3 refits, so this result does not test K4
     encoding of the refitted target.
-11. **Implemented and locally validated; GPU execution pending:** prepared a
-    K3/K4 rate pool that recomputes each accepted continuous down-refit target,
-    proves its K3 reconstruction is unchanged, and encodes the same target at
-    K4. The pool scores all eight rate tuples per expert on frozen selection
-    documents. A dedicated registration separates the `b4734de4` source
-    revision from the `4d67f66c` reporting-teacher revision. Kossel was
-    unreachable when the source and launch sequence passed the complete CPU
-    suite, so no candidate measurement exists yet.
+11. **Completed and rejected for the one-target construction:** built a K3/K4
+    rate pool that preserves each accepted down-refit target when the down
+    projection changes rate. Both the fixed twelve-promotion control and the
+    ten-promotion selection-data allocation regressed mean KLD and CVaR1% on
+    the published context. The pool reused a down target fitted from K3/K3
+    upstream activations under every gate/up rate pair, so the result does not
+    test coherent rate-conditioned refitting.
 12. **Completed for the frozen K3 panel:** held every scale and codec setting
     fixed while disabling BlockLDLQ feedback. The floating-point targets
     changed, but all 24 paths and eight complete expert files remained
     byte-identical to uniform K3. The result does not cover K2 or a dense
     captured metric.
-13. **Incomplete:** repeat accepted candidates on multiple document-disjoint
-    reference contexts and count complete serialized checkpoint bytes. The
-    available BF16 reference contains one published 2,048-token context, so it
-    cannot provide document-level replication.
+13. **Partly completed:** metadata proved that the source and reporting
+    revisions contain byte-identical weight shards. The available BF16
+    reference still contains one published 2,048-token context, so it cannot
+    provide document-level replication. Complete serialized checkpoint bytes
+    also remain unavailable because the GLM QSRT container has not been
+    defined.
 
 ## Files prepared for the rate-preserving down-refit experiment
 
 The following twelve files define the experiment that retains accepted down
 refits when a down projection moves from K3 to K4. All paths are relative to
-the repository root on localhost. None of these files has produced a GPU
-artifact.
+the repository root on localhost. The implementation produced the control
+artifacts and negative KLD results recorded above. Its down target remains
+tied to K3/K3 upstream activations.
 
 | Path | Role | SHA-256 |
 |---|---|---|
@@ -449,10 +455,11 @@ artifact.
 | `experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh` | Add paired-KLD methods for both materialized allocations | `78502042d825a1c90adfe3eb7ffce007e9747954018659225469b5fbe25d0635` |
 | `experiments/sync_glm52_rate_preserving_down_refit_source_to_kossel.sh` | Copy these bounded source files without deletion and verify every remote SHA-256 | `05664442932ec12c36f0cd4fd8560ca85a8a9501061e13ea582de20368579b66` |
 
-The implementation step downloaded no file, copied no remote artifact, and
-created no container or raster image. The next remote run must append every
-slice, merged pool, materialized artifact, launch record, log, and KLD file to
-the kossel `ARTIFACT_INDEX.json` inventory.
+The implementation step itself downloaded no file and created no container or
+raster image. The later remote run produced the slice, merged-pool,
+materialized-artifact, launch-record, log, and KLD files named in the action
+ledger. Refresh the kossel `ARTIFACT_INDEX.json` inventory before shutting the
+host down.
 
 ## Results
 

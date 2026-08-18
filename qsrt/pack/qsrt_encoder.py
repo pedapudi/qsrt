@@ -27,6 +27,7 @@ from qsrt.exl3_reference import (
     CODEBOOK_SQG_CHEB_NORMAL_E4M3,
     CODEBOOK_SQG_NORMAL_E4M3,
     QSRT_CODEBOOKS,
+    decode_qsrt_regularized_weight,
     decode_qsrt_weight,
 )
 from qsrt.sqg_e4m3 import (
@@ -250,6 +251,28 @@ class QSRTMatrixCandidate:
     encoded: torch.Tensor
     tensors: dict[str, torch.Tensor]
     plan: QSRTMatrixPlan
+    proxy: float
+    transform_seeds: QSRTTransformSeeds
+    global_scale: float = 1.0
+
+
+@dataclass
+class QSRTTileMapCandidate:
+    """Unpacked reconstruction for one arbitrary K1/K2/K3/K4 tile map.
+
+    This research candidate retains a frozen canonical-neuron permutation and
+    exposes every tile rate explicitly.  It is not a serialized format: a
+    production container must define selector packing and physical tile order
+    before this candidate can be finalized.
+    """
+
+    reconstruction: torch.Tensor
+    regularized: torch.Tensor
+    encoded: torch.Tensor
+    tensors: dict[str, torch.Tensor]
+    matrix: str
+    encoder_tile_bits: tuple[int, ...]
+    permutation: torch.Tensor
     proxy: float
     transform_seeds: QSRTTransformSeeds
     global_scale: float = 1.0
@@ -554,6 +577,340 @@ def _encoder_weight(
         weight = source.index_select(0, permutation).T.contiguous()
         encoder_hessian = hessian
     return weight, encoder_hessian
+
+
+def _arbitrary_tile_quant_args(
+    tile_bits: tuple[int, ...],
+    *,
+    matrix: str,
+    layer: int,
+    device: torch.device,
+    shared_scale_scope: object | None,
+    codebook: str,
+    ldlq_tf32: bool,
+    tailbite_context: int,
+    transform_seeds: QSRTTransformSeeds,
+    g_scale_override: float | None,
+) -> dict[str, object]:
+    """Build quantizer arguments for a full two-dimensional tile-rate map."""
+
+    # Reuse the established codebook and scale contract from a valid matrix
+    # plan, then replace only the rate-map fields.  The template plan's
+    # permutation is not observed by the low-level quantizer.
+    template_contexts = torch.arange(
+        INTERMEDIATE_CHANNELS // RECORD_CHANNELS,
+        dtype=torch.long,
+        device=device,
+    ).repeat_interleave(RECORD_CHANNELS // CONTEXT_GROUP_CHANNELS)
+    template = plan_qsrt_matrix(template_contexts, 0, matrix=matrix)
+    result = _qsrt_quant_args(
+        template,
+        matrix=matrix,
+        layer=layer,
+        device=device,
+        shared_scale_scope=shared_scale_scope,
+        codebook=codebook,
+        ldlq_tf32=ldlq_tf32,
+        tailbite_context=tailbite_context,
+        transform_seeds=transform_seeds,
+        g_scale_override=g_scale_override,
+    )
+    result["mixed_rate_axis"] = "tile"
+    result["mixed_tile_bits"] = tile_bits
+    if 1 in tile_bits:
+        if codebook == CODEBOOK_SQG_XOR_CHEB_T12:
+            result["sqg_e4m3_luts_by_bits"] = {
+                **result["sqg_e4m3_luts_by_bits"],
+                1: sqg_xor_cheb_t12_bytes(1),
+            }
+        elif codebook == CODEBOOK_SQG_CHEB_NORMAL_E4M3:
+            result["sqg_e4m3_luts_by_bits"] = {
+                **result["sqg_e4m3_luts_by_bits"],
+                1: sqg_cheb_normal_e4m3_bytes(1),
+            }
+    return result
+
+
+def _periodic_tile_quant_args(
+    schedules: tuple[tuple[int, ...], ...],
+    *,
+    matrix: str,
+    layer: int,
+    device: torch.device,
+    shared_scale_scope: object | None,
+    codebook: str,
+    ldlq_tf32: bool,
+    tailbite_context: int,
+    transform_seeds: QSRTTransformSeeds,
+    g_scale_override: float | None,
+) -> dict[str, object]:
+    """Build encoder arguments for fixed within-tile variable-rate paths."""
+
+    contexts = torch.arange(
+        INTERMEDIATE_CHANNELS // RECORD_CHANNELS,
+        dtype=torch.long,
+        device=device,
+    ).repeat_interleave(RECORD_CHANNELS // CONTEXT_GROUP_CHANNELS)
+    template = plan_qsrt_matrix(contexts, 0, matrix=matrix)
+    result = _qsrt_quant_args(
+        template,
+        matrix=matrix,
+        layer=layer,
+        device=device,
+        shared_scale_scope=shared_scale_scope,
+        codebook=codebook,
+        ldlq_tf32=ldlq_tf32,
+        tailbite_context=tailbite_context,
+        transform_seeds=transform_seeds,
+        g_scale_override=g_scale_override,
+    )
+    result.pop("mixed_rate_axis", None)
+    result.pop("mixed_tile_bits", None)
+    result["periodic_rate_schedules"] = schedules
+    # The research path returns unpacked 16-bit codewords.  A serialized
+    # profile must define a corresponding variable-width bit-plane packer.
+    result["pack_trellis_fn"] = lambda encoded, _args: encoded.contiguous()
+    return result
+
+
+def quantize_qsrt_periodic_candidate(
+    source: torch.Tensor,
+    hessian: torch.Tensor,
+    permutation: torch.Tensor,
+    *,
+    matrix: str,
+    schedules: tuple[tuple[int, ...], ...],
+    layer: int,
+    device: torch.device,
+    quantizer_module: ModuleType | object | None = None,
+    shared_scale_scope: object | None = None,
+    codebook: str = CODEBOOK_SQG_XOR_CHEB_T12,
+    ldlq_tf32: bool = False,
+    tailbite_context: int = 128,
+    transform_seeds: QSRTTransformSeeds | None = None,
+    g_scale_override: float | None = None,
+) -> QSRTTileMapCandidate:
+    """Encode one metadata-free periodic K2/K3/K4 candidate.
+
+    The schedule class is selected by the row-major 16x16 tile index.  Every
+    class contains exactly 256 branch widths in tensor-core traversal order.
+    """
+
+    if matrix not in MATRICES:
+        raise ValueError(f"unknown expert matrix: {matrix}")
+    if device.type != "cuda" or source.device != device:
+        raise ValueError("periodic encoding requires a CUDA-resident source")
+    _validate_source_and_hessian(source, hessian, matrix)
+    if not schedules or any(len(row) != 256 for row in schedules):
+        raise ValueError("periodic schedules must have shape [classes, 256]")
+    if any(bits not in (2, 3, 4) for row in schedules for bits in row):
+        raise ValueError("periodic schedules support only K2, K3, and K4")
+    permutation = permutation.to(device=device, dtype=torch.long)
+    if permutation.ndim != 1 or permutation.numel() != INTERMEDIATE_CHANNELS:
+        raise ValueError("periodic neuron permutation has the wrong shape")
+    if not torch.equal(
+        torch.sort(permutation).values,
+        torch.arange(INTERMEDIATE_CHANNELS, device=device),
+    ):
+        raise ValueError("periodic neuron permutation is not bijective")
+    if matrix in ("w1", "w3") and shared_scale_scope is None:
+        raise ValueError(f"{matrix} requires a shared_scale_scope")
+
+    if matrix == "w2":
+        weight = source.index_select(1, permutation).T.contiguous()
+        hp = permutation.to(device=hessian.device)
+        encoder_hessian = hessian.index_select(0, hp).index_select(1, hp)
+    else:
+        weight = source.index_select(0, permutation).T.contiguous()
+        encoder_hessian = hessian
+    tile_count = (weight.shape[0] // 16) * (weight.shape[1] // 16)
+    class_counts = [
+        (tile_count + len(schedules) - 1 - class_id) // len(schedules)
+        for class_id in range(len(schedules))
+    ]
+    total_bits = sum(
+        count * sum(schedule)
+        for count, schedule in zip(class_counts, schedules, strict=True)
+    )
+    expected_bits = tile_count * 256 * 74 // 24
+    if total_bits != expected_bits:
+        raise ValueError(
+            f"periodic schedule uses {total_bits} bits; expected {expected_bits}"
+        )
+
+    seeds = transform_seeds or default_qsrt_transform_seeds(layer, matrix)
+    args = _periodic_tile_quant_args(
+        schedules,
+        matrix=matrix,
+        layer=layer,
+        device=device,
+        shared_scale_scope=shared_scale_scope,
+        codebook=codebook,
+        ldlq_tf32=ldlq_tf32,
+        tailbite_context=tailbite_context,
+        transform_seeds=seeds,
+        g_scale_override=g_scale_override,
+    )
+    module = _load_quantizer_module(codebook) if quantizer_module is None else quantizer_module
+    raw = module.quantize_qsrt(
+        weight,
+        make_shared_h(weight.shape[0], device, encoder_hessian),
+        args,
+        True,
+    )
+    encoder_weight, proxy, tensors = raw
+    reconstruction = torch.empty_like(source)
+    if matrix == "w2":
+        reconstruction[:, permutation] = encoder_weight.T
+    else:
+        reconstruction[permutation] = encoder_weight.T
+    if not bool(torch.all(torch.isfinite(reconstruction))):
+        raise ValueError("periodic candidate reconstruction is not finite")
+    tensor_map = dict(tensors)
+    tensor_map["g_scale"] = torch.tensor(float(args["g_scale"]), dtype=torch.float32)
+    return QSRTTileMapCandidate(
+        reconstruction=reconstruction,
+        regularized=encoder_weight,
+        encoded=tensors["trellis"],
+        tensors=tensor_map,
+        matrix=matrix,
+        encoder_tile_bits=tuple(
+            bits for schedule in schedules for bits in schedule
+        ),
+        permutation=permutation.detach().cpu(),
+        proxy=float(proxy),
+        transform_seeds=seeds,
+        global_scale=float(args["g_scale"]),
+    )
+
+
+def quantize_qsrt_tile_map_candidates(
+    source: torch.Tensor,
+    hessian: torch.Tensor,
+    permutation: torch.Tensor,
+    *,
+    matrix: str,
+    maps: Mapping[str, tuple[int, ...]],
+    layer: int,
+    device: torch.device,
+    quantizer_module: ModuleType | object | None = None,
+    shared_scale_scope: object | None = None,
+    codebook: str = CODEBOOK_SQG_XOR_CHEB_T12,
+    ldlq_tf32: bool = False,
+    tailbite_context: int = 128,
+    transform_seeds: QSRTTransformSeeds | None = None,
+    g_scale_override: float | None = None,
+) -> dict[str, QSRTTileMapCandidate]:
+    """Encode arbitrary equal-byte tile maps under one frozen neuron order.
+
+    Every map covers the complete transformed matrix tile grid.  All maps are
+    encoded in one low-level batch so output signs, regularization, scale
+    search, Hadamards, and Hessian preparation are shared exactly.  The
+    returned reconstruction is restored to canonical checkpoint coordinates.
+    """
+
+    if matrix not in MATRICES:
+        raise ValueError(f"unknown expert matrix: {matrix}")
+    if not 1 <= layer <= 92:
+        raise ValueError("Kimi-K3 MoE layer must be in 1..92")
+    if device.type != "cuda" or source.device != device:
+        raise ValueError("arbitrary tile-map encoding requires a CUDA-resident source")
+    _validate_source_and_hessian(source, hessian, matrix)
+    if not maps or len(set(maps)) != len(maps):
+        raise ValueError("tile-map candidates require unique nonempty names")
+    if matrix in ("w1", "w3") and shared_scale_scope is None:
+        raise ValueError(f"{matrix} requires a shared_scale_scope")
+    permutation = permutation.to(device=device, dtype=torch.long)
+    if permutation.ndim != 1 or permutation.numel() != INTERMEDIATE_CHANNELS:
+        raise ValueError("tile-map neuron permutation has the wrong shape")
+    if not torch.equal(
+        torch.sort(permutation).values,
+        torch.arange(INTERMEDIATE_CHANNELS, device=device),
+    ):
+        raise ValueError("tile-map neuron permutation is not bijective")
+
+    if matrix == "w2":
+        weight = source.index_select(1, permutation).T.contiguous()
+        hp = permutation.to(device=hessian.device)
+        encoder_hessian = hessian.index_select(0, hp).index_select(1, hp)
+    else:
+        weight = source.index_select(0, permutation).T.contiguous()
+        encoder_hessian = hessian
+    expected_tiles = (weight.shape[0] // 16) * (weight.shape[1] // 16)
+    for name, tile_bits in maps.items():
+        if not name:
+            raise ValueError("tile-map candidate names must be nonempty")
+        if len(tile_bits) != expected_tiles or any(
+            isinstance(bits, bool) or bits not in (1, 2, 3, 4)
+            for bits in tile_bits
+        ):
+            raise ValueError(
+                f"tile-map candidate {name!r} does not cover the matrix with K1 through K4 rates"
+            )
+
+    seeds = transform_seeds or default_qsrt_transform_seeds(layer, matrix)
+    shared_h = make_shared_h(weight.shape[0], device, encoder_hessian)
+    names = tuple(maps)
+    args_group = [
+        _arbitrary_tile_quant_args(
+            maps[name],
+            matrix=matrix,
+            layer=layer,
+            device=device,
+            shared_scale_scope=shared_scale_scope,
+            codebook=codebook,
+            ldlq_tf32=ldlq_tf32,
+            tailbite_context=tailbite_context,
+            transform_seeds=seeds,
+            g_scale_override=g_scale_override,
+        )
+        for name in names
+    ]
+    module = _load_quantizer_module(codebook) if quantizer_module is None else quantizer_module
+    batch_api = getattr(module, "quantize_qsrt_batch", None)
+    if batch_api is None:
+        raise ValueError("QSRT encoder backend lacks mixed-rate batch support")
+    raw_group = batch_api(
+        [weight], [shared_h], [args_group], return_weight_q=True
+    )[0]
+    if len(raw_group) != len(names):
+        raise ValueError("QSRT tile-map batch returned the wrong candidate count")
+
+    result: dict[str, QSRTTileMapCandidate] = {}
+    finite_checks: list[torch.Tensor] = []
+    for name, raw in zip(names, raw_group, strict=True):
+        encoder_weight = raw.get("weight_q")
+        if not isinstance(encoder_weight, torch.Tensor):
+            raise ValueError("QSRT tile-map batch omitted its reconstruction")
+        reconstruction = torch.empty_like(source)
+        if matrix == "w2":
+            reconstruction[:, permutation] = encoder_weight.T
+        else:
+            reconstruction[permutation] = encoder_weight.T
+        finite_checks.append(torch.all(torch.isfinite(reconstruction)))
+        proxy = float(raw["proxy"])
+        if not math.isfinite(proxy):
+            raise ValueError(f"QSRT tile-map candidate {name!r} has a non-finite proxy")
+        result[name] = QSRTTileMapCandidate(
+            reconstruction=reconstruction,
+            regularized=decode_qsrt_regularized_weight(
+                raw["encoded"],
+                rate_axis="tile",
+                tile_bits=maps[name],
+                codebook=codebook,
+            ),
+            encoded=raw["encoded"],
+            tensors={"suh": raw["suh"], "svh": raw["svh"]},
+            matrix=matrix,
+            encoder_tile_bits=maps[name],
+            permutation=permutation,
+            proxy=proxy,
+            transform_seeds=seeds,
+            global_scale=float(raw.get("g_scale", 1.0)),
+        )
+    if not bool(torch.all(torch.stack(finite_checks)).cpu()):
+        raise ValueError("QSRT tile-map batch produced a non-finite reconstruction")
+    return result
 
 
 def quantize_qsrt_matrix_candidates_batched(

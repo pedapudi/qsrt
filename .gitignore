@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.claude/worktrees/
 
 # Local credentials and environment overrides never belong in a snapshot.
 .env
@@ -34,3 +35,4 @@ runtime-cache/
 # Local research output includes captures, profiles, and model traces and can
 # be many GiB.  Durable checkpoint payloads live outside the repository.
 out/
+cufile.log

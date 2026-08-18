@@ -529,6 +529,109 @@ coordinate system from another expert. Experts without sufficient routed
 support use the unscaled identity matrix because no local trace estimate is
 available. A layer-wide post-activation covariance is never used.
 
+### Gradient-conditioned Viterbi proposals
+
+Status: research-only and not implemented in the production encoder. This
+facility changes offline path selection only; it does not change the two-bit
+payload, reconstruction law, or serving decoder.
+
+The gradient interface is defined relative to an explicitly identified anchor
+model, not to a particular QSRT profile. Let $\widehat W_A$ be the decoded
+matrix at anchor $A$, let $L_A$ be a scalar model objective evaluated at that
+anchor, and let
+
+$$
+g_A=\left.\frac{\partial L}{\partial \widehat W}\right|_A.
+$$
+
+For a legal trellis path $q$, define its decoded displacement from the anchor
+as
+
+$$
+d(q)=\widehat W(q)-\widehat W_A.
+$$
+
+A fixed gradient supplies the linear proposal objective
+
+$$
+J_{\text{proposal}}(q)
+=J_{\text{local}}(q)+\lambda\langle g_A,d(q)\rangle.
+$$
+
+The second term is additive over reconstructed coefficients. After conversion
+to the trellis coordinate system, it can therefore be added directly to each
+Viterbi edge cost. The anchor contribution is constant across paths and may be
+omitted while finding the minimum.
+
+The capture policy is deliberately not fixed by this interface. A useful
+anchor may be a quantized checkpoint evaluated against a higher-quality
+teacher, a partially rebuilt model, or a model evaluated under a task loss. If
+the anchor and teacher are the same model and the objective is their KL
+divergence, the deterministic gradient is zero and supplies no linear term.
+
+The deterministic objective gradient is distinct from sampled score gradients
+used to estimate Fisher curvature. Around an arbitrary anchor, a candidate
+move is approximated by
+
+$$
+\Delta L
+\mathrel{\approx}
+\langle g_A,d\rangle
++\frac{1}{2}\mathrm{vec}(d)^{\mathsf T}
+F_A\mathrm{vec}(d).
+$$
+
+For a two-sided Kronecker approximation,
+
+$$
+F_A\mathrel{\approx}H_I\otimes H_O,
+$$
+
+and the quadratic term is
+
+$$
+\frac{1}{2}\mathrm{tr}
+\left(H_OdH_Id^{\mathsf T}\right).
+$$
+
+The linear term describes a repair direction conditional on the anchor's
+aggregate errors. It is not an intrinsic per-weight importance score. The
+two-sided term retains interactions that a diagonal Fisher penalty would
+discard. Viterbi may use the linear term to generate legal paths, but complete
+candidates must be rescored under the dense or two-sided objective and then
+qualified by model-level KL divergence.
+
+Gradient conversion must preserve the directional derivative through every
+permutation, sign transform, Hadamard transform, scale, and matrix-orientation
+change. The required closure is
+
+$$
+\langle g_{\text{source}},\delta W_{\text{source}}\rangle
+=
+\langle g_{\text{trellis}},\delta W_{\text{trellis}}\rangle.
+$$
+
+This must be verified on decoded candidate displacements before a gradient can
+affect path selection. Transforming a gradient as though it were a weight is
+valid only for an orthonormal map with no intervening scale; the general
+implementation must apply the adjoint of the complete reconstruction map.
+
+A reusable gradient artifact must identify:
+
+- the anchor checkpoint and decoded payload hashes;
+- the teacher, scalar objective, corpus, tokens, and reduction convention;
+- the semantic activation point and routing-weight convention;
+- the matrix name, orientation, transform plan, scales, and codebook identity;
+- whether it contains a deterministic objective gradient or Fisher samples;
+  and
+- the numerical dtype, normalization, support, and finite-difference closure.
+
+Gradient-guided path selection must retain the ordinary canonical-target path
+as a fallback, enforce a bounded local-distortion increase, and validate the
+selected payload on data not used to construct the gradient. A materially
+changed anchor requires a fresh gradient before further directed updates.
+Neither gradient nor curvature artifacts are serialized into the checkpoint.
+
 ## Whole-expert selection
 
 The final candidate score reconstructs all three matrices, evaluates the

@@ -33,6 +33,7 @@ from qsrt.pack.qsrt_candidates import (
     _defer_functional_row_sse,
     _finish_deferred_functional_sse,
     _folded_intermediate_conditioning,
+    _functional_down_targets_by_r13,
     _prepare_deferred_functional_rows,
     _quantize_conditional_down_grid,
 )
@@ -430,8 +431,9 @@ def test_conditional_down_grid_flattens_r13_times_r2(monkeypatch) -> None:
     )
     modes = (SimpleNamespace(mode_id=0), SimpleNamespace(mode_id=1))
     hessians = [{0: torch.eye(2), 1: 2.0 * torch.eye(2)}]
+    targets = [{0: torch.ones(2, 2), 1: 3.0 * torch.ones(2, 2)}]
     result = _quantize_conditional_down_grid(
-        [torch.ones(2, 2)],
+        targets,
         [torch.arange(2)],
         [modes],
         hessians,
@@ -447,11 +449,54 @@ def test_conditional_down_grid_flattens_r13_times_r2(monkeypatch) -> None:
 
     assert len(calls) == 1
     assert len(calls[0][0]) == 2  # one flattened encode group per r13
+    assert calls[0][0][0]["w2"] is targets[0][0]
+    assert calls[0][0][1]["w2"] is targets[0][1]
     assert calls[0][3][0]["w2"] is hessians[0][0]
     assert calls[0][3][1]["w2"] is hessians[0][1]
     assert set(result[0]) == {0, 1}
     assert set(result[0][0]) == {0, 1}
     assert set(result[0][1]) == {0, 1}
+
+
+def test_functional_down_target_improves_decoded_upstream_objective() -> None:
+    generator = torch.Generator().manual_seed(7)
+    source_middle = torch.randn(23, 5, generator=generator)
+    candidate_middle = source_middle * 1.25
+    source_w2 = torch.randn(4, 5, generator=generator)
+    gates = torch.linspace(0.1, 0.9, source_middle.shape[0])
+    mask = torch.ones(source_middle.shape[0], dtype=torch.bool)
+
+    targets, evidence = _functional_down_targets_by_r13(
+        source_w2,
+        source_middle,
+        {4: candidate_middle},
+        gates,
+        mask,
+        regularization_ratio=1e-5,
+    )
+
+    weights = gates.square()[:, None]
+    reference = source_middle @ source_w2.T
+    baseline_sse = ((candidate_middle @ source_w2.T - reference).square() * weights).sum()
+    refit_sse = ((candidate_middle @ targets[4].T - reference).square() * weights).sum()
+    assert float(refit_sse) < 0.01 * float(baseline_sse)
+    assert evidence["policy"] == "candidate_hidden_regularized_functional_refit"
+    assert evidence["by_r13"]["R4"]["rows"] == source_middle.shape[0]
+
+
+def test_functional_down_target_uses_source_when_no_rows_are_available() -> None:
+    source_w2 = torch.randn(3, 2)
+    targets, evidence = _functional_down_targets_by_r13(
+        source_w2,
+        torch.empty(0, 2),
+        {4: torch.empty(0, 2)},
+        torch.empty(0),
+        torch.empty(0, dtype=torch.bool),
+        regularization_ratio=1e-2,
+    )
+
+    assert targets[4] is source_w2
+    assert evidence["policy"] == "source_fallback_no_routed_rows"
 
 
 def test_phase1_mode_requires_independent_confirmation_evidence() -> None:

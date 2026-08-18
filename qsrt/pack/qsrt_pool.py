@@ -45,9 +45,11 @@ from qsrt.qsrt_storage import ATOM_SCALE_BYTES, ATOMS_PER_EXPERT, QSRTLayerLayou
 from qsrt.qsrt_coupled_plan import (
     CoupledDrawSelection,
     CoupledRotationPlan,
+    POOLED_ALL_ROW_SELECTION,
     PRODUCTION_SELECTION,
     select_coupled_draw,
 )
+from qsrt.pooled_selection import PooledCandidateScore, select_pooled_candidate
 from qsrt.pack.qsrt_candidates import (
     CANDIDATE_POOL_KIND,
     CANDIDATE_POOL_SCHEMA_VERSION,
@@ -67,6 +69,8 @@ UNCERTIFIED_ALLOCATION_OPTIMALITY = "uncertified_greedy_alignment_repair"
 CANDIDATE_POOL_COMPLETION_KIND = "qsrt_kimi_k3_qsrt_candidate_completion"
 CANDIDATE_POOL_COMPLETION_SCHEMA_VERSION = 2
 CANDIDATE_POOL_COMPLETION_FILENAME = "qsrt-candidate-completion.json"
+POOLED_FIXED_PROFILE_METRICS_KIND = "qsrt_pooled_routed_fixed_profile_metrics"
+POOLED_FIXED_PROFILE_METRICS_SCHEMA_VERSION = 1
 
 
 def _is_fixed_high_rate(mode_ids: tuple[int, ...]) -> bool:
@@ -129,6 +133,30 @@ def _selection_contract(mode_ids: tuple[int, ...]) -> dict[str, object]:
     }
 
 
+def pooled_fixed_profile_selection_contract(
+    mode_ids: tuple[int, ...],
+) -> dict[str, object]:
+    """Describe fixed-profile selection over one pooled routed population."""
+
+    fixed_mode = _fixed_mode(mode_ids)
+    if fixed_mode is None:
+        raise ValueError("pooled fixed-profile metrics require one fixed mode")
+    return {
+        "format_grid": f"fixed_{fixed_mode.name.lower()}",
+        "shared_r": True,
+        "candidate_construction_population": "all_captured_natural_routes",
+        "candidate_selection_population": "all_captured_natural_routes",
+        "candidate_selection_metric": OFFICIAL_SOURCE_DAMAGE_METRIC,
+        "candidate_selection_rule": "minimum_serialized_pooled_routed_sse",
+        "route_weighting": "applied_gate_squared_once",
+        "external_validation_used": False,
+        "metric_contract": {
+            "kind": POOLED_FIXED_PROFILE_METRICS_KIND,
+            "schema_version": POOLED_FIXED_PROFILE_METRICS_SCHEMA_VERSION,
+        },
+    }
+
+
 @dataclass(frozen=True)
 class QSRTCandidatePool:
     root: Path
@@ -185,6 +213,11 @@ def _sha256(path: Path) -> str:
         while chunk := handle.read(8 << 20):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _json_sha256(value: object) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _file_identity(path: Path) -> dict[str, int | str]:
@@ -656,6 +689,136 @@ def validate_layer_metrics(
     }
 
 
+def validate_pooled_fixed_profile_metrics(
+    metrics: Mapping[str, torch.Tensor],
+    *,
+    mode_ids: tuple[int, ...],
+    expert_ids: tuple[int, ...] = tuple(range(EXPERTS_PER_LAYER)),
+    expected_coupled_draws: tuple[int, ...] | None = None,
+) -> dict[str, torch.Tensor]:
+    """Validate all-row routed metrics for one immutable fixed-rate profile."""
+
+    fixed_mode = _fixed_mode(mode_ids)
+    if fixed_mode is None:
+        raise ValueError("pooled fixed-profile metrics require one fixed mode")
+    expected_names = {
+        "expert_ids",
+        "mode_ids",
+        "selected_r13",
+        "selected_r2",
+        "proposed_r13",
+        "proposed_r2",
+        "format_evaluated",
+        "pooled_baseline_sse",
+        "pooled_replacement_sse",
+        "pooled_selected_sse",
+        "pooled_source_energy",
+        OFFICIAL_SOURCE_DAMAGE_METRIC,
+        "routed_occurrences",
+        "effective_sample_size",
+        "selected_functional_refit",
+        "coupled_draw_selected",
+    }
+    if set(metrics) != expected_names:
+        raise ValueError(
+            "pooled candidate metric inventory drifted: "
+            f"missing={sorted(expected_names - set(metrics))}, "
+            f"extra={sorted(set(metrics) - expected_names)}"
+        )
+    experts = len(expert_ids)
+    actual_experts = _require_tensor(
+        metrics, "expert_ids", shape=(experts,), dtype=torch.int16
+    )
+    if actual_experts.tolist() != list(expert_ids):
+        raise ValueError("pooled candidate expert IDs are not in canonical order")
+    actual_modes = _require_tensor(
+        metrics, "mode_ids", shape=(1,), dtype=torch.uint8
+    )
+    if actual_modes.tolist() != [fixed_mode.mode_id]:
+        raise ValueError("pooled candidate mode ID does not match the manifest")
+
+    expected_mode = torch.full((experts,), fixed_mode.mode_id, dtype=torch.uint8)
+    rates: dict[str, torch.Tensor] = {}
+    for name in ("selected_r13", "selected_r2", "proposed_r13", "proposed_r2"):
+        value = _require_tensor(metrics, name, shape=(experts,), dtype=torch.uint8)
+        if not torch.equal(value, expected_mode):
+            raise ValueError(f"pooled fixed profile has invalid {name}")
+        rates[name] = value
+    evaluated = _require_tensor(
+        metrics, "format_evaluated", shape=(experts, 1, 1), dtype=torch.bool
+    )
+    if not bool(torch.all(evaluated)):
+        raise ValueError("pooled fixed profile was not evaluated for every expert")
+
+    baseline = _require_tensor(
+        metrics, "pooled_baseline_sse", shape=(experts,), dtype=torch.float64
+    )
+    replacement = _require_tensor(
+        metrics, "pooled_replacement_sse", shape=(experts,), dtype=torch.float64
+    )
+    selected = _require_tensor(
+        metrics, "pooled_selected_sse", shape=(experts,), dtype=torch.float64
+    )
+    source_energy = _require_tensor(
+        metrics, "pooled_source_energy", shape=(experts,), dtype=torch.float64
+    )
+    damage = _require_tensor(
+        metrics, OFFICIAL_SOURCE_DAMAGE_METRIC, shape=(experts,), dtype=torch.float64
+    )
+    occurrences = _require_tensor(
+        metrics, "routed_occurrences", shape=(experts,), dtype=torch.int64
+    )
+    effective_samples = _require_tensor(
+        metrics, "effective_sample_size", shape=(experts,), dtype=torch.float64
+    )
+    selected_refit = _require_tensor(
+        metrics, "selected_functional_refit", shape=(experts,), dtype=torch.bool
+    )
+    coupled_draws = _require_tensor(
+        metrics, "coupled_draw_selected", shape=(experts,), dtype=torch.uint8
+    )
+
+    for name, values in (
+        ("pooled_baseline_sse", baseline),
+        ("pooled_replacement_sse", replacement),
+        ("pooled_selected_sse", selected),
+        ("pooled_source_energy", source_energy),
+        (OFFICIAL_SOURCE_DAMAGE_METRIC, damage),
+        ("effective_sample_size", effective_samples),
+    ):
+        if not bool(torch.all(torch.isfinite(values))) or bool(torch.any(values < 0)):
+            raise ValueError(f"pooled candidate metric {name} must be finite and non-negative")
+    if bool(torch.any(occurrences <= 0)) or bool(torch.any(effective_samples <= 0)):
+        raise ValueError("pooled candidate support must be positive")
+    if bool(torch.any(effective_samples > occurrences.to(torch.float64))):
+        raise ValueError("pooled effective sample size exceeds routed occurrences")
+    if bool(torch.any(source_energy <= 0)):
+        raise ValueError("pooled source energy must be positive")
+
+    expected_refit = replacement < baseline
+    expected_selected = torch.minimum(baseline, replacement)
+    if not torch.equal(selected_refit, expected_refit):
+        raise ValueError("pooled refit selection disagrees with exact SSE")
+    if not torch.equal(selected, expected_selected):
+        raise ValueError("pooled selected SSE is not the exact minimum")
+    if not torch.equal(damage, selected):
+        raise ValueError(
+            f"{OFFICIAL_SOURCE_DAMAGE_METRIC} does not equal pooled selected SSE"
+        )
+    if expected_coupled_draws is not None:
+        if len(expected_coupled_draws) != experts or coupled_draws.tolist() != list(
+            expected_coupled_draws
+        ):
+            raise ValueError("pooled coupled draws disagree with the model plan")
+
+    return {
+        "damage": damage,
+        **rates,
+        "evaluated_format_count": evaluated.sum(dim=(1, 2)),
+        "coupled_draw_selected": coupled_draws,
+    }
+
+
 def validate_coupled_rotation_metrics(
     metrics: Mapping[str, torch.Tensor],
     contract: Mapping[str, object] | None,
@@ -677,15 +840,26 @@ def validate_coupled_rotation_metrics(
         "coupled_draw_selected",
         "coupled_draw_confirmation_improvement",
     }
+    pooled_metric_names = {
+        "coupled_draw_pooled_sse",
+        "coupled_draw_pooled_source_energy",
+        "coupled_draw_pooled_occurrences",
+    }
     present = metric_names.intersection(metrics)
+    pooled_present = pooled_metric_names.intersection(metrics)
     if contract is None:
-        if present:
+        if present or pooled_present:
             raise ValueError("non-coupled candidate pool carries coupled draw metrics")
         return None
     if present != metric_names:
         raise ValueError("coupled candidate metrics are incomplete")
     if not isinstance(contract, Mapping):
         raise ValueError("coupled rotation contract must be an object")
+    pooled_selection = contract.get("selection") == POOLED_ALL_ROW_SELECTION
+    if pooled_selection and pooled_present != pooled_metric_names:
+        raise ValueError("pooled coupled candidate metrics are incomplete")
+    if not pooled_selection and pooled_present:
+        raise ValueError("non-pooled coupled candidate carries pooled metrics")
 
     experts = len(expert_ids)
     evaluated = _require_tensor(
@@ -712,6 +886,36 @@ def validate_coupled_rotation_metrics(
         shape=(experts,),
         dtype=torch.float64,
     )
+    pooled_sse = (
+        _require_tensor(
+            metrics,
+            "coupled_draw_pooled_sse",
+            shape=(experts, 8),
+            dtype=torch.float64,
+        )
+        if pooled_selection
+        else None
+    )
+    pooled_source_energy = (
+        _require_tensor(
+            metrics,
+            "coupled_draw_pooled_source_energy",
+            shape=(experts,),
+            dtype=torch.float64,
+        )
+        if pooled_selection
+        else None
+    )
+    pooled_occurrences = (
+        _require_tensor(
+            metrics,
+            "coupled_draw_pooled_occurrences",
+            shape=(experts,),
+            dtype=torch.int64,
+        )
+        if pooled_selection
+        else None
+    )
     fit_counts = metrics["fit_counts"]
     confirmation_counts = metrics["confirmation_counts"]
     format_fit_sse = metrics["fit_sse"]
@@ -724,7 +928,10 @@ def validate_coupled_rotation_metrics(
         expected_draws = tuple((layer_draws[expert],) for expert in expert_ids)
         dynamic_draws: tuple[int, ...] | None = None
     elif source == "candidate_pool_selection":
-        if contract.get("selection") != PRODUCTION_SELECTION:
+        if contract.get("selection") not in (
+            PRODUCTION_SELECTION,
+            POOLED_ALL_ROW_SELECTION,
+        ):
             raise ValueError("coupled draw selection policy is unsupported")
         raw_draws = contract.get("draw_candidates")
         if not isinstance(raw_draws, list) or any(
@@ -773,7 +980,47 @@ def validate_coupled_rotation_metrics(
         confirmation_map = {
             draw: float(confirmation_sse[row, draw]) for draw in draws
         }
-        if dynamic_draws is not None:
+        pooled_map: dict[int, float] | None = None
+        if dynamic_draws is not None and pooled_selection:
+            assert (
+                pooled_sse is not None
+                and pooled_source_energy is not None
+                and pooled_occurrences is not None
+            )
+            if (
+                not bool(torch.all(torch.isfinite(pooled_sse[row, expected_mask])))
+                or bool(torch.any(pooled_sse[row, expected_mask] < 0))
+                or not bool(torch.all(torch.isnan(pooled_sse[row, ~expected_mask])))
+                or not math.isfinite(float(pooled_source_energy[row]))
+                or float(pooled_source_energy[row]) <= 0
+                or int(pooled_occurrences[row]) <= 0
+            ):
+                raise ValueError(f"expert {expert} pooled coupled score is invalid")
+            pooled_map = {
+                draw: float(pooled_sse[row, draw]) for draw in dynamic_draws
+            }
+            pooled_decision = select_pooled_candidate(
+                PooledCandidateScore(
+                    name=str(draw),
+                    sse=pooled_map[draw],
+                    source_energy=float(pooled_source_energy[row]),
+                    metadata_bytes=0,
+                )
+                for draw in dynamic_draws
+            )
+            pooled_draw = int(pooled_decision.selected.name)
+            decision = CoupledDrawSelection(
+                evaluated_draws=dynamic_draws,
+                proposed_draw=pooled_draw,
+                selected_draw=pooled_draw,
+                fit_documents=fit_documents,
+                confirmation_documents=confirmation_documents,
+                confirmation_relative_improvement=None,
+                accepted=pooled_draw != 0,
+                reason="pooled_all_routed_rows_minimum_sse",
+            )
+            expected_improvement = None
+        elif dynamic_draws is not None:
             decision = select_coupled_draw(
                 dynamic_draws,
                 fit_map,
@@ -826,6 +1073,19 @@ def validate_coupled_rotation_metrics(
                 "confirmation_post_projection_sse": {
                     str(draw): confirmation_map[draw] for draw in draws
                 },
+                **(
+                    {
+                        "pooled_post_projection_sse": {
+                            str(draw): pooled_map[draw] for draw in draws
+                        },
+                        "pooled_source_energy": float(pooled_source_energy[row]),
+                        "pooled_routed_occurrences": int(
+                            pooled_occurrences[row]
+                        ),
+                    }
+                    if pooled_map is not None
+                    else {}
+                ),
             }
             if evidence != expected_evidence:
                 raise ValueError(f"expert {expert} coupled JSON evidence drifted")
@@ -1062,6 +1322,25 @@ def _validate_payload_header(
             f"layer {layer} payload components do not close; "
             f"missing={missing}, extra={extra}"
         )
+
+
+def validate_candidate_layer_payload(
+    path: str | Path,
+    *,
+    layer: int,
+    codebook: str,
+    tailbite_context: int,
+    mode_ids: tuple[int, ...],
+) -> None:
+    """Validate one canonical all-expert candidate payload."""
+
+    _validate_payload_header(
+        Path(path),
+        layer,
+        codebook=codebook,
+        tailbite_context=tailbite_context,
+        trellis_bytes=_matrix_trellis_bytes(mode_ids),
+    )
 
 
 def validate_selection_ledger_evidence(
@@ -1311,6 +1590,56 @@ def validate_selection_ledger_evidence(
     return logical_trellis_schema
 
 
+def validate_pooled_fixed_profile_ledger_evidence(
+    ledger: Mapping[str, object],
+    metrics: Mapping[str, torch.Tensor],
+    *,
+    expert_ids: tuple[int, ...] = tuple(range(EXPERTS_PER_LAYER)),
+    logical_trellis_schema: str = QSRT_SCHEMA,
+) -> str:
+    """Bind pooled fixed-profile JSON evidence to its tensor sidecar."""
+
+    if logical_trellis_schema not in LOGICAL_CANDIDATE_SCHEMAS:
+        raise ValueError("pooled selection logical trellis schema is unsupported")
+    if ledger.get("logical_trellis_schema") != logical_trellis_schema:
+        raise ValueError("pooled selection logical trellis schema drifted")
+    selections = ledger.get("selections")
+    expected_keys = {str(expert) for expert in expert_ids}
+    if not isinstance(selections, dict) or set(selections) != expected_keys:
+        raise ValueError("pooled selection evidence does not cover exactly the experts")
+
+    fields = {
+        "baseline_sse": metrics["pooled_baseline_sse"],
+        "replacement_sse": metrics["pooled_replacement_sse"],
+        "selected_sse": metrics["pooled_selected_sse"],
+        "source_energy": metrics["pooled_source_energy"],
+        "effective_sample_size": metrics["effective_sample_size"],
+    }
+    occurrences = metrics["routed_occurrences"]
+    selected_refit = metrics["selected_functional_refit"]
+    draws = metrics["coupled_draw_selected"]
+    for row, expert in enumerate(expert_ids):
+        evidence = selections[str(expert)]
+        if not isinstance(evidence, dict):
+            raise ValueError(f"pooled evidence for expert {expert} is malformed")
+        if evidence.get("selected_down_target") != (
+            "functional_ridge" if bool(selected_refit[row]) else "source_pool"
+        ):
+            raise ValueError(f"pooled expert {expert} down-target decision drifted")
+        if evidence.get("routed_occurrences") != int(occurrences[row]):
+            raise ValueError(f"pooled expert {expert} routed support drifted")
+        if evidence.get("coupled_draw") != int(draws[row]):
+            raise ValueError(f"pooled expert {expert} coupled draw drifted")
+        for name, values in fields.items():
+            actual = evidence.get(name)
+            expected = float(values[row])
+            if isinstance(actual, bool) or not isinstance(actual, (int, float)) or not math.isclose(
+                float(actual), expected, rel_tol=1e-12, abs_tol=1e-15
+            ):
+                raise ValueError(f"pooled expert {expert} {name} drifted")
+    return logical_trellis_schema
+
+
 def _validate_payload_component(
     name: str,
     entry: object,
@@ -1456,60 +1785,108 @@ def load_qsrt_candidate_pool(
             raise ValueError(f"layer {layer} ledger is not a canonical all-expert pool")
         if ledger.get("codebook") != codebook:
             raise ValueError(f"layer {layer} codebook drifted")
-        if ledger.get("coupled_rotation") != coupled_rotation_contract:
-            raise ValueError(f"layer {layer} coupled rotation contract drifted")
         if ledger.get("tailbite_context") != tailbite_context:
             raise ValueError(f"layer {layer} tailbite context drifted")
         contract = ledger.get("selection_contract", {})
         if tuple(contract.get("mode_ids", ())) != mode_ids:
             raise ValueError(f"layer {layer} selection mode table drifted")
-        expected_selection_contract = _selection_contract(mode_ids)
+        metric_contract = contract.get("metric_contract")
+        pooled_fixed_profile = metric_contract == {
+            "kind": POOLED_FIXED_PROFILE_METRICS_KIND,
+            "schema_version": POOLED_FIXED_PROFILE_METRICS_SCHEMA_VERSION,
+        }
+        expected_layer_rotation = (
+            {
+                "source": "model_rotation_plan",
+                "plan_sha256": _json_sha256(coupled_rotation_contract.get("plan")),
+            }
+            if pooled_fixed_profile
+            and isinstance(coupled_rotation_contract, Mapping)
+            and coupled_rotation_contract.get("source") == "model_rotation_plan"
+            else coupled_rotation_contract
+        )
+        if ledger.get("coupled_rotation") != expected_layer_rotation:
+            raise ValueError(f"layer {layer} coupled rotation contract drifted")
+        expected_selection_contract = (
+            pooled_fixed_profile_selection_contract(mode_ids)
+            if pooled_fixed_profile
+            else _selection_contract(mode_ids)
+        )
         for name, expected in expected_selection_contract.items():
             if contract.get(name) != expected:
                 raise ValueError(
                     f"layer {layer} selection contract {name} drifted"
                 )
-        fit_documents = int(contract.get("fit_documents", -1))
-        confirmation_documents = int(contract.get("confirmation_documents", -1))
-        if min(fit_documents, confirmation_documents) < 1:
-            raise ValueError(f"layer {layer} has invalid document partitions")
-        min_fit_documents = int(contract.get("min_fit_documents", -1))
-        min_confirmation_documents = int(
-            contract.get("min_confirmation_documents", -1)
-        )
-        minimum_improvement = float(
-            contract.get("minimum_improvement", float("nan"))
-        )
         damage_contract = ledger.get("damage_contract", {})
         if damage_contract.get("metric") != OFFICIAL_SOURCE_DAMAGE_METRIC:
             raise ValueError(f"layer {layer} damage contract drifted")
 
         metrics = load_file(str(metrics_path), device="cpu")
-        validated = validate_layer_metrics(
-            metrics,
-            mode_ids=mode_ids,
-            fit_documents=fit_documents,
-            confirmation_documents=confirmation_documents,
-            min_fit_documents=min_fit_documents,
-            min_confirmation_documents=min_confirmation_documents,
-            minimum_improvement=minimum_improvement,
-        )
-        coupled_validated = validate_coupled_rotation_metrics(
-            metrics,
-            coupled_rotation_contract,
-            layer=layer,
-            expert_ids=tuple(range(C.NUM_EXPERTS)),
-            min_fit_documents=min_fit_documents,
-            min_confirmation_documents=min_confirmation_documents,
-            minimum_improvement=minimum_improvement,
-            ledger=ledger,
-        )
-        layer_trellis_schema = validate_selection_ledger_evidence(
-            ledger,
-            metrics,
-            mode_ids=mode_ids,
-            logical_trellis_schema=str(declared_trellis_schema),
-        )
+        if pooled_fixed_profile:
+            if not isinstance(coupled_rotation_contract, Mapping) or coupled_rotation_contract.get(
+                "source"
+            ) != "model_rotation_plan":
+                raise ValueError(
+                    f"layer {layer} pooled fixed profile requires a model rotation plan"
+                )
+            rotation_plan = CoupledRotationPlan.from_json(
+                coupled_rotation_contract.get("plan")
+            )
+            expected_draws = rotation_plan.for_layer(layer)
+            validated = validate_pooled_fixed_profile_metrics(
+                metrics,
+                mode_ids=mode_ids,
+                expected_coupled_draws=expected_draws,
+            )
+            coupled_validated = {
+                "selected": validated["coupled_draw_selected"],
+                "proposed": validated["coupled_draw_selected"],
+                "evaluated_count": torch.ones(C.NUM_EXPERTS, dtype=torch.int64),
+            }
+            layer_trellis_schema = validate_pooled_fixed_profile_ledger_evidence(
+                ledger,
+                metrics,
+                logical_trellis_schema=str(declared_trellis_schema),
+            )
+        else:
+            fit_documents = int(contract.get("fit_documents", -1))
+            confirmation_documents = int(
+                contract.get("confirmation_documents", -1)
+            )
+            if min(fit_documents, confirmation_documents) < 1:
+                raise ValueError(f"layer {layer} has invalid document partitions")
+            min_fit_documents = int(contract.get("min_fit_documents", -1))
+            min_confirmation_documents = int(
+                contract.get("min_confirmation_documents", -1)
+            )
+            minimum_improvement = float(
+                contract.get("minimum_improvement", float("nan"))
+            )
+            validated = validate_layer_metrics(
+                metrics,
+                mode_ids=mode_ids,
+                fit_documents=fit_documents,
+                confirmation_documents=confirmation_documents,
+                min_fit_documents=min_fit_documents,
+                min_confirmation_documents=min_confirmation_documents,
+                minimum_improvement=minimum_improvement,
+            )
+            coupled_validated = validate_coupled_rotation_metrics(
+                metrics,
+                coupled_rotation_contract,
+                layer=layer,
+                expert_ids=tuple(range(C.NUM_EXPERTS)),
+                min_fit_documents=min_fit_documents,
+                min_confirmation_documents=min_confirmation_documents,
+                minimum_improvement=minimum_improvement,
+                ledger=ledger,
+            )
+            layer_trellis_schema = validate_selection_ledger_evidence(
+                ledger,
+                metrics,
+                mode_ids=mode_ids,
+                logical_trellis_schema=str(declared_trellis_schema),
+            )
         if trellis_schema is None:
             trellis_schema = layer_trellis_schema
         elif layer_trellis_schema != trellis_schema:

@@ -29,6 +29,7 @@ from qsrt.sqg_e4m3 import (
 
 _SQG_XOR_CHEB_T12_SHA256 = {
     "t12": "cca11fe5744c9c93a34f4217f342fbc0f74ecc8a007c076582424a505fc9da5e",
+    1: "12d404e5a107582a8b4e38f80ac51117e8519c65e8b18f59f463aa1f8442c5ee",
     2: "62027916386245a84c86156a0a08b6cf07e41548871af0e56fb40780558f6293",
     3: "afe7b3633e7d243b00b379b18ec4dca573722b3727cafef47fcb6470d7e7e6c9",
     4: "5a9620f0c4d8f0a60d0b6fbea921dcecbd193e6febf31043aaa6403c20389c2f",
@@ -48,7 +49,7 @@ def test_primary_sqg_xor_cheb_t12_matches_runtime_contract() -> None:
     assert _sha256(table) == _SQG_XOR_CHEB_T12_SHA256["t12"]
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_primary_sqg_xor_cheb_t12_graph_and_labels_match_runtime_contract(
     bits: int,
 ) -> None:
@@ -69,7 +70,7 @@ def test_primary_sqg_xor_cheb_t12_graph_and_labels_match_runtime_contract(
     assert _sha256(labels) == _SQG_XOR_CHEB_T12_SHA256[bits]
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_sqg_preprojection_mapping_is_a_permutation(bits: int) -> None:
     ranks = sqg_rank_permutation(bits)
     assert ranks.dtype == torch.int64
@@ -77,7 +78,7 @@ def test_sqg_preprojection_mapping_is_a_permutation(bits: int) -> None:
     assert torch.equal(torch.sort(ranks).values, torch.arange(1 << 16))
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_sqg_codebook_round_trips_exact_e4m3(bits: int) -> None:
     raw = sqg_e4m3_bytes(bits, "normal")
     codebook = sqg_e4m3_codebook(bits, "normal")
@@ -88,7 +89,7 @@ def test_sqg_codebook_round_trips_exact_e4m3(bits: int) -> None:
     assert bool(torch.isfinite(codebook).all())
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_sqg_each_state_spans_all_coarse_strata(bits: int) -> None:
     ranks = sqg_rank_permutation(bits)
     width = 16 - bits
@@ -97,7 +98,7 @@ def test_sqg_each_state_spans_all_coarse_strata(bits: int) -> None:
     assert torch.equal(torch.sort(strata, dim=1).values, expected)
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_shared_rank_lut_preserves_one_graph_for_every_rate(bits: int) -> None:
     rank_lut = torch.arange(1 << 16, dtype=torch.int64).remainder(126).to(torch.uint8)
     raw = sqg_e4m3_bytes_from_rank_lut(bits, rank_lut)
@@ -118,7 +119,7 @@ def test_shared_rank_lut_rejects_nonfinite_e4m3() -> None:
         sqg_e4m3_bytes_from_rank_lut(2, rank_lut)
 
 
-@pytest.mark.parametrize("bits", (2, 3, 4, 5, 6))
+@pytest.mark.parametrize("bits", (1, 2, 3, 4, 5, 6))
 def test_sqg_cheb_normal_named_codebook_uses_exact_shared_rank_law(bits: int) -> None:
     expected = sqg_cheb_normal_rank_e4m3_bytes().index_select(
         0, sqg_rank_permutation(bits)
@@ -150,7 +151,7 @@ def test_reference_decoder_applies_rate_specific_sqg_tables(rate_axis: str) -> N
     states = torch.arange(3 * 3 * 256, dtype=torch.int32).to(torch.int16).reshape(
         3, 3, 256
     )
-    tile_bits = (2, 3, 4)
+    tile_bits = (1, 2, 3)
     decoded = decode_qsrt_regularized_weight(
         states,
         rate_axis=rate_axis,
@@ -176,7 +177,7 @@ def test_reference_decoder_applies_two_dimensional_tile_rate_map() -> None:
     states = torch.arange(3 * 3 * 256, dtype=torch.int32).to(torch.int16).reshape(
         3, 3, 256
     )
-    tile_bits = (2, 3, 4, 4, 2, 3, 3, 4, 2)
+    tile_bits = (1, 2, 3, 4, 1, 3, 2, 4, 1)
     decoded = decode_qsrt_regularized_weight(
         states,
         rate_axis="tile",

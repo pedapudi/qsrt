@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -167,11 +168,49 @@ def test_sqg_luts_are_transposed_by_predecessor_for_vector_loads(
             .reshape(-1)
         )
         assert torch.equal(actual, expected)
-        assert calls[-1][6:] == (bits, 128)
+        assert calls[-1][6:8] == (bits, 128)
+        expected_abs_max = (
+            raw.view(torch.float8_e4m3fn).to(torch.float32).abs().amax()
+        )
+        assert math.isnan(calls[-1][8]) == bool(expected_abs_max.isnan())
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
-@pytest.mark.parametrize("bits", [2, 3, 4])
+@pytest.mark.parametrize("tailbite_context", [1, 32, 128])
+def test_k2_sqg_quantizer_closes_trellis_and_decodes_states(
+    tailbite_context: int,
+) -> None:
+    module = SimpleNamespace(quantize_tiles=lambda *_args: "upstream")
+    install_sqg_quantizer(module)
+    generator = torch.Generator(device="cpu").manual_seed(7)
+    tiles = torch.randn((64, 256), generator=generator, dtype=torch.float32)
+    tiles[3] *= 100.0
+    tiles[11] = 0.0
+    tiles[17] *= -40.0
+    lut = sqg_xor_cheb_t12_bytes(2)
+
+    output, states = module.quantize_tiles(
+        tiles.cuda(),
+        {
+            "K": 2,
+            "devices": ["cuda:0"],
+            "sqg_e4m3_lut": lut,
+            "tailbite_context": tailbite_context,
+        },
+    )
+
+    edges = states.to(torch.int64) & 0x3
+    expected = reconstruct_trellis_states(edges, 2)
+    assert torch.equal(states, expected)
+    decoded = (
+        lut.view(torch.float8_e4m3fn)
+        .to(torch.float32)[states.cpu().to(torch.int64) & 0xFFFF]
+    )
+    assert torch.equal(decoded, output.cpu())
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("bits", [1, 2, 3, 4])
 def test_sqg_quantizer_keeps_saturated_cost_paths_closed(bits: int) -> None:
     module = SimpleNamespace(quantize_tiles=lambda *_args: "upstream")
     install_sqg_quantizer(module)

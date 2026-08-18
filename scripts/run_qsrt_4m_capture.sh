@@ -1,84 +1,118 @@
 #!/usr/bin/env bash
-# Plan, launch, inspect, or stop the source-pinned 4M pure-QSRT capture.
+# Capture every routed row from a fixed corpus.
 set -euo pipefail
 
 QSRT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 VLLM_ROOT="${VLLM_ROOT:-/home/luke/projects/vllm}"
-CORPUS_PYTHON="${QSRT_4M_CORPUS_PYTHON:-${VLLM_ROOT}/.venv/bin/python}"
-TEACHER="${QSRT_4M_TEACHER:-/models/Kimi-K3-QSRT-SQG-XOR-CHEB-T12-PURE-v1-model}"
-CAPTURE="${QSRT_4M_CAPTURE:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.kqcapture}"
-REPORT="${QSRT_4M_REPORT:-${QSRT_ROOT}/out/k3-denseh-broad-v7-4m-train-corpus.json}"
-INTEGRITY="${QSRT_4M_INTEGRITY:-${QSRT_ROOT}/out/k3-denseh-broad-v7-4m-integrity.json}"
-FINALIZE="${QSRT_4M_FINALIZE:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.finalize}"
-SERVER_LOG="${QSRT_4M_SERVER_LOG:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.server.log}"
-CORPUS_LOG="${QSRT_4M_CORPUS_LOG:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.corpus.log}"
-SERVER_PID_FILE="${QSRT_4M_SERVER_PID_FILE:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.server.pid}"
-CORPUS_PID_FILE="${QSRT_4M_CORPUS_PID_FILE:-/data/kquant/captures/k3-denseh-broad-v7-4m-train.corpus.pid}"
+PYTHON="${QSRT_CAPTURE_PYTHON:-${VLLM_ROOT}/.venv/bin/python}"
+RESIDENT="${QSRT_CAPTURE_RESIDENT:-/data/releases/Kimi-K3-QSRT-3p08-COUPLED-HADAMARD-DRAWS-0-7-v1}"
+SOURCE_ID="coupled_qsrt_k3x22_k4x2"
+RUN_ID="${QSRT_CAPTURE_RUN_ID:-k3-all-routed-4m-v1}"
+TARGET_TOKENS="${QSRT_CAPTURE_TARGET_TOKENS:-4000000}"
+CAPTURE="${QSRT_CAPTURE_ROOT:-/data/datasets/kquant/captures/${RUN_ID}.kqrows}"
+REPORT="${QSRT_CAPTURE_REPORT:-/data/datasets/kquant/captures/${RUN_ID}-corpus.json}"
+FINALIZE="${QSRT_CAPTURE_FINALIZE:-/data/datasets/kquant/captures/${RUN_ID}.finalize}"
+SERVER_LOG="${QSRT_CAPTURE_SERVER_LOG:-/data/datasets/kquant/captures/${RUN_ID}.server.log}"
+CORPUS_LOG="${QSRT_CAPTURE_CORPUS_LOG:-/data/datasets/kquant/captures/${RUN_ID}.corpus.log}"
+SERVER_PID_FILE="${QSRT_CAPTURE_SERVER_PID_FILE:-/data/datasets/kquant/captures/${RUN_ID}.server.pid}"
+CORPUS_PID_FILE="${QSRT_CAPTURE_CORPUS_PID_FILE:-/data/datasets/kquant/captures/${RUN_ID}.corpus.pid}"
 
 corpus_args=(
-  --source /data/kquant/corpora/k3-4m-v1/reap_recall_calib.jsonl=0.25@4096
-  --source /data/kquant/corpora/k3-broad-external-v1/fineweb-edu-sample10bt.jsonl=0.27@2048
-  --source /data/kquant/corpora/k3-broad-external-v1/open-web-math.jsonl=0.125@3072
-  --source /data/kquant/corpora/k3-hybrid-v2-train-by-source-v1/ultrachat.jsonl=0.10@2048
-  --source /home/luke/projects/quantization/data/text/diverse_calib.jsonl=0.10@1024
-  --source /home/luke/projects/quantization/data/text/deep_calib.jsonl=0.05@4096
-  --source /data/kquant/corpora/k3-broad-external-v1/fineweb2-cmn_Hani.jsonl=0.025@1024
-  --source /data/kquant/corpora/k3-hybrid-v2-train-by-source-v1/swe-agent.jsonl=0.04@4096
-  --source /data/kquant/corpora/k3-hybrid-v2-train-by-source-v1/swe-openhands.jsonl=0.02@4096
-  --source /data/kquant/corpora/k3-hybrid-v2-train-by-source-v1/apigen-mt.jsonl=0.015@2048
-  --source /data/kquant/corpora/k3-hybrid-v2-train-by-source-v1/toolace.jsonl=0.005@4096
-  --target-tokens 4000000
-  --max-prompt-tokens 2048
+  --source /data/datasets/kquant/corpora/k3-broad-external-v1/fineweb-edu-sample10bt.jsonl=0.35@3072
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/local-deep-calib.jsonl=0.05@4096
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/local-diverse-calib.jsonl=0.15@2048
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/ultrachat.jsonl=0.15@2048
+  --source /data/datasets/kquant/corpora/k3-broad-external-v1/open-web-math.jsonl=0.125@3072
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/swe-agent.jsonl=0.04@4096
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/swe-openhands.jsonl=0.03@4096
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/apigen-mt.jsonl=0.02@2048
+  --source /data/datasets/kquant/corpora/k3-hybrid-v2-train-by-source-v1/toolace.jsonl=0.01@4096
+  --source /data/datasets/kquant/corpora/k3-4m-v1/reap_recall_calib.jsonl=0.05@4096
+  --source /data/datasets/kquant/corpora/k3-broad-external-v1/fineweb2-cmn_Hani.jsonl=0.025@2048
+  --target-tokens "${TARGET_TOKENS}"
+  --max-prompt-tokens 4096
   --min-prompt-tokens 64
-  --fold-modulus 4
+  --fold-modulus 1
   --fold-index 0
-  --fold-mode exclude
-  --seed 20260808
+  --fold-mode include
+  --seed 20260812
   --exclude-report "${QSRT_ROOT}/out/k3-denseh-broad-v6-1m-train-corpus.json"
   --exclude-report "${QSRT_ROOT}/out/k3-denseh-broad-v5-selection-corpus.json"
   --exclude-report "${QSRT_ROOT}/out/k3-denseh-broad-v5-final-validation-corpus.json"
   --exclude-report "${QSRT_ROOT}/out/k3-denseh-broad-v3-selection-corpus.json"
   --exclude-report "${QSRT_ROOT}/out/k3-denseh-broad-v3-final-validation-corpus.json"
-  --model-dir "${TEACHER}"
-  --expected-capture-source pure_qsrt_sqg_xor_cheb_t12
+  --model-dir "${RESIDENT}"
+  --expected-capture-source "${SOURCE_ID}"
   --capture-dir "${CAPTURE}"
   --report "${REPORT}"
   --finalize-file "${FINALIZE}"
+  --allow-other-teacher-layout
 )
+
+for token_file in /data/datasets/kld/k3/tokens/window-*.json; do
+  corpus_args+=(--exclude-token-file "${token_file}")
+done
 
 pid_alive() {
   local path="$1"
   [[ -f "${path}" ]] && kill -0 "$(<"${path}")" 2>/dev/null
 }
 
+clear_stale_pid_file() {
+  local path="$1"
+  if [[ -f "${path}" ]] && ! pid_alive "${path}"; then
+    rm -- "${path}"
+  fi
+}
+
+plan() {
+  [[ -d "${RESIDENT}" ]] || { echo "missing resident checkpoint: ${RESIDENT}" >&2; return 1; }
+  [[ -x "${PYTHON}" ]] || { echo "missing Python: ${PYTHON}" >&2; return 1; }
+  [[ ! -e "${REPORT}" ]] || { echo "corpus report already exists: ${REPORT}" >&2; return 1; }
+  mkdir -p "$(dirname -- "${REPORT}")"
+  "${PYTHON}" "${QSRT_ROOT}/scripts/run_interim_calibration_corpus.py" \
+    "${corpus_args[@]}" --model Kimi-K3 --dry-run >/dev/null
+  jq '{plan_sha256,planned_tokens,planned_requests,sources,excluded_token_files}' "${REPORT}"
+}
+
 preflight() {
-  [[ -d "${TEACHER}" ]] || { echo "missing teacher: ${TEACHER}" >&2; return 1; }
-  [[ -x "${CORPUS_PYTHON}" ]] || { echo "missing Python: ${CORPUS_PYTHON}" >&2; return 1; }
-  [[ -x "${VLLM_ROOT}/serve-kimi-k3-exl3-3p09-tp12.sh" ]] || {
-    echo "missing vLLM launcher" >&2
-    return 1
-  }
-  [[ -f "${REPORT}" ]] || { echo "missing frozen plan: ${REPORT}" >&2; return 1; }
-  [[ -f "${INTEGRITY}" ]] || { echo "missing integrity receipt: ${INTEGRITY}" >&2; return 1; }
-  jq -e '
-    .expected_capture_source == "pure_qsrt_sqg_xor_cheb_t12" and
-    .target_tokens == 4000000 and .planned_tokens == 4000000 and
-    .completed_requests == 0 and .finalized == false
+  [[ -d "${RESIDENT}" ]] || { echo "missing resident checkpoint: ${RESIDENT}" >&2; return 1; }
+  [[ -x "${PYTHON}" ]] || { echo "missing Python: ${PYTHON}" >&2; return 1; }
+  [[ -x "${VLLM_ROOT}/serve-kimi-k3-qsrt.sh" ]] || { echo "missing vLLM launcher" >&2; return 1; }
+  [[ -f "${REPORT}" ]] || { echo "missing immutable corpus plan: ${REPORT}" >&2; return 1; }
+  jq -e --arg source "${SOURCE_ID}" --argjson target "${TARGET_TOKENS}" '
+    .kind == "qsrt_interim_calibration_corpus_run" and
+    .expected_capture_source == $source and
+    .target_tokens == $target and .planned_tokens == $target and
+    (.completed_requests | type == "number") and
+    .completed_requests >= 0 and
+    .completed_requests <= .planned_requests and
+    .finalized == false and
+    (.plan_sha256 | type == "string" and length == 64) and
+    (.excluded_token_files | length == 32)
   ' "${REPORT}" >/dev/null
-  jq -e '.status == "pass" and (.issues | length) == 0' "${INTEGRITY}" >/dev/null
-  [[ ! -e "${CAPTURE}" ]] || { echo "capture already exists: ${CAPTURE}" >&2; return 1; }
-  [[ ! -e "${FINALIZE}" ]] || { echo "finalize sentinel already exists: ${FINALIZE}" >&2; return 1; }
-  [[ ! -e "${SERVER_LOG}" ]] || { echo "server log already exists: ${SERVER_LOG}" >&2; return 1; }
-  [[ ! -e "${CORPUS_LOG}" ]] || { echo "corpus log already exists: ${CORPUS_LOG}" >&2; return 1; }
+  if [[ -e "${CAPTURE}" ]]; then
+    jq -e --arg plan "$(jq -r .plan_sha256 "${REPORT}")" '
+      .kind == "qsrt_all_routed_rows" and .complete == false and
+      .corpus_manifest_sha256 == $plan
+    ' "${CAPTURE}/manifest.json" >/dev/null
+  else
+    jq -e '.completed_requests == 0 and .reported_prompt_tokens == 0' \
+      "${REPORT}" >/dev/null
+  fi
+  [[ ! -e "${FINALIZE}" ]] || { echo "finalize sentinel exists: ${FINALIZE}" >&2; return 1; }
+  clear_stale_pid_file "${SERVER_PID_FILE}"
+  clear_stale_pid_file "${CORPUS_PID_FILE}"
   [[ ! -e "${SERVER_PID_FILE}" ]] || { echo "server PID file exists: ${SERVER_PID_FILE}" >&2; return 1; }
   [[ ! -e "${CORPUS_PID_FILE}" ]] || { echo "corpus PID file exists: ${CORPUS_PID_FILE}" >&2; return 1; }
   if ss -ltn '( sport = :8000 )' | tail -n +2 | grep -q .; then
     echo "port 8000 is already in use" >&2
     return 1
   fi
-  local gpu_count
-  gpu_count="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | wc -l)"
-  [[ "${gpu_count}" -eq 12 ]] || { echo "expected 12 GPUs, found ${gpu_count}" >&2; return 1; }
+  [[ "$(nvidia-smi --query-gpu=uuid --format=csv,noheader | wc -l)" -eq 12 ]] || {
+    echo "the TP12 capture requires twelve visible GPUs" >&2
+    return 1
+  }
   nvidia-smi --query-gpu=index,uuid,memory.free,utilization.gpu --format=csv,noheader
   df -h /data
 }
@@ -87,27 +121,33 @@ start() {
   preflight
   mkdir -p "$(dirname -- "${CAPTURE}")"
   setsid env \
-    K3_MODEL_DIR="${TEACHER}" \
-    K3_SERVED_MODEL_NAME=kimi-k3-qsrt \
-    K3_QSRT_CAPTURE_DIR="${CAPTURE}" \
-    K3_QSRT_CORPUS="${REPORT}" \
-    VLLM_QSRT_SOURCE=pure_qsrt_sqg_xor_cheb_t12 \
-    VLLM_QSRT_CAPTURE_RUN_ID=k3-denseh-broad-v7-4m-train \
-    VLLM_QSRT_MOMENT_SAMPLE_RATE=16 \
-    VLLM_QSRT_INPUT_HESSIAN_SAMPLE_RATE=64 \
-    VLLM_QSRT_MID_HESSIAN_SAMPLE_RATE=32 \
-    VLLM_QSRT_SAMPLE_CAPACITY=1024 \
-    VLLM_QSRT_SAMPLE_SAVE_EVERY=32 \
-    VLLM_QSRT_SAMPLE_FLUSH_BYTES=268435456 \
-    VLLM_QSRT_FINALIZE_FILE="${FINALIZE}" \
-    "${VLLM_ROOT}/serve-kimi-k3-exl3-3p09-tp12.sh" \
-    >"${SERVER_LOG}" 2>&1 &
+    K3_MODEL_DIR="${RESIDENT}" \
+    K3_SERVED_MODEL_NAME=Kimi-K3 \
+    K3_ENABLE_DSPARK=0 \
+    K3_LANGUAGE_MODEL_ONLY=1 \
+    K3_ENFORCE_EAGER=1 \
+    K3_ENABLE_PREFIX_CACHE=0 \
+    K3_TP_SIZE=12 \
+    K3_MAX_NUM_SEQS=1 \
+    K3_MAX_NUM_BATCHED_TOKENS=4096 \
+    K3_MAX_MODEL_LEN=8192 \
+    K3_KV_CACHE_MEMORY_BYTES=1073741824 \
+    VLLM_KQUANT_CAPTURE_DIR="${CAPTURE}" \
+    VLLM_KQUANT_CAPTURE_PROFILE=all_routed_rows \
+    VLLM_KQUANT_CORPUS="${REPORT}" \
+    VLLM_KQUANT_TEACHER_CHECKPOINT="${RESIDENT}" \
+    VLLM_KQUANT_SOURCE="${SOURCE_ID}" \
+    VLLM_KQUANT_CAPTURE_RUN_ID="${RUN_ID}" \
+    VLLM_KQUANT_EXPECTED_ROWS="${TARGET_TOKENS}" \
+    VLLM_KQUANT_CHUNK_ROWS=16384 \
+    VLLM_KQUANT_WRITER_PROCESSES=4 \
+    VLLM_KQUANT_WRITER_QUEUE_DEPTH=2 \
+    VLLM_KQUANT_FINALIZE_FILE="${FINALIZE}" \
+    "${VLLM_ROOT}/serve-kimi-k3-qsrt.sh" >"${SERVER_LOG}" 2>&1 &
   echo "$!" >"${SERVER_PID_FILE}"
 
-  setsid "${CORPUS_PYTHON}" \
-    "${QSRT_ROOT}/scripts/run_interim_calibration_corpus.py" \
-    "${corpus_args[@]}" --model kimi-k3-qsrt --resume \
-    >"${CORPUS_LOG}" 2>&1 &
+  setsid "${PYTHON}" "${QSRT_ROOT}/scripts/run_interim_calibration_corpus.py" \
+    "${corpus_args[@]}" --model Kimi-K3 --resume >"${CORPUS_LOG}" 2>&1 &
   echo "$!" >"${CORPUS_PID_FILE}"
   echo "server PID $(<"${SERVER_PID_FILE}"); corpus PID $(<"${CORPUS_PID_FILE}")"
 }
@@ -123,11 +163,11 @@ status() {
   else
     echo "corpus: stopped"
   fi
-  if [[ -f "${REPORT}" ]]; then
-    jq '{completed_requests,planned_requests,reported_prompt_tokens,planned_tokens,finalized}' "${REPORT}"
-  fi
+  [[ ! -f "${REPORT}" ]] || jq \
+    '{plan_sha256,completed_requests,planned_requests,reported_prompt_tokens,planned_tokens,finalized}' \
+    "${REPORT}"
   if [[ -f "${CAPTURE}/manifest.json" ]]; then
-    jq '{source,teacher_checkpoint,run_id,complete,dropped_sample_rows,sampling}' \
+    jq '{source,resident_checkpoint,complete,sealed_request_index,rows}' \
       "${CAPTURE}/manifest.json"
     du -sh "${CAPTURE}"
   fi
@@ -143,10 +183,22 @@ stop_one() {
     pid="$(<"${path}")"
     echo "stopping ${label} process group ${pid}"
     kill -TERM -- "-${pid}"
+    for _ in $(seq 1 120); do
+      if ! kill -0 -- "-${pid}" 2>/dev/null; then
+        rm -- "${path}"
+        echo "${label}: stopped"
+        return 0
+      fi
+      sleep 0.25
+    done
+    echo "${label} process group ${pid} did not stop after 30 seconds" >&2
+    return 1
   fi
+  rm -f -- "${path}"
 }
 
 case "${1:-status}" in
+  plan) plan ;;
   preflight) preflight ;;
   start) start ;;
   status) status ;;
@@ -155,7 +207,7 @@ case "${1:-status}" in
     stop_one "${SERVER_PID_FILE}" server
     ;;
   *)
-    echo "usage: $0 {preflight|start|status|stop}" >&2
+    echo "usage: $0 {plan|preflight|start|status|stop}" >&2
     exit 2
     ;;
 esac
