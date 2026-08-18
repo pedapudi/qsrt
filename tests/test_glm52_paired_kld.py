@@ -64,6 +64,7 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert args.reporting_activation_capture_dir is None
     assert args.omit_individual_expert_arms is False
     assert args.candidate_expert_subsets_json == "{}"
+    assert args.candidate_runtime_mode == "candidate"
     assert args.measurement_controls_only is False
     assert "does not provide document-level replication" in (
         runner.PAIRED_KLD_EVIDENCE_BOUNDARY
@@ -240,6 +241,41 @@ def test_runner_validates_and_defines_named_candidate_subsets() -> None:
             runner.parse_candidate_expert_subsets(
                 value, artifact_expert_ids=expert_ids
             )
+
+
+def test_runner_can_execute_named_subsets_through_factorized_down() -> None:
+    runner = _load_runner()
+    arms = runner.intervention_arm_definitions(
+        [89, 103],
+        omit_individual_expert_arms=True,
+        candidate_expert_subsets={"frozen_expert_103": [103]},
+        candidate_runtime_mode="factorized_low_rank_candidate",
+    )
+
+    assert arms[-2:] == [
+        (
+            "selected_candidate_subset_frozen_expert_103",
+            "factorized_low_rank_candidate",
+            [103],
+        ),
+        ("selected_candidate", "factorized_low_rank_candidate", None),
+    ]
+
+
+def test_runner_can_execute_named_subsets_through_load_time_materialization() -> None:
+    runner = _load_runner()
+    mode = "stored_low_rank_factors_materialized_at_load_candidate"
+    arms = runner.intervention_arm_definitions(
+        [89, 103],
+        omit_individual_expert_arms=True,
+        candidate_expert_subsets={"frozen_expert_103": [103]},
+        candidate_runtime_mode=mode,
+    )
+
+    assert arms[-2:] == [
+        ("selected_candidate_subset_frozen_expert_103", mode, [103]),
+        ("selected_candidate", mode, None),
+    ]
 
 
 def test_measurement_controls_require_kld_and_route_bitwise_equality() -> None:

@@ -144,3 +144,31 @@ def test_rank_four_expert_103_confirmation_registration_is_frozen() -> None:
     )
     assert registration["one_context_measurement"]["candidate_mean_kld"] < 0.059
     assert registration["confirmation_contract"]["minimum_document_count"] >= 32
+
+
+def test_rank_four_expert_103_runtime_qualification_preserves_the_candidate() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    receipt = json.loads(
+        (
+            repository_root
+            / "experiments"
+            / "glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json"
+        ).read_text()
+    )
+
+    assert receipt["status"] == "one_context_runtime_closure_complete"
+    candidate = receipt["registered_candidate"]
+    assert (candidate["layer"], candidate["expert"], candidate["rank"]) == (
+        3,
+        103,
+        4,
+    )
+    assert candidate["logical_factor_bytes"] == 65_536
+    load_time = receipt["load_time_materialization_measurement"]
+    assert load_time["measurement_controls_passed"] is True
+    assert load_time["candidate_mean_kld"] < 0.059
+    assert receipt["dense_screen_closure"]["kld_tensor_bit_equal"] is True
+    assert receipt["dense_screen_closure"]["route_arrays_bit_equal"] is True
+    assert receipt["two_gemm_control"]["candidate_mean_kld"] > load_time[
+        "candidate_mean_kld"
+    ]

@@ -3,22 +3,28 @@ set -euo pipefail
 
 # Merge four checked two-expert low-rank adapter slices without changing bytes.
 
-if test "$#" -ne 2; then
-  echo "usage: $0 <uniform_k3|reconstructed_activation_down_refit> <2|4>" >&2
+if test "$#" -lt 2 || test "$#" -gt 3; then
+  echo "usage: $0 <uniform_k3|reconstructed_activation_down_refit> <2|4> [dense_screen|factorized_runtime]" >&2
   exit 2
 fi
 
 base_construction="$1"
 rank="$2"
+artifact_role="${3:-dense_screen}"
 case "${base_construction}" in uniform_k3|reconstructed_activation_down_refit) ;; *) exit 2 ;; esac
 case "${rank}" in 2|4) ;; *) exit 2 ;; esac
+case "${artifact_role}" in
+  dense_screen) artifact_suffix="" ;;
+  factorized_runtime) artifact_suffix="-factorized-runtime-v1" ;;
+  *) echo "artifact role must be dense_screen or factorized_runtime" >&2; exit 2 ;;
+esac
 
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 source_copy="${experiment_root}/source/qsrt-working-tree"
 results_root="${experiment_root}/results"
 image="sha256:820181fbbc975cd5291c411cda9771d58fecee1636d916f508f47230df20592b"
-slice_stem="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}-slice"
-merged_name="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}-merged"
+slice_stem="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}${artifact_suffix}-slice"
+merged_name="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}${artifact_suffix}-merged"
 destination="${results_root}/${merged_name}"
 record_root="${experiment_root}/launch-records/${merged_name}"
 container_name="qsrt-${merged_name}"
@@ -42,6 +48,7 @@ docker create \
   --label qsrt.model-downloads-performed=false \
   --label qsrt.base-construction="${base_construction}" \
   --label qsrt.adapter-rank="${rank}" \
+  --label qsrt.artifact-role="${artifact_role}" \
   --network none \
   --entrypoint /opt/venv/bin/python \
   -e PYTHONPATH=/workspace/qsrt \

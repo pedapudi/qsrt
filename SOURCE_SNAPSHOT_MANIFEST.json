@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-18T19:53:07Z",
+  "snapshot_timestamp_utc": "2026-08-18T20:35:00Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -130,6 +130,7 @@
       "experiments/download_glm52_layers_52_60_63_64_source_shards_on_kossel.sh",
       "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
       "experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json",
+      "experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json",
       "experiments/glm52_layer3_rate_pattern_panel.json",
       "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json",
       "experiments/glm52_layers_52_60_63_64_source_shards.json",
@@ -231,7 +232,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 113
+    "untracked_file_count": 114
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -256,8 +257,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 432,
-  "total_file_bytes": 8364551,
+  "file_count": 433,
+  "total_file_bytes": 8394246,
   "files": [
     {
       "path": ".gitignore",
@@ -271,8 +272,8 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 23841,
-      "sha256": "4b6c441cd9a38c89c7d6d510008b1551176fbf69389dd7485889589da62fa3c9"
+      "bytes": 25028,
+      "sha256": "825ecb32685610a987eac3bb4bd3551e8d074b51358a9613603b263497494cf1"
     },
     {
       "path": "README.md",
@@ -296,13 +297,13 @@
     },
     {
       "path": "docs/glm52-experiment-journal.md",
-      "bytes": 149352,
-      "sha256": "657c1f55e5627b0000655a1d5ff3e12b45087cbc0ac034024027601a4776230c"
+      "bytes": 153071,
+      "sha256": "ec6754eb5830f220a40eceff66aba7e6a03684f6e1caee34820c174d07103119"
     },
     {
       "path": "docs/glm52-layer3-kld-results.md",
-      "bytes": 26650,
-      "sha256": "29943d5aa993ae1f977cd97969478fcc1370c0664dc8dd39a92129ec89399e8b"
+      "bytes": 28781,
+      "sha256": "735ab90c806a44915ce84ef727fd6e0740580f2f997a3fa8e3ad97616635983a"
     },
     {
       "path": "docs/qsrt-2bpw-codec.md",
@@ -336,8 +337,8 @@
     },
     {
       "path": "docs/qsrt-improvement-strategy.md",
-      "bytes": 51950,
-      "sha256": "4c3428140d7fc87faf8db3976efb10ae15fd2ce6ec0a5e8ff28cd88854721432"
+      "bytes": 52787,
+      "sha256": "ac3899f7bfcf2bbe5ebed4ad6f755bd09724dc07e45725695a57f484b79399cd"
     },
     {
       "path": "docs/qsrt-technical-brief.md",
@@ -395,6 +396,11 @@
       "sha256": "e767fa7a4981b43cc63c208959782e3136d2f714601c1fbbb669239ecb598907"
     },
     {
+      "path": "experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json",
+      "bytes": 4636,
+      "sha256": "fe4909c49ffe0ad1fe1e7b373353e0d2f1ed16b065db640d53f0eb14f7e0c746"
+    },
+    {
       "path": "experiments/glm52_layer3_rate_pattern_panel.json",
       "bytes": 1495,
       "sha256": "046945e916482b45062e880d46d14efc3d35021376e1f07113f38df87d631179"
@@ -436,8 +442,8 @@
     },
     {
       "path": "experiments/merge_glm52_low_rank_down_slices_on_kossel.sh",
-      "bytes": 2923,
-      "sha256": "62cb355d58ddf24aca1c4501d2cd3ba9122e6054306e0fa3c91c70c823a40db5"
+      "bytes": 3317,
+      "sha256": "49f279f882b44effd4b0aed6f6ad4689d3040b6686c60ed1b10799ebc16a1ded"
     },
     {
       "path": "experiments/run_glm52_blockldlq_feedback_slices_on_kossel.sh",
@@ -446,8 +452,8 @@
     },
     {
       "path": "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
-      "bytes": 15418,
-      "sha256": "34197afd025b734115eca2420e323385e1bfed1092c84d3730f3b18be96b4042"
+      "bytes": 16740,
+      "sha256": "bb8598493fe6abe9c16c7828cbf3b2adadccd25f72522012ff27c8bd7f75d9d0"
     },
     {
       "path": "experiments/run_glm52_down_construction_slice_on_kossel.sh",
@@ -461,8 +467,8 @@
     },
     {
       "path": "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
-      "bytes": 5440,
-      "sha256": "ee08e06165b4485ae049678439615a01e58ad817a4d2e693ffe3cda2a7c4ea31"
+      "bytes": 5816,
+      "sha256": "95eaaea3714292d14da6001f9a93e0366140e6e6b6eefb86993818be88c3ba5a"
     },
     {
       "path": "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
@@ -666,8 +672,8 @@
     },
     {
       "path": "qsrt/glm52_expert_intervention_runtime.py",
-      "bytes": 26693,
-      "sha256": "e69128664f1a7375757f0bc50519f164948dbdd92030a78cabce39221a7cc466"
+      "bytes": 33128,
+      "sha256": "f4c5c70d00252875b812d972ed399c3aea04369b2c5e4084f2c634f415c19ab2"
     },
     {
       "path": "qsrt/glm52_k3_k4_allocation.py",
@@ -676,8 +682,8 @@
     },
     {
       "path": "qsrt/glm52_low_rank_down_adapter.py",
-      "bytes": 18312,
-      "sha256": "929c6170d0086062c040d63c45f9a3be4f6ad34484f84c3b73930c70b14f0c84"
+      "bytes": 18986,
+      "sha256": "a4b4259485c652621f1ee85ad5bf3775e790e7a60af61804ba30043c591b45fa"
     },
     {
       "path": "qsrt/glm52_paired_kld.py",
@@ -1566,8 +1572,8 @@
     },
     {
       "path": "scripts/run_glm52_paired_expert_intervention_kld.py",
-      "bytes": 40541,
-      "sha256": "6f325be5aeff2e535db9a0eaac4a9220e450197b895cca54501fc3407dbe3a6f"
+      "bytes": 41528,
+      "sha256": "14a100e0bdbb8c1ebb3608cf4cbed65f2f9cf36f7c86491c81539696a3d71249"
     },
     {
       "path": "scripts/run_glm52_qsrt_codec_pilot.py",
@@ -1926,8 +1932,8 @@
     },
     {
       "path": "tests/test_glm52_expert_intervention_runtime.py",
-      "bytes": 9447,
-      "sha256": "47b653800e451b74ca1df3614681e1a62262fc62be36ce5d29211d5a5c2bbb34"
+      "bytes": 14163,
+      "sha256": "857871d89d9591c7b5b9495a8ebbc0d642da8fab2b13d2c4e1c12870f4335f04"
     },
     {
       "path": "tests/test_glm52_k3_k4_allocation.py",
@@ -1941,13 +1947,13 @@
     },
     {
       "path": "tests/test_glm52_low_rank_down_adapter.py",
-      "bytes": 5309,
-      "sha256": "c85fdaa714d332e649dfe3cd3a9adcfbdb24c7ec0657ace3a793dba82665414a"
+      "bytes": 6392,
+      "sha256": "ae8312d92f03ddf4bd9ba444f43f5ce6fe27b86c50aecaadd1d93d768e6c84ed"
     },
     {
       "path": "tests/test_glm52_paired_kld.py",
-      "bytes": 12531,
-      "sha256": "f50466e94df8d0b1db9d9cb3ce4b812099d7a68dc4d246469407b5f1d36c986e"
+      "bytes": 13729,
+      "sha256": "9904c3e80c8d5da8f74e2050f0d8bc55ccb3c49b404c9946675c61332d374187"
     },
     {
       "path": "tests/test_glm52_pilot.py",

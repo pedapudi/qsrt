@@ -107,8 +107,9 @@ These values establish four mechanism decisions.
   maximum KLD relative to EXL3 on the available context. The rank and expert
   were chosen after inspecting other KLD arms on that same context. The result
   is therefore a mechanism screen and supplies no document-replicated
-  evidence. The executed endpoint also materialized the factor product as a dense matrix;
-  a factor-aware container and serving branch remain unimplemented.
+  evidence. The stored K3 base and BF16 factors now reproduce the screened
+  FP16 endpoint bit for bit when the expert is loaded. A complete factor-aware
+  container and production-serving qualification remain unimplemented.
 
 The logical eight-expert ledger charges 133,791,744 bytes for EXL3 and
 113,643,520 bytes for uniform QSRT K3. This 20,148,224-byte margin is large
@@ -305,10 +306,19 @@ the frozen candidate can proceed directly to the 32-document confirmation
 set. If any choice changes after an eight-context screen, the changed candidate
 requires a separate sealed confirmation set.
 
-The KLD runtime added the rounded factor product to a dense endpoint. It did
-not load serialized factors through a QSRT container. A checkpoint claim
-therefore requires deterministic factor serialization, exact byte accounting,
-and a factor-aware inference path that reproduces the screened endpoint.
+The runtime comparison selected load-time fusion over two additional inference
+GEMMs. Executing the BF16 factors directly produced KLD 0.06066082 for expert
+103. The two-GEMM output differed from the dense endpoint by only about `2e-7`
+relative SSE on stored routed rows, yet later model propagation erased most of
+the KLD improvement. Reconstructing the FP16 down matrix once from the stored
+K3 base and factors restored KLD 0.05825746. Its complete per-position KLD
+tensor and route array were bit-identical to the dense screen.
+
+The load-time design preserves checkpoint compactness and the established
+one-GEMM expert execution. The runtime receipt is
+`experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json`.
+A checkpoint claim still requires exact complete-container accounting,
+document-disjoint KLD confirmation, and production-serving validation.
 
 ### Use activations from the artifact being corrected
 
@@ -479,7 +489,7 @@ to their stored dtype and loaded through the packed serving path.
 | 2 | Measure bolt-on factors through complete-expert reconstruction and one-context model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached KLD 0.05825746 |
 | 3 | Freeze the exact rank-four expert-103 candidate | Complete in `experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`; no candidate field may change before confirmation |
 | 4 | Evaluate once on at least 32 document-disjoint confirmation contexts | Advance only if paired mean KLD beats EXL3, CVaR1% is non-inferior, and the logical byte advantage survives exact serialization |
-| 5 | Implement deterministic factor serialization and a factor-aware inference path | The loaded factors reproduce the screened dense endpoint within a frozen numerical tolerance, and the exact byte ledger remains smaller |
+| 5 | Implement deterministic factor serialization and a factor-aware inference path | Partly complete: load-time fusion reproduces every screened per-position KLD value and route bit; complete-container accounting and production serving remain |
 | 6 | Replicate the frozen construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
 | 7 | Compare against coherent K3/K4 configurations at matched exact bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
 | 8 | Run frozen-scale re-encoding and one guarded alternation only if confirmation leaves material headroom | Retain alternation only when it improves over the bolt-on candidate on separate selection documents |
@@ -498,7 +508,7 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 | Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for the frozen rank-four expert-103 candidate |
 | Freeze the down-construction rule | Reconstructed-input covariance excluded; one identity-metric target, ridge, and fallback rule frozen by measured KLD on eight selection contexts |
 | Confirm the frozen low-rank candidate | The registered rank-four expert-103 correction beats EXL3 mean KLD and satisfies CVaR1% non-inferiority on at least 32 document-disjoint contexts |
-| Serialize and execute low-rank factors | Factor-aware loading reproduces the screened endpoint; exact serialized bytes remain below EXL3 |
+| Serialize and execute low-rank factors | Load-time fusion already reproduces the screened endpoint bit for bit; the complete serialized byte ledger and production serving path remain |
 | Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
 | Test transfer across layers | The selected construction repeats across error-blind panels from independently chosen layers |
@@ -596,8 +606,9 @@ the fitted target can move from the source down weights.
 
 Test a small ridge grid within the identity-metric fitted-target policy. Freeze
 the grid before candidate measurement. Fit each target on activation-fit
-documents and use complete-expert error only to prune clearly dominated hard
-encodes. Choose ridge and fallback decisions with measured KLD on the eight
+documents and use complete-expert error only to prune hard encodes whose local
+error exceeds another candidate under every recorded local
+criterion. Choose ridge and fallback decisions with measured KLD on the eight
 candidate-selection contexts. Evaluate the complete gated expert because gate,
 up, and down errors interact.
 
@@ -878,8 +889,9 @@ The immediate blocking input for the registered rank-four expert-103 candidate
 is at least 32 sealed confirmation contexts. The complete BF16 checkpoint must
 not be downloaded to produce them. An authorized host that already holds the
 teacher must generate the references. While that work proceeds, kossel may
-finish the bounded source windows, implement factor-aware serialization and
-execution, and construct unselected coherent rate-conditioned candidates.
+use the completed bounded source windows to replicate the construction at
+independently chosen layers, finish the factor-container byte ledger, and
+construct unselected coherent rate-conditioned candidates.
 
 Do not change the registered correction after opening a confirmation context.
 A different rank, expert, dtype, ridge, factor value, base representation, or

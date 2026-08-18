@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-18T19:45:00Z`. It
+This repository is a source snapshot updated at `2026-08-18T20:35:00Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -62,7 +62,7 @@ commit was:
 7902469f071a4f68089eaacfb59d41be0a674e41
 ```
 
-The source checkout also contained eleven modified tracked files and 76
+The source checkout also contained eleven modified tracked files and 114
 untracked research files. Those working-tree files are included in this
 repository and committed together so a collaborator receives one coherent
 state. The machine-readable manifest records every original Git status entry.
@@ -80,11 +80,11 @@ uv sync --dev
 ```
 
 The GLM low-rank, paired-KLD, intervention-runtime, and intervention tests
-pass. The local CPU-only environment completed 36 focused tests in 0.11
+pass. The local CPU-only environment completed 41 focused tests in 0.48
 seconds. Repository-wide collection requires the optional Triton and
 InstantTensor packages used by upstream recovery code. It also exposes API
 mismatches in upstream recovery tests. A run that excluded the eleven
-collection blockers passed 856 tests, skipped 21, and found one unrelated
+collection blockers passed 865 tests, skipped 21, and found one unrelated
 artifact-fixture failure because the fixture lacked `candidate_codebook`.
 Install the optional dependencies or reconcile those imports before treating
 a repository-wide result as authoritative; do not hide the collection errors
@@ -115,11 +115,11 @@ The complete artifact inventory is:
 /home/sunil/qsrt-glm52-experiments/ARTIFACT_INDEX.json
 ```
 
-The inventory generated at `2026-08-18T18:44Z` contains 16,941 regular-file
-records covering 409,590,032,232 bytes. It also records 636 files that the
+The inventory generated at `2026-08-18T20:34Z` contains 17,294 regular-file
+records covering 476,270,045,183 bytes. It also records 684 files that the
 indexing process could not hash. Do not treat those unhashed files as verified.
 The inventory SHA-256 is
-`cfff53e5113f89c06e4e3a3f5951a3085190c2145af4620688b65f719cd382e1`.
+`c39ae9c2906b83c74e224ac9b40bc55974ee315a226f5a6d508f98ac98a2638c`.
 The synchronized source copy is:
 
 ```text
@@ -156,9 +156,11 @@ internal NVMe at:
 /home/sunil/qsrt-glm52-experiments/source-windows/glm52-b4734de-layers-52-60-63-64
 ```
 
-The 17-shard transfer is resumable and verifies every immutable shard hash.
+The 17-shard transfer is complete and verifies every immutable shard hash.
 Its frozen manifest is
 [`experiments/glm52_layers_52_60_63_64_source_shards.json`](experiments/glm52_layers_52_60_63_64_source_shards.json).
+Its receipt records 17 shards and 91,142,336,944 bytes. The transfer used the
+internal NVMe and did not consume the external disk's remaining 104 GB.
 Do not download the complete GLM-5.2 BF16 checkpoint. The layer-3 window is
 sufficient for the eight experts in the frozen mechanism panel. The panel is
 defined by
@@ -219,7 +221,8 @@ immutable rate-preserving experiment registration records both roles at
 | K3 with reconstructed-activation down refit | `0.0612386895257` | `-1.8269%` | Confirm on more documents |
 | Down refit with BF16 rank-two corrections on all eight experts | `0.0652326383334` | `+4.5759%` | Rejected all-expert local selector |
 | Down refit with BF16 rank-two corrections on experts 89 and 103 | `0.0601683116025` | `-3.5429%` | Exploratory; identities came from the reporting context |
-| Down refit with one BF16 rank-four correction on expert 103 | `0.0582574646070` | `-6.6062%` | Below 0.059 on one context; frozen for independent confirmation |
+| Down refit with one BF16 rank-four correction on expert 103, materialized from stored factors at load time | `0.0582574646070` | `-6.6062%` | Below 0.059 on one context; frozen for independent confirmation |
+| The same expert-103 factors executed as two inference GEMMs | `0.0606608189028` | `-2.7532%` | Rejected execution path; intermediate rounding erased most of the gain |
 | K3 down encoded with reconstructed-input covariance and source weights | `0.0658519849381` | `+5.5688%` | Rejected |
 | K3 with a locally selected identity-metric down refit | `0.0641342908893` | `+2.8151%` | Rejected selection rule |
 | K3 with reconstructed-input covariance and locally selected down refits | `0.0638195014718` | `+2.3105%` | Rejected |
@@ -284,6 +287,16 @@ The registration binds both factor hashes, BF16 storage, rank four, expert
 the confirmation rule. Changing a bound field creates a different candidate
 and requires a separate sealed confirmation set.
 
+The runtime qualification is frozen separately in
+[`experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json`](experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json).
+Executing the correction as two BF16 factor GEMMs reached KLD
+`0.0606608189028`. The local output differed from the dense endpoint by only
+about `2e-7` relative squared error, but later propagation removed most of the
+KLD gain. The accepted runtime reconstructs the FP16 down matrix once from the
+stored K3 base and factors. Its 2,047 KLD values and complete route arrays were
+bit-identical to the dense screen, restoring KLD `0.0582574646070` without an
+additional inference GEMM.
+
 Three other findings constrain the next experiments:
 
 - Finite-E4M3 reconstruction-table fitting reduced pooled fixed-path squared
@@ -345,18 +358,20 @@ or bolt-on construction. Require the paired-bootstrap upper bound for
 candidate-minus-EXL3 document-mean KLD to fall below zero. Apply the frozen
 document-level CVaR1% non-inferiority rule as a safety gate.
 
-The existing KLD screen materializes the factor product into a dense endpoint.
-In parallel with reference generation, implement deterministic factor
-serialization and a factor-aware runtime. The loaded factors must reproduce
-the screened endpoint within a frozen numerical tolerance, and the complete
-serialized byte ledger must remain below EXL3.
+The stored-factor runtime now reconstructs the screened FP16 endpoint bit for
+bit when the expert is loaded. It retains the existing one-GEMM expert path.
+Complete the factor-aware container layout and exact byte ledger while the
+reference contexts are generated. The serialized panel and complete
+checkpoint must remain smaller than EXL3 after headers, scales, alignment, and
+directories are charged.
 
 ### Select the down-refit rule with model KLD
 
 Retain the earlier fixed down-refit artifact as a candidate because it is the
 only tested QSRT intervention that improved mean KLD relative to uniform K3.
 Do not adopt it from the one-context result. Use complete-expert error only to
-prune clearly dominated candidates. Choose ridge and source-fallback decisions
+prune candidates whose local error exceeds another candidate under every
+recorded local criterion. Choose ridge and source-fallback decisions
 with measured KLD on the eight selection contexts, then freeze the rule before
 opening the confirmation contexts.
 

@@ -11,10 +11,13 @@ import qsrt.glm52_expert_intervention_runtime as intervention_runtime
 from qsrt.glm52_expert_intervention_runtime import (
     CONTROL_SCHEMA,
     DenseExpertSlice,
+    FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+    MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
     _apply_with_per_expert_exl3_moe,
     _r7_fused_kernel_selection_disabled,
     _capture_layer_input,
     atomic_write_control,
+    evaluate_expert_with_factorized_down,
     read_control,
     routed_candidate_delta,
 )
@@ -221,6 +224,114 @@ def test_dense_resident_identity_reuses_one_resident_evaluation(
     assert torch.count_nonzero(delta) == 0
 
 
+def test_factorized_down_path_executes_the_stored_two_gemm_correction() -> None:
+    endpoint = _endpoint(base=1.0, candidate=1.5)
+    down_base = torch.zeros((6144, 1), dtype=torch.float16)
+    factor_a = torch.tensor([[0.5]], dtype=torch.bfloat16)
+    factor_b = torch.zeros((6144, 1), dtype=torch.bfloat16)
+    factor_b[0, 0] = 0.25
+    endpoint = DenseExpertSlice(
+        **{
+            **endpoint.__dict__,
+            "candidate_down_base": down_base,
+            "candidate_down_factor_a": factor_a,
+            "candidate_down_factor_b": factor_b,
+        }
+    )
+    x = torch.tensor([[1.0, 2.0]], dtype=torch.float16)
+
+    expected_candidate = evaluate_expert_with_factorized_down(
+        x,
+        gate=endpoint.candidate_gate,
+        up=endpoint.candidate_up,
+        down_base=down_base,
+        factor_a=factor_a,
+        factor_b=factor_b,
+    )
+    resident = intervention_runtime.evaluate_expert(
+        x,
+        gate=endpoint.exl3_gate,
+        up=endpoint.exl3_up,
+        down=endpoint.exl3_down,
+    )
+    actual = routed_candidate_delta(
+        x,
+        torch.tensor([[1.0]], dtype=torch.float32),
+        torch.tensor([[7]], dtype=torch.int64),
+        expert_slices={7: endpoint},
+        use_factorized_low_rank_down=True,
+    )
+
+    torch.testing.assert_close(
+        actual,
+        expected_candidate.float() - resident.float(),
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_factorized_down_mode_requires_stored_factors() -> None:
+    with pytest.raises(ValueError, match="no factorized low-rank down endpoint"):
+        routed_candidate_delta(
+            torch.tensor([[1.0, 2.0]], dtype=torch.float16),
+            torch.tensor([[1.0]], dtype=torch.float32),
+            torch.tensor([[7]], dtype=torch.int64),
+            expert_slices={7: _endpoint(base=1.0, candidate=1.5)},
+            use_factorized_low_rank_down=True,
+        )
+
+
+def test_load_time_materialized_down_path_uses_the_reconstructed_endpoint() -> None:
+    endpoint = _endpoint(base=1.0, candidate=1.5)
+    materialized_down = torch.zeros((6144, 1), dtype=torch.float16)
+    materialized_down[0, 0] = 0.125
+    endpoint = DenseExpertSlice(
+        **{
+            **endpoint.__dict__,
+            "candidate_down_materialized_from_factors": materialized_down,
+        }
+    )
+    x = torch.tensor([[1.0, 2.0]], dtype=torch.float16)
+    expected_candidate = intervention_runtime.evaluate_expert(
+        x,
+        gate=endpoint.candidate_gate,
+        up=endpoint.candidate_up,
+        down=materialized_down,
+    )
+    resident = intervention_runtime.evaluate_expert(
+        x,
+        gate=endpoint.exl3_gate,
+        up=endpoint.exl3_up,
+        down=endpoint.exl3_down,
+    )
+
+    actual = routed_candidate_delta(
+        x,
+        torch.tensor([[1.0]], dtype=torch.float32),
+        torch.tensor([[7]], dtype=torch.int64),
+        expert_slices={7: endpoint},
+        use_materialized_low_rank_down=True,
+    )
+
+    torch.testing.assert_close(
+        actual,
+        expected_candidate.float() - resident.float(),
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_load_time_materialized_mode_requires_reconstructed_endpoint() -> None:
+    with pytest.raises(ValueError, match="no load-time-materialized low-rank"):
+        routed_candidate_delta(
+            torch.tensor([[1.0, 2.0]], dtype=torch.float16),
+            torch.tensor([[1.0]], dtype=torch.float32),
+            torch.tensor([[7]], dtype=torch.int64),
+            expert_slices={7: _endpoint(base=1.0, candidate=1.5)},
+            use_materialized_low_rank_down=True,
+        )
+
+
 def test_control_accepts_the_dense_resident_identity_mode(tmp_path: Path) -> None:
     path = tmp_path / "control.json"
     digest = "c" * 64
@@ -235,6 +346,38 @@ def test_control_accepts_the_dense_resident_identity_mode(tmp_path: Path) -> Non
     value = read_control(path, expected_manifest_sha256=digest)
     assert value["mode"] == "dense_resident_identity"
     assert value["selected_experts"] == [64, 208]
+
+
+def test_control_accepts_factorized_low_rank_candidate_mode(tmp_path: Path) -> None:
+    path = tmp_path / "control.json"
+    digest = "e" * 64
+    atomic_write_control(
+        path,
+        mode=FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+        artifact_manifest_sha256=digest,
+        generation=5,
+        selected_experts=[103],
+    )
+
+    value = read_control(path, expected_manifest_sha256=digest)
+    assert value["mode"] == FACTORIZED_LOW_RANK_CANDIDATE_MODE
+    assert value["selected_experts"] == [103]
+
+
+def test_control_accepts_load_time_materialized_low_rank_mode(tmp_path: Path) -> None:
+    path = tmp_path / "control.json"
+    digest = "f" * 64
+    atomic_write_control(
+        path,
+        mode=MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
+        artifact_manifest_sha256=digest,
+        generation=6,
+        selected_experts=[103],
+    )
+
+    value = read_control(path, expected_manifest_sha256=digest)
+    assert value["mode"] == MATERIALIZED_LOW_RANK_CANDIDATE_MODE
+    assert value["selected_experts"] == [103]
 
 
 @pytest.mark.parametrize(

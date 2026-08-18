@@ -31,6 +31,8 @@ from qsrt.glm52_engine_kld import (
 )
 from qsrt.glm52_expert_intervention_runtime import (
     CANDIDATE_MODE,
+    FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+    MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
     FORCE_PER_EXPERT_EXL3_MOE_ENV,
     atomic_write_control,
     validate_dense_intervention_artifact,
@@ -528,6 +530,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--candidate-runtime-mode",
+        choices=(
+            CANDIDATE_MODE,
+            FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+            MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
+        ),
+        default=CANDIDATE_MODE,
+        help=(
+            "execute the stored dense candidate, two low-rank inference GEMMs, "
+            "or a single FP16 down matrix materialized from the stored factors "
+            "when the expert is loaded"
+        ),
+    )
+    parser.add_argument(
         "--measurement-controls-only",
         action="store_true",
         help=(
@@ -584,6 +600,7 @@ def intervention_arm_definitions(
     omit_individual_expert_arms: bool,
     measurement_controls_only: bool = False,
     candidate_expert_subsets: dict[str, list[int]] | None = None,
+    candidate_runtime_mode: str = CANDIDATE_MODE,
 ) -> list[tuple[str, str, list[int] | None]]:
     """Describe repeatability, wiring, individual, and complete-panel arms."""
 
@@ -606,16 +623,26 @@ def intervention_arm_definitions(
     ]
     if measurement_controls_only:
         return definitions
+    if candidate_runtime_mode not in (
+        CANDIDATE_MODE,
+        FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+        MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
+    ):
+        raise ValueError("candidate runtime mode is unsupported")
     if not omit_individual_expert_arms:
         definitions.extend(
-            (f"selected_candidate_expert_{expert:03d}", CANDIDATE_MODE, [expert])
+            (
+                f"selected_candidate_expert_{expert:03d}",
+                candidate_runtime_mode,
+                [expert],
+            )
             for expert in experts
         )
     definitions.extend(
-        (f"selected_candidate_subset_{name}", CANDIDATE_MODE, subset)
+        (f"selected_candidate_subset_{name}", candidate_runtime_mode, subset)
         for name, subset in (candidate_expert_subsets or {}).items()
     )
-    definitions.append(("selected_candidate", CANDIDATE_MODE, None))
+    definitions.append(("selected_candidate", candidate_runtime_mode, None))
     return definitions
 
 
@@ -809,6 +836,7 @@ def main() -> None:
         omit_individual_expert_arms=args.omit_individual_expert_arms,
         measurement_controls_only=args.measurement_controls_only,
         candidate_expert_subsets=candidate_expert_subsets,
+        candidate_runtime_mode=args.candidate_runtime_mode,
     )
     for generation, (arm, mode, selected_experts) in enumerate(
         arm_definitions, start=1

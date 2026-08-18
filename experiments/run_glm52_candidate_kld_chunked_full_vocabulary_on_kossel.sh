@@ -10,7 +10,7 @@ set -euo pipefail
 # bitwise repeatable before the complete selected panel is evaluated.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|low-rank-down-refit-r2|low-rank-down-refit-r2-per-expert-attribution|low-rank-down-refit-r2-attribution-selected-subsets|low-rank-down-refit-r4|low-rank-down-refit-r4-attribution-selected-subsets|low-rank-uniform-k3-r2|low-rank-uniform-k3-r4|down-covariance-source-target|down-identity-refit-target|down-covariance-refit-target|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
+  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|low-rank-down-refit-r2|low-rank-down-refit-r2-per-expert-attribution|low-rank-down-refit-r2-attribution-selected-subsets|low-rank-down-refit-r4|low-rank-down-refit-r4-attribution-selected-subsets|low-rank-down-refit-r4-expert103-factorized-runtime|low-rank-down-refit-r4-expert103-load-time-materialized-runtime|low-rank-uniform-k3-r2|low-rank-uniform-k3-r4|down-covariance-source-target|down-identity-refit-target|down-covariance-refit-target|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
   exit 2
 fi
 
@@ -20,6 +20,7 @@ results_root="${experiment_root}/results"
 result_suffix=""
 individual_arm_arguments=(--omit-individual-expert-arms)
 candidate_subset_arguments=()
+candidate_runtime_arguments=()
 
 case "${method}" in
   uniform-k3)
@@ -64,6 +65,30 @@ case "${method}" in
     candidate_subset_arguments=(
       --candidate-expert-subsets-json
       '{"rank2_helpful_expert_89":[89],"rank2_helpful_expert_103":[103],"rank2_helpful_expert_208":[208],"all_rank2_individually_improving_experts":[89,103,208],"strongest_rank2_pair":[89,208],"expert_89_and_103":[89,103],"expert_103_and_208":[103,208]}'
+    )
+    ;;
+  low-rank-down-refit-r4-expert103-factorized-runtime)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    result_suffix="-frozen-expert103-factorized-runtime"
+    candidate_subset_arguments=(
+      --candidate-expert-subsets-json
+      '{"frozen_rank4_expert103":[103]}'
+    )
+    candidate_runtime_arguments=(
+      --candidate-runtime-mode factorized_low_rank_candidate
+    )
+    ;;
+  low-rank-down-refit-r4-expert103-load-time-materialized-runtime)
+    artifact_name="glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged"
+    expected_experiment="qsrt_glm52_activation_weighted_down_adapter_v1"
+    result_suffix="-frozen-expert103-load-time-materialized-runtime"
+    candidate_subset_arguments=(
+      --candidate-expert-subsets-json
+      '{"frozen_rank4_expert103":[103]}'
+    )
+    candidate_runtime_arguments=(
+      --candidate-runtime-mode stored_low_rank_factors_materialized_at_load_candidate
     )
     ;;
   low-rank-uniform-k3-r2)
@@ -245,6 +270,7 @@ docker create \
   --kld-chunk-rows 4 \
   --kld-device cuda:0 \
   "${candidate_subset_arguments[@]}" \
+  "${candidate_runtime_arguments[@]}" \
   "${individual_arm_arguments[@]}" \
   --hf-overrides '{"index_topk":0,"use_index_cache":false}' \
   --llm-extra-json '{"decode_context_parallel_size":1,"moe_backend":"b12x","enforce_eager":true,"disable_custom_all_reduce":true,"async_scheduling":false}'

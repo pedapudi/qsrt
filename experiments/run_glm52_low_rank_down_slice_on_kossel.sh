@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Fit one disjoint GLM-5.2 down-only low-rank adapter slice on one GPU.
 
-if test "$#" -ne 5; then
-  echo "usage: $0 <uniform_k3|reconstructed_activation_down_refit> <2|4> <physical-gpu> <panel-offset> <expert-count>" >&2
+if test "$#" -lt 5 || test "$#" -gt 6; then
+  echo "usage: $0 <uniform_k3|reconstructed_activation_down_refit> <2|4> <physical-gpu> <panel-offset> <expert-count> [dense_screen|factorized_runtime]" >&2
   exit 2
 fi
 
@@ -13,6 +13,7 @@ rank="$2"
 physical_gpu="$3"
 panel_offset="$4"
 expert_count="$5"
+artifact_role="${6:-dense_screen}"
 
 case "${base_construction}" in
   uniform_k3)
@@ -31,6 +32,11 @@ if test $((panel_offset + expert_count)) -gt 8; then
   echo "panel slice exceeds the frozen eight-expert panel" >&2
   exit 2
 fi
+case "${artifact_role}" in
+  dense_screen) artifact_suffix="" ;;
+  factorized_runtime) artifact_suffix="-factorized-runtime-v1" ;;
+  *) echo "artifact role must be dense_screen or factorized_runtime" >&2; exit 2 ;;
+esac
 
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 source_root="/home/sunil/usb-mnt/zai-org/GLM-5.2-b4734de-layer003-source-window"
@@ -44,7 +50,7 @@ image="sha256:820181fbbc975cd5291c411cda9771d58fecee1636d916f508f47230df20592b"
 end=$((panel_offset + expert_count - 1))
 printf -v offset_text "%02d" "${panel_offset}"
 printf -v end_text "%02d" "${end}"
-slice_name="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}-slice-${offset_text}-${end_text}"
+slice_name="glm52-layer3-frozen8-low-rank-down-${base_construction}-bf16-rank-${rank}${artifact_suffix}-slice-${offset_text}-${end_text}"
 container_name="qsrt-${slice_name}"
 destination="${results_root}/${slice_name}"
 record_root="${experiment_root}/launch-records/${slice_name}"
@@ -76,6 +82,7 @@ docker create \
   --label qsrt.model-downloads-performed=false \
   --label qsrt.base-construction="${base_construction}" \
   --label qsrt.adapter-rank="${rank}" \
+  --label qsrt.artifact-role="${artifact_role}" \
   --label qsrt.panel-offset="${panel_offset}" \
   --network none \
   --gpus "device=${physical_gpu}" \

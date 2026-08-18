@@ -1,0 +1,57 @@
+{
+  "schema": "qsrt_glm52_low_rank_down_runtime_qualification",
+  "schema_version": 1,
+  "status": "one_context_runtime_closure_complete",
+  "objective": "Verify that the frozen layer-3 expert-103 rank-four correction can be stored as a K3 down matrix plus BF16 factors, reconstructed when the expert is loaded, and executed with the same one-GEMM endpoint measured by the earlier dense screen.",
+  "evidence_boundary": "This receipt proves bit-identical runtime closure and repeats the one-context KLD result. It does not provide document-level replication, a complete QSRT container, a complete-checkpoint byte ledger, or production-serving performance.",
+  "registered_candidate": {
+    "confirmation_registration": "experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json",
+    "layer": 3,
+    "expert": 103,
+    "rank": 4,
+    "factor_dtype": "BF16",
+    "logical_factor_bytes": 65536,
+    "factor_a_sha256": "e3e4e38f66b63c6de4d6b8964f01a972fe968312037415e6003dea14cdd750d0",
+    "factor_b_sha256": "c217d59c62ddbe4357332159a085a14a5a67061fc8cdd43b3eccad39d03f4247",
+    "materialized_down_sha256": "cc327d9edb3b3c5f338a052985708ecdcbf8092480e999e930af551fa28f328c"
+  },
+  "stored_factor_artifact": {
+    "relative_path": "results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged",
+    "manifest_file_sha256": "ae4b5c7ef404514c2be6b3e8e2c400a14a4ca7809171596f513dce2473b46f7b",
+    "report_file_sha256": "5a0e1481693f94303e5d4b20c796d270d14310c4c6d2b806c630f4edd84aaf72",
+    "expert103_record_manifest_sha256": "b08c304f53ffdc228d5db408f5f2dc3eb32e3dde79dd97389b186de2d8eba4b0",
+    "base_down_sha256": "5f75832f0dfdc87676b7d5e86b633e36057e7115bf748c0bb27cfffece8e5253",
+    "reconstruction_rule": "FP16(base_down + FP32(factor_b) times transpose(FP32(factor_a)))",
+    "tensor_parallel_slice_closure": "The stored base and factors reconstructed the stored FP16 candidate down slice bit for bit on tensor-parallel rank zero. The full model run exercised the same assertion on all four ranks."
+  },
+  "load_time_materialization_measurement": {
+    "runtime_mode": "stored_low_rank_factors_materialized_at_load_candidate",
+    "report_relative_path": "results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-load-time-materialized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/report.json",
+    "report_sha256": "94a161eb507c3f0fbaf200bb969f11340f794f209eb42b45bf3c9c496439d1cb",
+    "measurement_controls_passed": true,
+    "resident_exl3_mean_kld": 0.06107434070309714,
+    "candidate_mean_kld": 0.05825746460698554,
+    "relative_kld_reduction": 0.04612208766698567,
+    "candidate_better_position_count": 1045,
+    "candidate_worse_position_count": 1002,
+    "route_array_sha256": "1f212a5f1d08a5e1e909e37ad3ac50be6d76dfab6af2df39eb39f7796f85f27d"
+  },
+  "dense_screen_closure": {
+    "dense_screen_kld_tensor_file_sha256": "f38b2c9bb5691cf5cb312d1590c710814f2be6ccf7468c09709a991f401485a0",
+    "load_time_materialized_kld_tensor_file_sha256": "73a96ec584f06ceccb57ba5b6f7ba1556eb01847ab3d276aea8bd86d16556e82",
+    "kld_tensor_shape": [2047],
+    "kld_tensor_bit_equal": true,
+    "maximum_absolute_kld_difference": 0.0,
+    "route_arrays_bit_equal": true,
+    "explanation_for_different_kld_file_hashes": "The PyTorch container files carry different serialization metadata even though their loaded tensors are bit-identical."
+  },
+  "two_gemm_control": {
+    "runtime_mode": "factorized_low_rank_candidate",
+    "report_relative_path": "results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-factorized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/report.json",
+    "report_sha256": "636b471688c67384931bc28ff1c39f3198714cbb1bc8f7771401a13b0db85d8b",
+    "candidate_mean_kld": 0.060660818902757214,
+    "relative_kld_reduction": 0.006770794339806208,
+    "decision": "Do not execute the correction as two inference GEMMs. The additional intermediate rounding changed the expert output by about 2e-7 relative SSE on stored routed rows and erased most of the measured KLD gain after downstream propagation."
+  },
+  "deployment_decision": "Serialize the low-rank factors as checkpoint bookkeeping, fuse their product into the decoded FP16 down matrix when the expert is loaded, and execute the existing one-GEMM expert path. Independent document confirmation and exact complete-container accounting remain required before release."
+}

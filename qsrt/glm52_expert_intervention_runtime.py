@@ -35,12 +35,18 @@ from qsrt.glm52_pilot import HIDDEN_SIZE, INTERMEDIATE_SIZE, TP_RANKS
 CONTROL_SCHEMA = "qsrt_glm52_expert_intervention_control_v2"
 TARGET_LAYER_NAME = "model.layers.3.mlp.experts"
 CANDIDATE_MODE = "candidate"
+FACTORIZED_LOW_RANK_CANDIDATE_MODE = "factorized_low_rank_candidate"
+MATERIALIZED_LOW_RANK_CANDIDATE_MODE = (
+    "stored_low_rank_factors_materialized_at_load_candidate"
+)
 LEGACY_K3_CANDIDATE_MODE = "qsrt_k3"
 IDENTITY_CONTROL_MODE = "dense_resident_identity"
 SUPPORTED_MODES = (
     "off",
     IDENTITY_CONTROL_MODE,
     CANDIDATE_MODE,
+    FACTORIZED_LOW_RANK_CANDIDATE_MODE,
+    MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
     LEGACY_K3_CANDIDATE_MODE,
 )
 RANK_INTERMEDIATE_SIZE = INTERMEDIATE_SIZE // TP_RANKS
@@ -220,6 +226,10 @@ class DenseExpertSlice:
     candidate_gate: torch.Tensor
     candidate_up: torch.Tensor
     candidate_down: torch.Tensor
+    candidate_down_base: torch.Tensor | None = None
+    candidate_down_factor_a: torch.Tensor | None = None
+    candidate_down_factor_b: torch.Tensor | None = None
+    candidate_down_materialized_from_factors: torch.Tensor | None = None
 
 
 def evaluate_expert(
@@ -238,6 +248,28 @@ def evaluate_expert(
     return F.linear(hidden, down)
 
 
+def evaluate_expert_with_factorized_down(
+    expert_input: torch.Tensor,
+    *,
+    gate: torch.Tensor,
+    up: torch.Tensor,
+    down_base: torch.Tensor,
+    factor_a: torch.Tensor,
+    factor_b: torch.Tensor,
+) -> torch.Tensor:
+    """Evaluate one expert slice with a stored low-rank down correction."""
+
+    input_fp16 = expert_input.to(torch.float16)
+    gate_values = F.linear(input_fp16, gate)
+    up_values = F.linear(input_fp16, up)
+    hidden_fp16 = F.silu(gate_values) * up_values
+    base_output = F.linear(hidden_fp16, down_base)
+    hidden_bf16 = hidden_fp16.to(torch.bfloat16)
+    rank_values = F.linear(hidden_bf16, factor_a.T.contiguous())
+    correction = F.linear(rank_values, factor_b)
+    return (base_output.float() + correction.float()).to(torch.float16)
+
+
 def routed_candidate_delta(
     x: torch.Tensor,
     topk_weights: torch.Tensor,
@@ -245,8 +277,13 @@ def routed_candidate_delta(
     *,
     expert_slices: Mapping[int, DenseExpertSlice],
     use_resident_endpoint: bool = False,
+    use_factorized_low_rank_down: bool = False,
+    use_materialized_low_rank_down: bool = False,
 ) -> torch.Tensor:
     """Return the route-weighted candidate-minus-EXL3 local expert output."""
+
+    if use_factorized_low_rank_down and use_materialized_low_rank_down:
+        raise ValueError("low-rank down execution modes are mutually exclusive")
 
     original_shape = x.shape[:-1]
     x_2d = x.reshape(-1, x.shape[-1])
@@ -274,6 +311,35 @@ def routed_candidate_delta(
             # every GPU kernel: different accumulation schedules can create a
             # small nonzero difference that later changes expert routing.
             candidate_output = exl3_output
+        elif use_factorized_low_rank_down:
+            if (
+                endpoint.candidate_down_base is None
+                or endpoint.candidate_down_factor_a is None
+                or endpoint.candidate_down_factor_b is None
+            ):
+                raise ValueError(
+                    f"expert {expert_id} has no factorized low-rank down endpoint"
+                )
+            candidate_output = evaluate_expert_with_factorized_down(
+                expert_input,
+                gate=endpoint.candidate_gate,
+                up=endpoint.candidate_up,
+                down_base=endpoint.candidate_down_base,
+                factor_a=endpoint.candidate_down_factor_a,
+                factor_b=endpoint.candidate_down_factor_b,
+            )
+        elif use_materialized_low_rank_down:
+            if endpoint.candidate_down_materialized_from_factors is None:
+                raise ValueError(
+                    f"expert {expert_id} has no load-time-materialized low-rank "
+                    "down endpoint"
+                )
+            candidate_output = evaluate_expert(
+                expert_input,
+                gate=endpoint.candidate_gate,
+                up=endpoint.candidate_up,
+                down=endpoint.candidate_down_materialized_from_factors,
+            )
         else:
             candidate_output = evaluate_expert(
                 expert_input,
@@ -364,6 +430,66 @@ class DenseEndpointStore:
             return value
 
         with safe_open(path, framework="pt", device="cpu") as handle:
+            keys = set(handle.keys())
+            low_rank_keys = {
+                "adapter.down.base",
+                "adapter.down.a",
+                "adapter.down.b",
+            }
+            present_low_rank_keys = low_rank_keys & keys
+            if present_low_rank_keys and present_low_rank_keys != low_rank_keys:
+                raise ValueError(
+                    f"expert {expert} has an incomplete factorized down endpoint"
+                )
+
+            candidate_down_base = None
+            candidate_down_factor_a = None
+            candidate_down_factor_b = None
+            if present_low_rank_keys:
+                base_slice = handle.get_slice("adapter.down.base")
+                if tuple(base_slice.get_shape()) != (HIDDEN_SIZE, INTERMEDIATE_SIZE):
+                    raise ValueError("adapter.down.base has invalid shape")
+                candidate_down_base = (
+                    base_slice[:, start:stop]
+                    .to(device=self.device, dtype=torch.float16)
+                    .contiguous()
+                )
+                factor_a_slice = handle.get_slice("adapter.down.a")
+                factor_a_shape = tuple(factor_a_slice.get_shape())
+                if len(factor_a_shape) != 2 or factor_a_shape[0] != INTERMEDIATE_SIZE:
+                    raise ValueError("adapter.down.a has invalid shape")
+                rank = factor_a_shape[1]
+                candidate_down_factor_a = (
+                    factor_a_slice[start:stop, :]
+                    .to(device=self.device, dtype=torch.bfloat16)
+                    .contiguous()
+                )
+                factor_b_value = handle.get_tensor("adapter.down.b")
+                if tuple(factor_b_value.shape) != (HIDDEN_SIZE, rank):
+                    raise ValueError("adapter.down.b has invalid shape")
+                candidate_down_factor_b = factor_b_value.to(
+                    device=self.device, dtype=torch.bfloat16
+                ).contiguous()
+            candidate_down = load_slice(
+                handle, self.candidate_tensor_prefix, "down_proj"
+            )
+            candidate_down_materialized_from_factors = None
+            if present_low_rank_keys:
+                assert candidate_down_base is not None
+                assert candidate_down_factor_a is not None
+                assert candidate_down_factor_b is not None
+                candidate_down_materialized_from_factors = (
+                    candidate_down_base.float()
+                    + candidate_down_factor_b.float()
+                    @ candidate_down_factor_a.float().T
+                ).to(torch.float16)
+                if not torch.equal(
+                    candidate_down_materialized_from_factors, candidate_down
+                ):
+                    raise ValueError(
+                        f"expert {expert} stored low-rank factors do not reconstruct "
+                        "the materialized FP16 down endpoint"
+                    )
             return DenseExpertSlice(
                 exl3_gate=load_slice(handle, "exl3", "gate_proj"),
                 exl3_up=load_slice(handle, "exl3", "up_proj"),
@@ -374,8 +500,12 @@ class DenseEndpointStore:
                 candidate_up=load_slice(
                     handle, self.candidate_tensor_prefix, "up_proj"
                 ),
-                candidate_down=load_slice(
-                    handle, self.candidate_tensor_prefix, "down_proj"
+                candidate_down=candidate_down,
+                candidate_down_base=candidate_down_base,
+                candidate_down_factor_a=candidate_down_factor_a,
+                candidate_down_factor_b=candidate_down_factor_b,
+                candidate_down_materialized_from_factors=(
+                    candidate_down_materialized_from_factors
                 ),
             )
 
@@ -664,6 +794,12 @@ def install_vllm_patch() -> None:
                         for expert in control["selected_experts"]
                     }
                 ),
+                use_factorized_low_rank_down=(
+                    control["mode"] == FACTORIZED_LOW_RANK_CANDIDATE_MODE
+                ),
+                use_materialized_low_rank_down=(
+                    control["mode"] == MATERIALIZED_LOW_RANK_CANDIDATE_MODE
+                ),
             )
             return (output.float() + delta).to(output.dtype)
 
@@ -678,11 +814,14 @@ __all__ = [
     "DenseEndpointStore",
     "DenseExpertSlice",
     "CANDIDATE_MODE",
+    "FACTORIZED_LOW_RANK_CANDIDATE_MODE",
+    "MATERIALIZED_LOW_RANK_CANDIDATE_MODE",
     "IDENTITY_CONTROL_MODE",
     "LEGACY_K3_CANDIDATE_MODE",
     "SUPPORTED_MODES",
     "atomic_write_control",
     "evaluate_expert",
+    "evaluate_expert_with_factorized_down",
     "_capture_layer_input",
     "_apply_with_per_expert_exl3_moe",
     "install_vllm_patch",

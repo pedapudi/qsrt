@@ -149,10 +149,11 @@ ridge coefficient. The model-KLD context does not enter factor fitting.
 
 Rank two stores 32,768 logical BF16 factor bytes per corrected expert. Rank
 four stores 65,536 bytes. The bounded runtime screen multiplies the rounded
-factors together and adds their product to the dense down endpoint. A
-factor-aware QSRT container and two-matrix serving branch remain unimplemented.
-The byte counts describe the proposed stored factors rather than the dense
-screening artifact.
+factors together and adds their product to the dense down endpoint. A later
+runtime artifact stores the K3 base down matrix and both factors, reconstructs
+the same FP16 down matrix when the expert is loaded, and continues to execute
+one down GEMM per routed expert. The byte counts describe the stored factors;
+complete container headers, alignment, and directories remain uncharged.
 
 Across all eight experts, rank two reduced pooled routed complete-expert error
 by 67.6456% on candidate-selection rows. Rank four reduced the same error by
@@ -197,8 +198,23 @@ restricted after inspecting rank-two KLD on the same reporting context. The
 one available context cannot estimate document-level uncertainty or correct
 this selection bias. A valid promotion requires frozen expert 103, the same
 rank, factor dtype, ridge, and construction to repeat on document-disjoint
-selection and confirmation contexts. The shipped artifact must also execute
-serialized factors rather than the materialized dense product used here.
+selection and confirmation contexts.
+
+The factor-aware runtime check resolves how the correction should execute.
+Running the stored factors as two inference GEMMs produced KLD
+0.0606608189028 for expert 103. This remained 0.6771% better than EXL3 but lost
+most of the dense screen's improvement. On stored routed rows, the two-GEMM
+output differed from the dense endpoint by only about `2e-7` relative SSE.
+That small numerical change was enough to change later model behavior.
+
+Load-time materialization avoids the unstable intermediate. The runtime loads
+the K3 base and BF16 factors, forms the FP16 down slice once, checks that it is
+bit-identical to the registered materialized endpoint, and then uses the
+existing one-GEMM path. The resulting 2,047 per-position KLD values and the
+complete route arrays were bit-identical to the dense screen. Mean KLD was
+again 0.0582574646070. This establishes one-context runtime closure for compact
+factor storage; it does not establish document-level generalization, a complete
+container byte total, or production throughput.
 
 The exact candidate is frozen in
 `experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`.
@@ -206,6 +222,12 @@ The registration records both factor hashes, ridge `0.001`, the base artifact,
 the materialized endpoint hash, the logical byte screen, and the independent
 confirmation rule. Changing any registered field creates a different
 candidate and requires a separate sealed confirmation set.
+
+The separate runtime receipt is
+`experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json`.
+It records the stored-factor artifact, both runtime reports, the bit-identical
+per-position closure, and the decision to fuse the correction at expert load
+time instead of executing two additional inference GEMMs.
 
 ## Interpretation by mechanism
 
@@ -355,8 +377,8 @@ A BF16 rank-four down correction on one expert adds 65,536 logical factor
 bytes. Charged against the uniform-K3 panel and its zero-payload down refit,
 the candidate totals 113,709,056 logical bytes. This remains 20,082,688 bytes
 below the panel's EXL3 representation. Headers, factor scales, alignment,
-directories, and the serving implementation remain uncharged until the GLM
-container exists.
+directories, and production-serving metadata remain uncharged until the GLM
+container exists. Load-time fusion itself adds no logical checkpoint bytes.
 
 ## Authoritative artifacts
 
@@ -377,6 +399,8 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | Rank-two low-rank individual attribution | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged-per-expert-attribution-paired-bf16-reference-kld-engine-per-expert-correctness/` | `f40d7a595535ff983de30316de181ec51da5f95a65af8eda006828bfb47a3ac3` |
 | Rank-two attribution-selected combinations | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-2-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/` | `2151734be97fdb6f28d9424b296c8fa4f16c8999965f218266fe0d373c77c078` |
 | Rank-four attribution-selected singletons and combinations | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged-attribution-selected-subsets-paired-bf16-reference-kld-engine-per-expert-correctness/` | `8cf9d7a7f7332a16ac8accebde102f892dd9bc5e193145b677a12f6e30e0b39b` |
+| Rank-four expert 103 with two inference GEMMs | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-factorized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/` | `636b471688c67384931bc28ff1c39f3198714cbb1bc8f7771401a13b0db85d8b` |
+| Rank-four expert 103 with load-time fusion | `results/glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-factorized-runtime-v1-merged-frozen-expert103-load-time-materialized-runtime-paired-bf16-reference-kld-engine-per-expert-correctness/` | `94a161eb507c3f0fbaf200bb969f11340f794f209eb42b45bf3c9c496439d1cb` |
 
 The codec-mechanism reports below do not contain new model KLD vectors.
 

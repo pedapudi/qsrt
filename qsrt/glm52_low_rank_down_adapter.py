@@ -258,6 +258,7 @@ def build_low_rank_down_for_expert(
     )
     selected = result["selected"]
     output_tensors = dict(tensors)
+    output_tensors["adapter.down.base"] = tensors["qsrt_k3.down_proj"].clone()
     output_tensors["qsrt_k3.down_proj"] = selected["dense"].cpu()
     output_tensors["adapter.down.a"] = selected["factor_a"].cpu()
     output_tensors["adapter.down.b"] = selected["factor_b"].cpu()
@@ -296,6 +297,7 @@ def build_low_rank_down_for_expert(
         "selected_ridge_factor": float(selected["ridge_factor"]),
         "factor_a_sha256": tensor_sha256(selected["factor_a"]),
         "factor_b_sha256": tensor_sha256(selected["factor_b"]),
+        "base_down_sha256": tensor_sha256(tensors["qsrt_k3.down_proj"]),
         "materialized_down_sha256": tensor_sha256(selected["dense"]),
         "input_dense_endpoint_sha256": input_record["dense_endpoint_file_sha256"],
         "dense_endpoint_file": output_path.name,
@@ -392,6 +394,15 @@ def run_low_rank_down_panel(
             "adapter_rank": rank,
             "factor_dtype": "BF16",
             "screening_endpoint_dtype": "FP16",
+            "factorized_runtime_contract": {
+                "base_down_tensor": "adapter.down.base",
+                "factor_a_tensor": "adapter.down.a",
+                "factor_b_tensor": "adapter.down.b",
+                "preferred_execution": (
+                    "materialize_fp16_down_from_base_and_factors_at_expert_load"
+                ),
+                "rejected_control_execution": "base_down_plus_two_bf16_factor_gemms",
+            },
         },
         "fit_numeric_policy": {
             "ridge_factors": [float(value) for value in ridge_factors],
@@ -408,9 +419,10 @@ def run_low_rank_down_panel(
         ),
         "device": str(device),
         "evidence_boundary": (
-            "BF16 factors are materialized into dense FP16 endpoints for a bounded "
-            "model-KLD screen; factor-aware serialization and execution remain "
-            "required before checkpoint byte or runtime claims"
+            "the artifact stores the BF16 factors, their K3 base matrix, and a "
+            "materialized FP16 endpoint for bounded model-KLD screening; checkpoint "
+            "size and serving claims require a runtime that reconstructs the endpoint "
+            "from the stored base and factors"
         ),
         "model_downloads_required": False,
         "complete_bf16_checkpoint_required": False,
