@@ -62,6 +62,7 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert args.kld_device == "cpu"
     assert args.source_sparse_index_topk is None
     assert args.reporting_activation_capture_dir is None
+    assert args.activation_capture_only is False
     assert args.omit_individual_expert_arms is False
     assert args.candidate_expert_subsets_json == "{}"
     assert args.candidate_runtime_mode == "candidate"
@@ -75,6 +76,32 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     assert "has not been established separately" in (
         runner.PAIRED_KLD_EVIDENCE_BOUNDARY
     )
+
+
+def test_runner_accepts_capture_only_mode() -> None:
+    runner = _load_runner()
+    args = runner.build_parser().parse_args(
+        [
+            "--model",
+            "/model",
+            "--reference-logits",
+            "/reference",
+            "--intervention-artifact",
+            "/artifact",
+            "--control",
+            "/control.json",
+            "--dest",
+            "/results",
+            "--corpus-plan",
+            "/corpus.json",
+            "--activation-capture-dir",
+            "/capture",
+            "--activation-capture-only",
+        ]
+    )
+
+    assert args.activation_capture_only is True
+    assert args.activation_capture_dir == Path("/capture")
 
 
 def test_one_prompt_run_captures_multiple_frozen_layers(

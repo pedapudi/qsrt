@@ -112,9 +112,10 @@ docker create \
   --activation-capture-panel-manifest /workspace/qsrt/experiments/glm52_layer60_rate_pattern_panel.json \
   --activation-capture-panel-manifest /workspace/qsrt/experiments/glm52_layer63_rate_pattern_panel.json \
   --activation-capture-panel-manifest /workspace/qsrt/experiments/glm52_layer64_rate_pattern_panel.json \
+  --activation-capture-only \
   --context-length 2048 \
   --tensor-parallel-size 4 \
-  --gpu-memory-utilization 0.95 \
+  --gpu-memory-utilization 0.93 \
   --dtype bfloat16 \
   --kv-cache-dtype nvfp4_ds_mla \
   --load-format safetensors \

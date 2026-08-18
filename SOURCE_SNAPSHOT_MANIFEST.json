@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-18T21:47:54Z",
+  "snapshot_timestamp_utc": "2026-08-18T21:54:45Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -126,6 +126,7 @@
       "docs/qsrt-improvement-strategy.md",
       "docs/qsrt-three-improvements-infographic.html",
       "docs/qsrt-two-bit-research-corpus.md",
+      "experiments/continue_glm52_down_refit_and_rank4_after_uniform_k3_on_kossel.sh",
       "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
       "experiments/create_glm52_per_expert_correctness_kld_control_container.sh",
       "experiments/create_glm52_uniform_k3_kld_chunked_full_vocabulary_container.sh",
@@ -159,6 +160,7 @@
       "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
       "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
       "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
+      "experiments/run_glm52_layers60_64_52_63_rank4_down_adapter_and_merge_on_kossel.sh",
       "experiments/run_glm52_layers60_64_52_63_uniform_k3_and_merge_on_kossel.sh",
       "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
       "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
@@ -251,7 +253,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 130
+    "untracked_file_count": 132
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -276,8 +278,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 449,
-  "total_file_bytes": 8518907,
+  "file_count": 451,
+  "total_file_bytes": 8528355,
   "files": [
     {
       "path": ".gitignore",
@@ -378,6 +380,11 @@
       "path": "docs/viterbi-trellis-explainer.html",
       "bytes": 58516,
       "sha256": "fbe628f1f84e9c6d0c96a9111fb0a6cb16754be767a955f88d8410240eba79a0"
+    },
+    {
+      "path": "experiments/continue_glm52_down_refit_and_rank4_after_uniform_k3_on_kossel.sh",
+      "bytes": 1153,
+      "sha256": "5b0c7a646795067a0cbc6e0762e8935205294b7a00c5873dbf8451903d166d7d"
     },
     {
       "path": "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
@@ -536,13 +543,18 @@
     },
     {
       "path": "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
-      "bytes": 7512,
-      "sha256": "323069fcc8a80b0cf25971739f47b5227149e1a0ec03b57d09b414e99c79b982"
+      "bytes": 7542,
+      "sha256": "1c0c1f647dc44598d9a97263a7c4bc77277a71cc5843e47d88bcc7adfc27225e"
     },
     {
       "path": "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
       "bytes": 5138,
       "sha256": "3d9b281e79ff6242b306c0ae75726620be6872f62d132a1c83df66130ee5ee74"
+    },
+    {
+      "path": "experiments/run_glm52_layers60_64_52_63_rank4_down_adapter_and_merge_on_kossel.sh",
+      "bytes": 5611,
+      "sha256": "b8b17c294c9b258c35a785acdce7f1465cfc4a1b3d949b2d7366a6a6cff0f929"
     },
     {
       "path": "experiments/run_glm52_layers60_64_52_63_uniform_k3_and_merge_on_kossel.sh",
@@ -1666,8 +1678,8 @@
     },
     {
       "path": "scripts/run_glm52_paired_expert_intervention_kld.py",
-      "bytes": 45701,
-      "sha256": "834225c5d60dfaa323c6c604b0af3acd5ab3f6151fb5c7d7c1247568fa212607"
+      "bytes": 47613,
+      "sha256": "0dc707e6f02fbe68bc5a1eb5e100ddb59b4f7f4aba7747b599ed7cd0fd8a20dd"
     },
     {
       "path": "scripts/run_glm52_qsrt_codec_pilot.py",
@@ -2051,8 +2063,8 @@
     },
     {
       "path": "tests/test_glm52_paired_kld.py",
-      "bytes": 17160,
-      "sha256": "83073c5dfa06d5984d23ab77762247f9a8338e59e67e994787dca5c041598b54"
+      "bytes": 17902,
+      "sha256": "c09e0684b851d0e84bbbb83fb9131c140daea64b84ddedf92aad013026fddaa3"
     },
     {
       "path": "tests/test_glm52_pilot.py",

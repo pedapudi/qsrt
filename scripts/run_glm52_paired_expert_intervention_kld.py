@@ -559,6 +559,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--reporting-activation-capture-dir", type=Path)
+    parser.add_argument(
+        "--activation-capture-only",
+        action="store_true",
+        help=(
+            "stop after finalizing the fit and selection input-capture manifests; "
+            "do not allocate full-vocabulary prompt log-probabilities or run KLD arms"
+        ),
+    )
     parser.add_argument("--context-length", type=int, default=2048)
     parser.add_argument(
         "--source-sparse-index-topk",
@@ -886,6 +894,10 @@ def main() -> None:
             "--corpus-plan and one activation-capture directory must be supplied "
             "together"
         )
+    if args.activation_capture_only and args.activation_capture_dir is None:
+        raise ValueError(
+            "--activation-capture-only requires --activation-capture-dir"
+        )
     if args.corpus_plan is not None and args.activation_capture_dir is not None:
         if not capture_panels_by_layer:
             capture_panels_by_layer = {
@@ -913,6 +925,42 @@ def main() -> None:
             artifact_manifest_sha256=artifact["manifest_sha256"],
             selected_experts=artifact["expert_ids"],
         )
+
+    if args.activation_capture_only:
+        assert activation_capture is not None
+        capture_report = {
+            "schema": "qsrt_glm52_layer_input_capture_run",
+            "schema_version": 1,
+            "status": "complete",
+            "model": str(args.model.resolve()),
+            "intervention_artifact": {
+                key: artifact[key]
+                for key in (
+                    "root",
+                    "manifest_sha256",
+                    "expert_ids",
+                    "expert_count",
+                    "model_layer",
+                )
+            },
+            "runtime": {
+                "tensor_parallel_size": args.tensor_parallel_size,
+                "dtype": args.dtype,
+                "kv_cache_dtype": args.kv_cache_dtype,
+                "model_load_seconds": load_seconds,
+            },
+            "activation_capture": {
+                "manifest_path": str(args.activation_capture_dir / "manifest.json"),
+                "corpus_plan_sha256": activation_capture["corpus_plan_sha256"],
+                "collections": activation_capture["collections"],
+            },
+            "evidence_boundary": (
+                "the run finalized resident-EXL3 routed-input captures and did "
+                "not evaluate a quantized candidate or compute full-model KLD"
+            ),
+        }
+        atomic_write_json(args.dest / "report.json", capture_report)
+        return
 
     arm_results: dict[str, Any] = {}
     klds: dict[str, torch.Tensor] = {}
