@@ -10,7 +10,7 @@ set -euo pipefail
 # bitwise repeatable before the complete selected panel is evaluated.
 
 if test "$#" -ne 1; then
-  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
+  echo "usage: $0 {uniform-k3|routed-input-curvature|reconstructed-activation-down-refit|down-covariance-source-target|down-identity-refit-target|down-covariance-refit-target|fixed-mixed-k3-k4-down-refit|fixed-rate-preserving-down-refit-k3-k4|selection-data-rate-preserving-down-refit-k3-k4}" >&2
   exit 2
 fi
 
@@ -30,6 +30,18 @@ case "${method}" in
   reconstructed-activation-down-refit)
     artifact_name="glm52-layer3-frozen8-reconstructed-activation-down-refit-merged"
     expected_experiment="qsrt_glm52_reconstructed_activation_down_refit_v1"
+    ;;
+  down-covariance-source-target)
+    artifact_name="glm52-layer3-frozen8-down-construction-reconstructed_input_covariance__source_weights-merged"
+    expected_experiment="qsrt_glm52_down_construction_comparison_v1"
+    ;;
+  down-identity-refit-target)
+    artifact_name="glm52-layer3-frozen8-down-construction-identity__reconstructed_activation_refit-merged"
+    expected_experiment="qsrt_glm52_down_construction_comparison_v1"
+    ;;
+  down-covariance-refit-target)
+    artifact_name="glm52-layer3-frozen8-down-construction-reconstructed_input_covariance__reconstructed_activation_refit-merged"
+    expected_experiment="qsrt_glm52_down_construction_comparison_v1"
     ;;
   fixed-mixed-k3-k4-down-refit)
     artifact_name="glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit"

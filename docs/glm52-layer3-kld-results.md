@@ -1,10 +1,10 @@
 # GLM-5.2 layer-3 QSRT mechanism results
 
-## Question
+## Evaluation goal
 
-Can a small set of format-preserving QSRT changes reduce the forward
-Kullback–Leibler divergence (KLD) of a uniform three-bit trellis replacement
-for eight routed GLM-5.2 experts?
+This study asks whether a small set of format-preserving QSRT changes can
+reduce the forward Kullback–Leibler divergence (KLD) of a uniform three-bit
+trellis replacement for eight routed GLM-5.2 experts.
 
 Forward KLD compares the candidate model's output probabilities with
 probabilities saved from the official BF16 model. Lower values are better. The
@@ -58,6 +58,9 @@ candidate process produced the same resident EXL3 KLD vector bit for bit.
 | Uniform K3 with BlockLDLQ feedback disabled at frozen scales | 0.0623782807651 | +2.1350% | 0.0000% | Byte-identical to uniform K3 |
 | K3 selected with one-sided routed-input covariance | 0.0638412662800 | +4.5304% | +2.3453% | Reject |
 | K3 with reconstructed-activation down refit | 0.0612386895257 | +0.2691% | −1.8269% | Confirm on more documents |
+| K3 down encoded with reconstructed-input covariance and source weights | 0.0658519849381 | +7.8227% | +5.5688% | Reject |
+| K3 with a locally selected identity-metric down refit | 0.0641342908893 | +5.0102% | +2.8151% | Reject the local selection rule |
+| K3 with reconstructed-input covariance and locally selected down refits | 0.0638195014718 | +4.4948% | +2.3105% | Reject |
 | Fixed twelve-promotion mixed K3/K4 over the down-refit base | 0.0659634015775 | +8.0051% | +5.7474% | Reject |
 | Ten-promotion mixed K3/K4 selected by complete-expert error, with one shared down-refit target per expert | 0.0636258118201 | +4.1776% | +1.9999% | Reject this construction |
 | Fixed twelve-promotion mixed K3/K4, with one shared down-refit target per expert | 0.0639669166209 | +4.7362% | +2.5468% | Reject this construction |
@@ -100,6 +103,37 @@ p99 alone is insufficient:
 Both candidates lowered p99 but worsened the mean loss among their 21
 worst-scoring positions. These token-level values come from one document and
 cannot supply a document-level non-inferiority verdict.
+
+The completed down-construction comparison produced the following tail
+statistics. The locally selected identity-metric refit used the same down
+tensor as the earlier refit for five experts. It changed the ridge choice for
+experts 106 and 204 and replaced expert 208's source fallback with a refit.
+Those three local choices changed mean KLD from `0.0612386895257` to
+`0.0641342908893`.
+
+| Down construction | p99 forward KLD | CVaR1% forward KLD | Maximum forward KLD |
+|---|---:|---:|---:|
+| Resident EXL3 | 1.0996727300 | 1.9557645264 | 5.5796093941 |
+| Uniform K3 | 1.1885003185 | 2.0497293302 | 4.9111685753 |
+| Earlier reconstructed-activation refit | 1.0591630125 | 2.0953120788 | 5.9141564369 |
+| Reconstructed-input covariance with source target | 1.3193669415 | 2.2089717615 | 6.3604264259 |
+| Locally selected identity-metric refit | 1.1236556482 | 2.1865061294 | 5.5795865059 |
+| Reconstructed-input covariance with locally selected refits | 1.0971495223 | 2.0218569438 | 4.5884408951 |
+
+Reconstructed-input covariance lost on mean, p99, CVaR1%, and maximum when it
+encoded the source target. The three accepted refits in the covariance/refit
+cell recovered 42.5415% of that cell's excess mean KLD above EXL3 and improved
+its tail statistics. The complete covariance/refit policy still lost to EXL3
+and uniform K3 on mean KLD. All three down-construction candidates changed
+downstream routes beginning at layer 4. The layer-3 routes used to invoke the
+intervention did not change.
+
+The four cells compare complete construction policies. They are not a strict
+tensor-level factorial because each input metric applies its own hard-encoded
+ridge and fallback decisions. Every continuous target candidate had the same
+hash under both metric policies, which closes target generation. The selected
+materialized target can still differ after metric-specific encoding and local
+selection.
 
 ## Interpretation by mechanism
 
@@ -155,16 +189,37 @@ K2, another layer, or a dense captured metric with larger feedback terms.
 
 ### Reconstructed-activation down refit
 
-Retain down refitting for document-replicated confirmation. The encoder freezes
-the quantized gate and up matrices, executes them on routed fit rows, fits a new
-continuous down target against the source expert output, and re-encodes the
-target with unchanged K3. Seven of eight experts accepted a refitted target;
-the remaining expert kept its source-target K3 encode.
+Retain the earlier down-refitted artifact as a candidate for document-replicated
+selection, but reject local expert error as the rule that chooses its ridge and
+fallback decisions. The encoder freezes the quantized gate and up matrices,
+executes them on routed fit rows, fits a new continuous down target against the
+source expert output, and re-encodes the target with unchanged K3. The earlier
+construction accepted seven of eight refitted targets and kept the source K3
+encode for the remaining expert.
 
 The refit adds no payload because the continuous target is discarded. The
-stored representation remains an ordinary K3 down matrix. The one-context gain
-is large enough to justify more reference documents, but it is not evidence for
-a complete checkpoint.
+stored representation remains an ordinary K3 down matrix. A later construction
+encoded every ridge candidate before selection and required both local mean and
+local row-CVaR improvement. It accepted all eight refits but made model mean KLD
+5.0102% worse than EXL3. Five materialized down tensors matched the earlier
+artifact exactly; three changed as described above. The result proves that the
+local tail guard does not repair the selector inversion. The earlier
+one-context gain still justifies evaluation on more reference documents, but
+neither construction defines a model-wide refit rule.
+
+### Reconstructed-input covariance for the down matrix
+
+Reject reconstructed-input covariance as the down-matrix encoding metric for
+this panel. With the original source target, it reduced local complete-expert
+error by 48.7027% across all eight experts and made model mean KLD 7.8227%
+worse than EXL3. It also worsened all reported model-level tail statistics.
+
+Combining the covariance metric with refitted targets improved model KLD by
+3.0864% relative to covariance with source targets, but remained 4.4948% worse
+than EXL3. This establishes down refitting as a correction within that policy;
+it does not rescue the policy. Do not feed reconstructed-input covariance into
+the coherent K3/K4 pool unless a later document-replicated experiment supplies
+a different model-level result.
 
 ### Mixed K3/K4 allocation
 
@@ -217,8 +272,9 @@ logical bytes and leaves a 4,419,584-byte margin below EXL3. Its KLD regression
 also rejects it regardless of the larger logical margin.
 
 Uniform K3 saves 20,148,224 logical bytes across the panel. Uniform K3,
-one-sided curvature, and down refitting use the same K3 payload size. The
-mixed-rate candidate uses the larger total stated above. A frozen GLM QSRT
+one-sided curvature, both down-refit constructions, and both
+reconstructed-input-covariance constructions use the same K3 payload size. The
+mixed-rate candidates use the larger totals stated above. A frozen GLM QSRT
 container does not yet exist, so headers, alignment, padding, directories,
 non-expert weights, and serving caches are absent from this calculation. The
 numbers do not establish complete serialized model size.
@@ -233,6 +289,9 @@ Paths are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | Uniform K3 | `results/glm52-layer3-frozen8-dense-endpoints-r7-closure-merged-v2-paired-bf16-reference-kld-engine-per-expert-correctness/` | `59dc890d56e1a48814b971836bf1544a86f79d0114043149a607564de8eada6b` |
 | One-sided routed-input covariance | `results/glm52-layer3-frozen8-routed-input-curvature-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `dc4df5478363582faa7ebca5d088e1d43a85a06d7e600d49c4cefc7c32ee373e` |
 | Reconstructed-activation down refit | `results/glm52-layer3-frozen8-reconstructed-activation-down-refit-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `d54093ec11d88664419039afa58bb7703a244ec8e0c0aa597db42a5c17cef21a` |
+| Reconstructed-input covariance with source target | `results/glm52-layer3-frozen8-down-construction-reconstructed_input_covariance__source_weights-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `52305af304917a2b6e2eca917281ea111acc7369c2817c55c05a7ad14c0f76d9` |
+| Locally selected identity-metric down refit | `results/glm52-layer3-frozen8-down-construction-identity__reconstructed_activation_refit-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `f43deb122e9f8e6152cc6501756c90602baaa398f542056769abf28ca5584dc9` |
+| Reconstructed-input covariance with locally selected down refits | `results/glm52-layer3-frozen8-down-construction-reconstructed_input_covariance__reconstructed_activation_refit-merged-paired-bf16-reference-kld-engine-per-expert-correctness/` | `69f513f2f98d8ff76859800ba18de7d95b0be91b799774213d3a76c64ef6e962` |
 | Fixed mixed K3/K4 over the down-refit base | `results/glm52-layer3-frozen8-fixed-mixed-k3-k4-down-refit-paired-bf16-reference-kld-engine-per-expert-correctness/` | `c366b25f8e3c4e1f231b0018dba241b25602dea98ad37ae337136756185f34c4` |
 | Ten-promotion selection-data rate-pool control | `results/glm52-layer3-frozen8-selection-data-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `99a447ed2f0243679b24a98414b632a39c7830010d1b9fc96e8ca90f6d32d07e` |
 | Fixed twelve-promotion rate-pool control | `results/glm52-layer3-frozen8-fixed-rate-preserving-down-refit-k3-k4-paired-bf16-reference-kld-engine-per-expert-correctness/` | `41ef7cf67ff0e9fc6bd977ead289c057ec2917fe35ff98cc4f5f41bca3aee6b9` |
@@ -253,16 +312,17 @@ record is [`glm52-experiment-journal.md`](glm52-experiment-journal.md).
 
 ## Next admissible experiments
 
-1. Build a coherent rate-conditioned pool. Reconstruct the down input and fit
-   a separate down target for each gate/up rate pair, then encode each target
-   at K3 and K4. Use complete-expert error only to shortlist configurations;
-   use selection-document KLD to freeze the panel candidate.
-2. Acquire or produce BF16 reference logits for multiple document-disjoint
+1. Acquire or produce BF16 reference logits for multiple document-disjoint
    contexts without downloading the full BF16 checkpoint, then repeat uniform
    K3 and down refitting with clustered document-level uncertainty.
-3. Complete the four-cell down-construction comparison: identity or
-   reconstructed-input metric crossed with source or refitted target. Include
-   stronger ridge and per-expert fallback controls for tail damage.
+2. Use at least eight selection contexts to choose between the source target,
+   the earlier fixed refit, and a bounded set of hard-encoded ridge/fallback
+   policies. Complete-expert error may prune candidates but cannot choose the
+   rule.
+3. After freezing a down rule with measured selection-context KLD, build a
+   coherent rate-conditioned pool. Reconstruct the down input and fit a
+   separate down target for each gate/up rate pair, then encode each target at
+   K3 and K4.
 4. Test the same frozen construction on error-blind panels from layers 52, 60,
    63, and 64. Layers 60 and 64 are an external sensitivity prior; layers 52
    and 63 are nearby controls.

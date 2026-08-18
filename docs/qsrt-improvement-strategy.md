@@ -62,6 +62,9 @@ worst one percent.
 | Uniform QSRT K3 | 0.06237828 | 1.18850 | 2.04973 | 4.91117 |
 | Input-covariance-selected K3 | 0.06384127 | 1.23571 | 2.09884 | 4.79991 |
 | K3 with reconstructed-activation down refit | 0.06123869 | 1.05916 | 2.09531 | 5.91416 |
+| Down source target encoded with reconstructed-input covariance | 0.06585198 | 1.31937 | 2.20897 | 6.36043 |
+| Locally selected identity-metric down refit | 0.06413429 | 1.12366 | 2.18651 | 5.57959 |
+| Reconstructed-input covariance with locally selected down refits | 0.06381950 | 1.09715 | 2.02186 | 4.58844 |
 | Ten-promotion selection-data K3/K4 control with one down target per expert | 0.06362581 | 1.06116 | 2.02477 | 4.24433 |
 | Fixed twelve-promotion K3/K4 control with one down target per expert | 0.06396692 | 1.02369 | 2.15752 | 5.91416 |
 
@@ -78,10 +81,18 @@ These values establish four mechanism decisions.
   complete-expert output error substantially, then increased full-model mean
   KLD by 2.3453% relative to uniform K3. A locally accurate reconstruction can
   perturb a downstream probability direction that matters more to the model.
-- **Reconstructed-activation down refitting remains under test.** It recovered
-  87.3960% of uniform K3's excess mean KLD above EXL3. It also increased CVaR1%
-  and the maximum KLD. The construction therefore needs an explicit tail-risk
-  policy and document-level replication.
+- **The earlier reconstructed-activation down refit remains a candidate, but
+  local refit selection is rejected.** The earlier frozen construction
+  recovered 87.3960% of uniform K3's excess mean KLD above EXL3. A later rule
+  hard-encoded every ridge candidate and required both local mean and row-tail
+  improvement. Five expert tensors matched the earlier result, but three new
+  local choices raised model mean KLD to 0.06413429. Complete-expert mean and
+  local row CVaR therefore cannot authorize ridge or fallback decisions.
+- **Reconstructed-input covariance for the down encoder is rejected on this
+  panel.** It reduced local complete-expert error by 48.7027% for the source
+  target and raised model mean KLD by 5.5688% relative to uniform K3. Refitting
+  three experts recovered 42.5415% of that policy's excess KLD above EXL3 but
+  did not make the policy competitive.
 - **Removing blockwise quantization-error feedback (BlockLDLQ) remains a scoped
   neutral result.** With frozen K3 scales and the identity input metric,
   disabling feedback changed the values presented to the dynamic-programming
@@ -276,7 +287,8 @@ Measure the singular-value recovery curve on the eight layer-3 experts before
 choosing a rank. Replicate the selected rank at early, middle, and late mixture
 layers before adopting a model-wide policy. Freeze support-stratified expert
 lists before candidate errors are available. Low-rank concentration measured
-on another model or another layer is a prior, not GLM evidence.
+on another model or another layer supplies a prior for GLM; it does not supply
+GLM evidence.
 
 Start with down-only rank two and rank four. Test gate and up only after the
 down-only candidate establishes useful KLD per byte. Gate and up factors must
@@ -433,7 +445,7 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 | Work | Result required before advancement |
 |---|---|
 | Verify model identity and prepare reference logits | Source and teacher revisions reconciled; eight selection contexts and at least 32 sealed confirmation contexts available |
-| Separate down conditioning from target refitting | One covariance, target, ridge, and fallback rule frozen from selection evidence |
+| Freeze the down-construction rule | Reconstructed-input covariance excluded; one identity-metric target, ridge, and fallback rule frozen by measured KLD on eight selection contexts |
 | Build coherent rate-conditioned and down-only low-rank candidates | Every upstream rate pair has its own down construction; each low-rank factor uses native reconstructed activations |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
 | Test transfer across layers | The selected construction repeats across error-blind panels from independently chosen layers |
@@ -441,8 +453,9 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 
 Artifact forensics run alongside candidate construction when their inputs are
 available. Their findings select a follow-up investigation when a candidate
-fails. They do not delay construction of the four down cells or the
-rate-conditioned and low-rank candidate pools.
+fails. They do not delay bounded source transfer, low-rank factor construction,
+or construction of unselected rate-conditioned candidates. They cannot replace
+the selection-context KLD required to freeze a down rule or rate allocation.
 
 ## Verify model and artifact identity
 
@@ -498,6 +511,28 @@ expert receives four complete down constructions.
 | Identity | Target fitted to reproduce the source expert output |
 | Covariance of activations reconstructed by quantized gate and up matrices | Target fitted to reproduce the source expert output |
 
+The four policies have been encoded and measured on the available reporting
+context. Reconstructed-input covariance with the source target reduced local
+complete-expert error by 48.7027% across all eight experts, then made model
+mean KLD 7.8227% worse than EXL3. Adding three accepted refits recovered
+42.5415% of that policy's excess KLD above EXL3, but the combined policy still
+lost by 4.4948%.
+
+The locally selected identity-metric refit also failed. It matched five of the
+earlier refitted down tensors byte for byte. For the remaining three experts,
+it changed two ridge choices and replaced one source fallback with a refit.
+Those locally favorable choices moved model mean KLD from 0.06123869 for the
+earlier refit to 0.06413429. The four-policy measurement therefore rejects
+reconstructed-input covariance and rejects local expert mean plus local
+row-CVaR as the refit selector. It does not reject the earlier fixed refit,
+which remains unconfirmed beyond one context.
+
+The policies are not a strict tensor-level factorial. The same continuous
+target candidates have matching hashes across input metrics, but each metric
+performs its own hard encoding and applies its own ridge and fallback choices.
+Use the results to accept or reject complete construction policies. Do not
+attribute every KLD difference to one matrix operation.
+
 The reconstructed-activation covariance describes the input that the encoded
 down matrix will receive. This covariance summarizes the directions and scales
 of the hidden activations and weights reconstruction error toward frequently
@@ -506,20 +541,22 @@ problem so the complete quantized expert reproduces the source expert output.
 The regularization strength is called the ridge strength. It limits how far
 the fitted target can move from the source down weights.
 
-Test a small ridge grid within both fitted-target cells. Freeze the grid before
-candidate measurement. Fit each target on activation-fit documents and choose
-the ridge value on candidate-selection documents. Evaluate the complete gated
-expert because gate, up, and down errors interact.
+Test a small ridge grid within the identity-metric fitted-target policy. Freeze
+the grid before candidate measurement. Fit each target on activation-fit
+documents and use complete-expert error only to prune clearly dominated hard
+encodes. Choose ridge and fallback decisions with measured KLD on the eight
+candidate-selection contexts. Evaluate the complete gated expert because gate,
+up, and down errors interact.
 
-Retain the source-target encode as an expert-specific fallback. Choose a refit
-only when it improves the complete-expert mean error and does not violate the
-pre-registered upper-tail rule on candidate-selection rows. Do not derive a
+Retain the source-target encode as an expert-specific fallback. Local mean and
+row-tail error may remove a refit that is dominated on both measures, but they
+may not select a refit or authorize its fallback decision. Do not derive a
 fallback decision from one worst token. Model-level tail safety is judged by
 document-level CVaR after the expert choices are assembled.
 
-The eight KLD selection contexts choose one down-construction rule, including
-its covariance policy, target policy, ridge grid decision, and fallback rule.
-The chosen rule becomes an input to the mixed-rate experiment. The sealed
+The eight KLD selection contexts choose one identity-metric down-construction
+rule, including its target policy, ridge decisions, and fallback rule. The
+chosen rule becomes an input to the mixed-rate experiment. The sealed
 confirmation contexts remain unopened during this decision.
 
 ## Build complete rate-conditioned expert candidates
@@ -784,12 +821,17 @@ Do not run every branch after a failure. Each added experiment must answer the
 specific unresolved cause and must retain the same data-separation and
 acceptance contract.
 
-The immediate constructions are a coherent rate-conditioned K3/K4 panel and a
-down-only activation-weighted low-rank panel. Every upstream rate pair gets a
-separately reconstructed down input, down metric, and down target. Every
-low-rank factor is fitted against the uniform-K3 activations that it will see
-at execution. Eight selection contexts choose one complete panel
-configuration. At least 32 untouched contexts determine whether it advances.
+The immediate blocking input is a set of eight KLD selection contexts and at
+least 32 sealed confirmation contexts. The complete BF16 checkpoint must not
+be downloaded to produce them. While an authorized teacher host produces the
+references, the implementation may build a down-only activation-weighted
+low-rank panel and finish the bounded source windows for transfer tests. It may
+also construct coherent rate-conditioned candidates, but it must not freeze a
+rate allocation until selection-context KLD has frozen the identity-metric
+down rule. Every upstream rate pair gets a separately reconstructed down input
+and target. Every low-rank factor is fitted against the uniform-K3 activations
+that it will see at execution. At least 32 untouched contexts determine
+whether a frozen candidate advances.
 
 ## Authority and evidence records
 

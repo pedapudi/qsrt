@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-18T17:55:00Z`. It
+This repository is a source snapshot updated at `2026-08-18T18:50:45Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -79,12 +79,14 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The GLM source-manifest, down-refit rate-pool, allocation, paired-KLD,
+The GLM down-construction, down-refit rate-pool, paired-KLD,
 intervention-runtime, and reconstructed-activation refit tests pass. The local
-CPU-only environment completed 50 tests in 0.50 seconds. Repository-wide
-collection now requires the optional Triton and InstantTensor packages used by
-newly pulled upstream recovery code. It also exposes two upstream script/test
-imports that are not present in `qsrt.pack.qsrt_candidates`.
+CPU-only environment completed 52 focused tests in 0.54 seconds.
+Repository-wide collection requires the optional Triton and InstantTensor
+packages used by upstream recovery code. It also exposes API mismatches in
+upstream recovery tests. A run that excluded those collection blockers passed
+849 tests, skipped 21, and found one unrelated artifact-fixture failure because
+the fixture lacked `candidate_codebook`.
 Install the optional dependencies or reconcile those imports before treating
 a repository-wide result as authoritative; do not hide the collection errors
 by deleting tests.
@@ -114,8 +116,12 @@ The complete artifact inventory is:
 /home/sunil/qsrt-glm52-experiments/ARTIFACT_INDEX.json
 ```
 
-That inventory contains 19,048 file records, zero unhashed files, a semantic
-category for each file, and a cleanup policy. The synchronized source copy is:
+The inventory generated at `2026-08-18T18:44Z` contains 16,941 regular-file
+records covering 409,590,032,232 bytes. It also records 636 files that the
+indexing process could not hash. Do not treat those unhashed files as verified.
+The inventory SHA-256 is
+`cfff53e5113f89c06e4e3a3f5951a3085190c2145af4620688b65f719cd382e1`.
+The synchronized source copy is:
 
 ```text
 /home/sunil/qsrt-glm52-experiments/source/qsrt-working-tree/
@@ -212,6 +218,9 @@ immutable rate-preserving experiment registration records both roles at
 | Uniform K3 with feedback disabled at frozen scales | `0.0623782807651` | `0.0000%` | Byte-identical control |
 | K3 selected with routed-input covariance | `0.0638412662800` | `+2.3453%` | Rejected |
 | K3 with reconstructed-activation down refit | `0.0612386895257` | `-1.8269%` | Confirm on more documents |
+| K3 down encoded with reconstructed-input covariance and source weights | `0.0658519849381` | `+5.5688%` | Rejected |
+| K3 with a locally selected identity-metric down refit | `0.0641342908893` | `+2.8151%` | Rejected selection rule |
+| K3 with reconstructed-input covariance and locally selected down refits | `0.0638195014718` | `+2.3105%` | Rejected |
 | Fixed twelve-promotion mixed K3/K4 over the down-refit base | `0.0659634015775` | `+5.7474%` | Rejected |
 | Ten-promotion K3/K4 control selected by complete-expert error, using one down target per expert | `0.0636258118201` | `+1.9999%` | Rejected construction |
 | Fixed twelve-promotion K3/K4 control using one down target per expert | `0.0639669166209` | `+2.5468%` | Rejected construction |
@@ -239,6 +248,18 @@ EXL3. Both lowered p99 while worsening CVaR1%, so p99 alone would have accepted
 the wrong tail direction. Both reused one target fitted from K3/K3 upstream
 activations when gate or up changed rate. They therefore do not test coherent
 rate-conditioned refitting.
+
+The down-construction comparison separated the input metric from the
+continuous target. Reconstructed-input covariance with the source target
+reduced complete-expert error by 48.7027 percent on candidate-selection rows,
+then worsened model mean KLD by 5.5688 percent relative to uniform K3. Adding
+three locally accepted refits improved that covariance policy but still lost
+to uniform K3. A second local rule accepted eight identity-metric refits yet
+also lost to uniform K3. Five of those materialized down tensors matched the
+earlier positive refit; three locally preferred ridge or fallback changes
+reversed the model-level outcome. Reject reconstructed-input covariance for
+this panel and reject local complete-expert mean plus local row-tail loss as a
+refit selector.
 
 Three other findings constrain the next experiments:
 
@@ -275,6 +296,26 @@ serialized artifact must retain a positive size margin after those costs.
 
 ## Active GLM-5.2 work
 
+### Obtain document-disjoint BF16 reference logits
+
+The available reference-logit set contains one 2,048-token document. It can
+reject a large regression but cannot select a refit rule or qualify a model.
+An authorized host that can run the official BF16 teacher must generate eight
+selection contexts and at least 32 sealed confirmation contexts. The context
+documents, tokenizer, chat template, teacher revision, runtime configuration,
+and output hashes must be recorded. The documents must be disjoint from fit
+and candidate-construction data. Do not download the complete BF16 checkpoint
+to kossel or to a developer workstation.
+
+### Select the down-refit rule with model KLD
+
+Retain the earlier fixed down-refit artifact as a candidate because it is the
+only tested QSRT intervention that improved mean KLD relative to uniform K3.
+Do not adopt it from the one-context result. Use complete-expert error only to
+prune clearly dominated candidates. Choose ridge and source-fallback decisions
+with measured KLD on the eight selection contexts, then freeze the rule before
+opening the confirmation contexts.
+
 ### Build coherent rate-conditioned down candidates
 
 The measured one-target control implementation is in
@@ -282,8 +323,10 @@ The measured one-target control implementation is in
 It is retained as a negative control. The next builder must reconstruct the
 down input and fit an independent down target for each of the K3/K3, K3/K4,
 K4/K3, and K4/K4 gate/up pairs. Each target then receives K3 and K4 encodes.
-The result is eight internally consistent complete-expert candidates. Use
-complete-expert error only to shortlist candidates, then use KLD on eight
+The result is eight internally consistent complete-expert candidates. Build
+the pool while reference logits are being prepared, but do not freeze a panel
+configuration until the KLD-selected down rule is available. Use
+complete-expert error only to shortlist candidates, then use KLD on the eight
 selection contexts to freeze one panel configuration.
 
 ### Confirm down refitting on multiple documents
