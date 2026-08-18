@@ -8,6 +8,7 @@ import torch
 
 from qsrt.glm52_low_rank_down_adapter import (
     fit_functional_down_adapter,
+    materialize_adapter_with_selection_fallback,
     materialize_bf16_down_adapter,
 )
 
@@ -17,6 +18,28 @@ def test_materialized_adapter_checks_geometry() -> None:
         materialize_bf16_down_adapter(
             torch.zeros(5, 3), torch.zeros(4, 2), torch.zeros(5, 2)
         )
+
+
+def test_selection_fallback_zeros_factors_and_retains_the_base() -> None:
+    base = torch.tensor([[1.0, 2.0]], dtype=torch.float16)
+    selected = {
+        "factor_a": torch.ones((2, 1), dtype=torch.bfloat16),
+        "factor_b": torch.ones((1, 1), dtype=torch.bfloat16),
+        "dense": torch.tensor([[2.0, 3.0]], dtype=torch.float16),
+        "selection_metrics": {"weighted_relative_sse": 0.21},
+    }
+
+    materialized = materialize_adapter_with_selection_fallback(
+        base_down=base,
+        baseline_metrics={"weighted_relative_sse": 0.2},
+        selected=selected,
+    )
+
+    assert materialized["accepted"] is False
+    assert torch.equal(materialized["dense"], base)
+    assert torch.count_nonzero(materialized["factor_a"]) == 0
+    assert torch.count_nonzero(materialized["factor_b"]) == 0
+    assert materialized["materialized_selection_weighted_relative_sse_reduction"] == 0.0
 
 
 def test_functional_adapter_recovers_predictable_rank_two_error() -> None:

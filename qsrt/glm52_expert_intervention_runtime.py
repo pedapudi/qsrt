@@ -203,8 +203,35 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
     endpoint = manifest.get("exl3_endpoint")
     if endpoint is None:
         endpoint = manifest.get("exl3_endpoint_identity")
-    if not isinstance(endpoint, dict) or endpoint.get("layer") != model_layer:
-        raise ValueError("dense intervention manifest and report layer mismatch")
+    input_artifact = manifest.get("input_intervention_artifact")
+    if endpoint is not None:
+        if not isinstance(endpoint, dict) or endpoint.get("layer") != model_layer:
+            raise ValueError("dense intervention manifest and report layer mismatch")
+    elif input_artifact is not None:
+        input_manifest_sha256 = None
+        input_report_sha256 = None
+        input_root = None
+        if isinstance(input_artifact, dict):
+            input_manifest_sha256 = input_artifact.get("manifest_sha256")
+            input_report_sha256 = input_artifact.get("report_sha256")
+            input_root = input_artifact.get("root")
+
+        def is_sha256(value: object) -> bool:
+            return (
+                isinstance(value, str)
+                and len(value) == 64
+                and all(character in "0123456789abcdef" for character in value)
+            )
+
+        if (
+            not isinstance(input_artifact, dict)
+            or not is_sha256(input_manifest_sha256)
+            or not is_sha256(input_report_sha256)
+            or (input_root is not None and not isinstance(input_root, str))
+        ):
+            raise ValueError("dense intervention input-artifact identity is invalid")
+    else:
+        raise ValueError("dense intervention manifest has no endpoint identity")
     candidate = manifest.get("candidate")
     if not isinstance(candidate, dict):
         raise TypeError("dense intervention manifest candidate must be an object")
@@ -245,6 +272,19 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
         if not isinstance(expected_sha256, str) or _sha256(path) != expected_sha256:
             raise ValueError(f"expert {expert} dense endpoint SHA-256 mismatch")
         total_bytes += expected_bytes
+    panel = manifest.get("panel")
+    if panel is not None:
+        panel_experts = panel.get(str(model_layer)) if isinstance(panel, dict) else None
+        if (
+            not isinstance(panel_experts, list)
+            or len(panel) != 1
+            or any(
+                isinstance(expert, bool) or not isinstance(expert, int)
+                for expert in panel_experts
+            )
+            or set(panel_experts) != seen
+        ):
+            raise ValueError("dense intervention manifest panel disagrees with report")
     if report.get("expert_count") != len(experts):
         raise ValueError("dense intervention expert count mismatch")
     if report.get("dense_endpoint_bytes") != total_bytes:

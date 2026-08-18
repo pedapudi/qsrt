@@ -99,6 +99,50 @@ def materialize_bf16_down_adapter(
     return a, b, dense
 
 
+def materialize_adapter_with_selection_fallback(
+    *,
+    base_down: torch.Tensor,
+    baseline_metrics: Mapping[str, float],
+    selected: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Retain the base matrix when a fitted adapter loses on selection rows."""
+
+    baseline_error = float(baseline_metrics["weighted_relative_sse"])
+    selected_metrics = selected["selection_metrics"]
+    selected_error = float(selected_metrics["weighted_relative_sse"])
+    if (
+        not math.isfinite(baseline_error)
+        or not math.isfinite(selected_error)
+        or baseline_error <= 0.0
+        or selected_error < 0.0
+    ):
+        raise ValueError("adapter selection errors must be finite and nonnegative")
+    tolerance = max(1e-15, baseline_error * 1e-9)
+    accepted = selected_error < baseline_error - tolerance
+    factor_a = selected["factor_a"]
+    factor_b = selected["factor_b"]
+    dense = selected["dense"]
+    if not accepted:
+        factor_a = torch.zeros_like(factor_a)
+        factor_b = torch.zeros_like(factor_b)
+        dense = base_down.to(dtype=torch.float16).contiguous()
+    return {
+        "accepted": accepted,
+        "factor_a": factor_a,
+        "factor_b": factor_b,
+        "dense": dense,
+        "materialized_selection_metrics": (
+            selected_metrics if accepted else dict(baseline_metrics)
+        ),
+        "proposed_selection_weighted_relative_sse_reduction": (
+            1.0 - selected_error / baseline_error
+        ),
+        "materialized_selection_weighted_relative_sse_reduction": (
+            1.0 - selected_error / baseline_error if accepted else 0.0
+        ),
+    }
+
+
 @torch.no_grad()
 def fit_functional_down_adapter(
     *,
@@ -257,16 +301,22 @@ def build_low_rank_down_for_expert(
         seed=seed,
     )
     selected = result["selected"]
+    baseline = result["baseline_selection_metrics"]
+    materialized = materialize_adapter_with_selection_fallback(
+        base_down=base_gpu["down_proj"],
+        baseline_metrics=baseline,
+        selected=selected,
+    )
     output_tensors = dict(tensors)
     output_tensors["adapter.down.base"] = tensors["qsrt_k3.down_proj"].clone()
-    output_tensors["qsrt_k3.down_proj"] = selected["dense"].cpu()
-    output_tensors["adapter.down.a"] = selected["factor_a"].cpu()
-    output_tensors["adapter.down.b"] = selected["factor_b"].cpu()
+    output_tensors["qsrt_k3.down_proj"] = materialized["dense"].cpu()
+    output_tensors["adapter.down.a"] = materialized["factor_a"].cpu()
+    output_tensors["adapter.down.b"] = materialized["factor_b"].cpu()
     output_path = _dense_expert_path(dest, layer, expert)
     _atomic_save_tensors(output_path, output_tensors)
     factor_bytes = sum(
         value.numel() * value.element_size()
-        for value in (selected["factor_a"], selected["factor_b"])
+        for value in (materialized["factor_a"], materialized["factor_b"])
     )
     candidate_records = []
     for candidate in result["candidates"]:
@@ -277,7 +327,6 @@ def build_low_rank_down_for_expert(
                 if key not in {"factor_a", "factor_b", "dense"}
             }
         )
-    baseline = result["baseline_selection_metrics"]
     selected_metrics = selected["selection_metrics"]
     return {
         "kind": f"{INTERVENTION_ARTIFACT_KIND}_expert",
@@ -294,11 +343,13 @@ def build_low_rank_down_for_expert(
             "b": list(selected["factor_b"].shape),
         },
         "logical_adapter_bytes": factor_bytes,
+        "accepted": materialized["accepted"],
+        "fallback": "retain_input_down_projection",
         "selected_ridge_factor": float(selected["ridge_factor"]),
-        "factor_a_sha256": tensor_sha256(selected["factor_a"]),
-        "factor_b_sha256": tensor_sha256(selected["factor_b"]),
+        "factor_a_sha256": tensor_sha256(materialized["factor_a"]),
+        "factor_b_sha256": tensor_sha256(materialized["factor_b"]),
         "base_down_sha256": tensor_sha256(tensors["qsrt_k3.down_proj"]),
-        "materialized_down_sha256": tensor_sha256(selected["dense"]),
+        "materialized_down_sha256": tensor_sha256(materialized["dense"]),
         "input_dense_endpoint_sha256": input_record["dense_endpoint_file_sha256"],
         "dense_endpoint_file": output_path.name,
         "dense_endpoint_file_bytes": output_path.stat().st_size,
@@ -309,9 +360,15 @@ def build_low_rank_down_for_expert(
         },
         "baseline_candidate_selection": baseline,
         "selected_candidate_selection": selected_metrics,
-        "selection_weighted_relative_sse_reduction": 1.0
-        - float(selected_metrics["weighted_relative_sse"])
-        / float(baseline["weighted_relative_sse"]),
+        "materialized_candidate_selection": materialized[
+            "materialized_selection_metrics"
+        ],
+        "proposed_selection_weighted_relative_sse_reduction": materialized[
+            "proposed_selection_weighted_relative_sse_reduction"
+        ],
+        "selection_weighted_relative_sse_reduction": materialized[
+            "materialized_selection_weighted_relative_sse_reduction"
+        ],
         "ridge_candidates": candidate_records,
     }
 
@@ -494,6 +551,7 @@ __all__ = [
     "GLM52_LOW_RANK_DOWN_EXPERIMENT",
     "build_low_rank_down_for_expert",
     "fit_functional_down_adapter",
+    "materialize_adapter_with_selection_fallback",
     "materialize_bf16_down_adapter",
     "run_low_rank_down_panel",
 ]

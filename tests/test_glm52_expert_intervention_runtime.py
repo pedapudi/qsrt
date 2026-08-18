@@ -40,8 +40,9 @@ def test_capture_layer_list_is_explicit_and_unique() -> None:
         _parse_capture_layers("60, 64", default_layer=3)
 
 
+@pytest.mark.parametrize("derived_root", [None, False, True])
 def test_dense_intervention_artifact_declares_its_model_layer(
-    tmp_path: Path,
+    tmp_path: Path, derived_root: bool | None,
 ) -> None:
     expert_root = tmp_path / "experts"
     expert_root.mkdir()
@@ -51,8 +52,22 @@ def test_dense_intervention_artifact_declares_its_model_layer(
     manifest = {
         "kind": "qsrt_glm52_dense_expert_intervention_v1_manifest",
         "candidate": {"tensor_prefix": "qsrt_k3"},
-        "exl3_endpoint_identity": {"layer": 60},
     }
+    if derived_root is not None:
+        input_identity = {
+            "manifest_sha256": "a" * 64,
+            "report_sha256": "b" * 64,
+        }
+        if derived_root:
+            input_identity["root"] = "/artifact"
+        manifest.update(
+            {
+                "input_intervention_artifact": input_identity,
+                "panel": {"60": [7]},
+            }
+        )
+    else:
+        manifest["exl3_endpoint_identity"] = {"layer": 60}
     manifest_sha256 = hashlib.sha256(
         json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
