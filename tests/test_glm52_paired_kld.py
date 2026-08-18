@@ -77,6 +77,93 @@ def test_runner_defaults_match_the_qualified_r7_fused_runtime() -> None:
     )
 
 
+def test_one_prompt_run_captures_multiple_frozen_layers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _load_runner()
+    corpus_plan_path = tmp_path / "corpus-plan.json"
+    windows = {
+        collection: {
+            "window_count": 1,
+            "windows": [
+                {
+                    "window_id": f"{collection}-document",
+                    "token_count": 128,
+                    "token_ids": list(range(128)),
+                }
+            ],
+        }
+        for collection in ("activation_fit", "candidate_selection")
+    }
+    corpus_plan_path.write_text(
+        json.dumps(
+            {
+                "schema": "qsrt_glm52_document_disjoint_corpus_plan",
+                "schema_version": 1,
+                **windows,
+                "separation": {
+                    "fit_selection_row_overlap": 0,
+                    "reference_fit_row_overlap": 0,
+                    "reference_selection_row_overlap": 0,
+                    "unit": "WikiText article delimited by a top-level heading",
+                },
+            }
+        )
+    )
+    capture_dir = tmp_path / "captures"
+    control_path = tmp_path / "control.json"
+    plan_sha256 = hashlib.sha256(corpus_plan_path.read_bytes()).hexdigest()
+    monkeypatch.setenv("QSRT_GLM52_ACTIVATION_CAPTURE_DIR", str(capture_dir))
+    monkeypatch.setenv("QSRT_GLM52_ACTIVATION_CAPTURE_PLAN_SHA256", plan_sha256)
+    monkeypatch.setenv("QSRT_GLM52_ACTIVATION_CAPTURE_LAYERS", "52,60")
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        SimpleNamespace(SamplingParams=lambda **kwargs: kwargs),
+    )
+
+    class FakeLlm:
+        def generate(self, prompts: object, sampling_params: object) -> list[object]:
+            del prompts, sampling_params
+            generation = json.loads(control_path.read_text())["generation"]
+            routes = np.zeros((128, 78, 8), dtype=np.int64)
+            for model_layer, expert in ((52, 5), (60, 7)):
+                routes[:, model_layer, 0] = expert
+                layer_root = capture_dir / f"layer-{model_layer:03d}"
+                _capture_layer_input(
+                    root=layer_root,
+                    model_layer=model_layer,
+                    x=torch.zeros((128, 6144), dtype=torch.bfloat16),
+                    topk_weights=torch.full((128, 8), 0.125),
+                    topk_ids=torch.tensor(routes[:, model_layer, :]),
+                    generation=generation,
+                    plan_sha256=plan_sha256,
+                )
+            return [SimpleNamespace(outputs=[SimpleNamespace(routed_experts=routes)])]
+
+    index = runner._capture_planned_layer_inputs(
+        FakeLlm(),
+        corpus_plan_path=corpus_plan_path,
+        capture_dir=capture_dir,
+        control_path=control_path,
+        artifact_manifest_sha256="a" * 64,
+        selected_experts_by_layer={52: (5,), 60: (7,)},
+    )
+
+    assert index["schema"] == "qsrt_glm52_multi_layer_input_capture_index"
+    assert index["model_layers"] == [52, 60]
+    for model_layer in (52, 60):
+        manifest = json.loads(
+            (capture_dir / f"layer-{model_layer:03d}" / "manifest.json").read_text()
+        )
+        assert manifest["model_layer"] == model_layer
+        assert manifest["collections"] == {
+            "activation_fit": 1,
+            "candidate_selection": 1,
+        }
+        assert len(manifest["records"]) == 2
+
+
 def test_reporting_capture_is_hash_bound_and_selection_forbidden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -132,6 +219,7 @@ def test_reporting_capture_is_hash_bound_and_selection_forbidden(
             generation = json.loads(control_path.read_text())["generation"]
             _capture_layer_input(
                 root=capture_dir,
+                model_layer=3,
                 x=torch.zeros((len(token_ids), 6144), dtype=torch.bfloat16),
                 topk_weights=torch.full((len(token_ids), 8), 0.125),
                 topk_ids=torch.tensor(routes[:, 3, :]),

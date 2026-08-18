@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Measure a frozen GLM-5.2 correction on public document-disjoint references.
+"""Screen a frozen GLM-5.2 intervention on public document-disjoint references.
 
-The runner loads the resident EXL3 checkpoint once. It then evaluates the
-unchanged resident and the frozen layer-3 expert-103 correction on one
-published 512-token reference chunk from each untouched WikiText document.
-The public reference files contain BF16-teacher log-probabilities from the
-same source weights as the bounded QSRT source shards.
+The runner loads the resident EXL3 checkpoint once. It evaluates the unchanged
+resident and one prebuilt intervention on one published 512-token reference
+chunk from each untouched WikiText document. The public reference files
+contain BF16-teacher log-probabilities from the same source weights as the
+bounded QSRT source shards.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from qsrt.glm52_engine_kld import (
     engine_kld_from_prompt_logprobs,
 )
 from qsrt.glm52_expert_intervention_runtime import (
+    CANDIDATE_MODE,
     FORCE_PER_EXPERT_EXL3_MOE_ENV,
     IDENTITY_CONTROL_MODE,
     MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
@@ -171,7 +172,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reference-plan", type=Path, required=True)
     parser.add_argument("--reference-link", type=Path, required=True)
     parser.add_argument("--intervention-artifact", type=Path, required=True)
-    parser.add_argument("--confirmation-registration", type=Path, required=True)
+    parser.add_argument("--confirmation-registration", type=Path)
+    parser.add_argument(
+        "--candidate-runtime-mode",
+        choices=(CANDIDATE_MODE, MATERIALIZED_LOW_RANK_CANDIDATE_MODE),
+        default=MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
+    )
     parser.add_argument("--control", type=Path, required=True)
     parser.add_argument("--dest", type=Path, required=True)
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
@@ -202,10 +208,19 @@ def main() -> None:
     plan = json.loads(args.reference_plan.read_text())
     references = validate_public_reference_files(plan, args.reference_directory)
     artifact = validate_dense_intervention_artifact(args.intervention_artifact)
-    registration = json.loads(args.confirmation_registration.read_text())
-    frozen = validate_frozen_low_rank_candidate(registration, artifact)
-    if frozen["expert"] != 103:
-        raise ValueError("public-reference confirmation requires frozen expert 103")
+    if args.confirmation_registration is not None:
+        registration = json.loads(args.confirmation_registration.read_text())
+        frozen = validate_frozen_low_rank_candidate(registration, artifact)
+        selected_experts = [frozen["expert"]]
+    else:
+        frozen = {
+            "role": "complete intervention artifact frozen before public-reference scoring",
+            "model_layer": artifact["model_layer"],
+            "expert_ids": list(artifact["expert_ids"]),
+            "artifact_manifest_sha256": artifact["manifest_sha256"],
+            "candidate_runtime_mode": args.candidate_runtime_mode,
+        }
+        selected_experts = list(artifact["expert_ids"])
 
     configured_link = Path(os.environ[ENGINE_KLD_REFERENCE_PATH_ENV])
     if configured_link.absolute() != args.reference_link.absolute():
@@ -297,7 +312,7 @@ def main() -> None:
         first, mode="off", selected_experts=None
     )
     first_identity, first_identity_routes, _ = measure(
-        first, mode=IDENTITY_CONTROL_MODE, selected_experts=[103]
+        first, mode=IDENTITY_CONTROL_MODE, selected_experts=selected_experts
     )
     controls_passed = bool(
         torch.equal(first_baseline, first_repeat)
@@ -326,23 +341,26 @@ def main() -> None:
             )
         candidate, candidate_routes, candidate_seconds = measure(
             row,
-            mode=MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
-            selected_experts=[103],
+            mode=args.candidate_runtime_mode,
+            selected_experts=selected_experts,
         )
         layer_baseline_routes = target_layer_routes(
             baseline_routes,
-            model_layer=3,
+            model_layer=artifact["model_layer"],
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         layer_candidate_routes = target_layer_routes(
             candidate_routes,
-            model_layer=3,
+            model_layer=artifact["model_layer"],
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         if not np.array_equal(layer_baseline_routes, layer_candidate_routes):
-            raise RuntimeError("layer-3 routes changed before the frozen intervention")
+            raise RuntimeError(
+                f"layer-{artifact['model_layer']} routes changed before the "
+                "frozen intervention"
+            )
         document_hash = row["document_sha256"]
         baseline_by_document[document_hash] = baseline
         candidate_by_document[document_hash] = candidate
@@ -368,8 +386,8 @@ def main() -> None:
                 ),
                 "resident_seconds": baseline_seconds,
                 "candidate_seconds": candidate_seconds,
-                "layer_3_expert_103_route_support": route_support_summary(
-                    layer_baseline_routes, selected_experts=[103]
+                "intervention_layer_route_support": route_support_summary(
+                    layer_baseline_routes, selected_experts=selected_experts
                 ),
                 "all_layer_routes": _changed_route_summary(
                     baseline_routes, candidate_routes
@@ -405,11 +423,16 @@ def main() -> None:
             "root": artifact["root"],
             "manifest_sha256": artifact["manifest_sha256"],
             "expert_ids": list(artifact["expert_ids"]),
+            "model_layer": artifact["model_layer"],
         },
-        "confirmation_registration": {
-            "path": str(args.confirmation_registration.resolve()),
-            "sha256": sha256_file(args.confirmation_registration),
-        },
+        "confirmation_registration": (
+            {
+                "path": str(args.confirmation_registration.resolve()),
+                "sha256": sha256_file(args.confirmation_registration),
+            }
+            if args.confirmation_registration is not None
+            else None
+        ),
         "public_reference_plan": {
             "path": str(args.reference_plan.resolve()),
             "sha256": sha256_file(args.reference_plan),
@@ -462,13 +485,11 @@ def main() -> None:
         },
         "numerical_target": {
             "target_mean_forward_kld": 0.059,
-            "pooled_candidate_below_target": bool(
-                summary["pooled_position_weight"]["candidate_mean_forward_kld"]
-                < 0.059
-            ),
-            "equal_document_candidate_below_target": bool(
-                summary["equal_document_weight"]["candidate_mean_forward_kld"]
-                < 0.059
+            "comparison_status": "not_comparable_across_reference_suites",
+            "reason": (
+                "the 0.059 target belongs to the registered 2,048-token suite; "
+                "these public references use 512-token document chunks and can "
+                "screen only paired candidate-minus-resident change"
             ),
         },
         "evidence_boundary": (

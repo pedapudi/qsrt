@@ -117,12 +117,14 @@ def _read_capture_rows(
     capture_root: Path,
     *,
     experts: Sequence[int],
+    model_layer: int = 3,
 ) -> dict[str, dict[int, tuple[torch.Tensor, torch.Tensor]]]:
     manifest = json.loads((capture_root / "manifest.json").read_text())
     if (
         manifest.get("schema") != "qsrt_glm52_layer_input_capture_manifest"
         or manifest.get("schema_version") != 1
         or manifest.get("status") != "complete"
+        or manifest.get("model_layer") != model_layer
     ):
         raise ValueError("layer-input capture manifest identity mismatch")
     plan_sha256 = manifest.get("corpus_plan_sha256")
@@ -181,7 +183,7 @@ def _read_capture_rows(
             metadata = handle.metadata() or {}
             if metadata != {
                 "schema": "qsrt_glm52_layer_input_capture_v1",
-                "model_layer": "3",
+                "model_layer": str(model_layer),
                 "control_generation": str(generation),
                 "corpus_plan_sha256": plan_sha256,
             }:
@@ -467,7 +469,9 @@ def run_down_refit_panel(
     )
     capture_manifest_path = capture_root / "manifest.json"
     capture_manifest_sha256 = sha256_file(capture_manifest_path)
-    routed = _read_capture_rows(capture_root, experts=experts)
+    routed = _read_capture_rows(
+        capture_root, experts=experts, model_layer=layer
+    )
     manifest = {
         "kind": f"{INTERVENTION_ARTIFACT_KIND}_manifest",
         "candidate": {

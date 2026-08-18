@@ -18,7 +18,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -30,13 +30,16 @@ from qsrt.glm52_engine_kld import (
     engine_kld_from_prompt_logprobs,
 )
 from qsrt.glm52_expert_intervention_runtime import (
+    ACTIVATION_CAPTURE_LAYERS_ENV,
     CANDIDATE_MODE,
     FACTORIZED_LOW_RANK_CANDIDATE_MODE,
     MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
     FORCE_PER_EXPERT_EXL3_MOE_ENV,
+    _parse_capture_layers,
     atomic_write_control,
     validate_dense_intervention_artifact,
 )
+from qsrt.glm52_real_weight_benchmark import load_frozen_real_weight_panel
 from qsrt.glm52_paired_kld import (
     forward_kld_per_position,
     paired_kld_summary,
@@ -214,9 +217,9 @@ def _capture_planned_layer_inputs(
     capture_dir: Path,
     control_path: Path,
     artifact_manifest_sha256: str,
-    selected_experts: list[int] | tuple[int, ...],
+    selected_experts_by_layer: Mapping[int, Sequence[int]],
 ) -> dict[str, Any]:
-    """Run fit and selection prompts while rank zero stores layer-3 inputs."""
+    """Run each prompt once while rank zero stores selected layer inputs."""
 
     from safetensors import safe_open
     from vllm import SamplingParams
@@ -228,6 +231,15 @@ def _capture_planned_layer_inputs(
         raise RuntimeError(
             "activation-capture environment does not match the requested directory "
             "and corpus-plan SHA-256"
+        )
+    model_layers = tuple(selected_experts_by_layer)
+    configured_layers = _parse_capture_layers(
+        os.getenv(ACTIVATION_CAPTURE_LAYERS_ENV),
+        default_layer=model_layers[0],
+    )
+    if configured_layers != model_layers:
+        raise RuntimeError(
+            "activation-capture layer environment differs from the frozen panels"
         )
     if capture_dir.exists():
         raise FileExistsError(capture_dir)
@@ -250,7 +262,9 @@ def _capture_planned_layer_inputs(
         routed_experts_prompt_start=0,
         detokenize=False,
     )
-    records: list[dict[str, Any]] = []
+    records_by_layer: dict[int, list[dict[str, Any]]] = {
+        model_layer: [] for model_layer in model_layers
+    }
     generation = 100
     for collection in ("activation_fit", "candidate_selection"):
         raw_collection = plan.get(collection)
@@ -280,41 +294,55 @@ def _capture_planned_layer_inputs(
             routed_experts = output.outputs[0].routed_experts
             if routed_experts is None:
                 raise RuntimeError("vLLM returned no routed experts during capture")
-            layer_routes = target_layer_routes(
-                np.asarray(routed_experts),
-                model_layer=3,
-                total_decoder_layers=78,
-                first_moe_layer=3,
-            )
-            matches: list[Path] = []
-            for path in capture_dir.glob("layer-003-input-chunk-*.safetensors"):
-                with safe_open(path, framework="pt", device="cpu") as handle:
-                    metadata = handle.metadata() or {}
-                    if metadata.get("control_generation") == str(generation):
-                        hidden_shape = tuple(handle.get_slice("hidden_states").get_shape())
-                        if hidden_shape != (len(token_ids), 6144):
-                            raise ValueError(
-                                f"capture {path.name} has hidden shape {hidden_shape}"
-                            )
-                        matches.append(path)
-            if len(matches) != 1:
-                raise RuntimeError(
-                    f"control generation {generation} produced {len(matches)} captures"
+            route_array = np.asarray(routed_experts)
+            for model_layer in model_layers:
+                layer_routes = target_layer_routes(
+                    route_array,
+                    model_layer=model_layer,
+                    total_decoder_layers=78,
+                    first_moe_layer=3,
                 )
-            records.append(
-                {
-                    "collection": collection,
-                    "window_id": window["window_id"],
-                    "token_count": len(token_ids),
-                    "control_generation": generation,
-                    "capture_file": matches[0].name,
-                    "capture_file_bytes": matches[0].stat().st_size,
-                    "capture_file_sha256": sha256_file(matches[0]),
-                    "route_support": route_support_summary(
-                        layer_routes, selected_experts=selected_experts
-                    ),
-                }
-            )
+                layer_root = (
+                    capture_dir
+                    if len(model_layers) == 1
+                    else capture_dir / f"layer-{model_layer:03d}"
+                )
+                matches: list[Path] = []
+                pattern = f"layer-{model_layer:03d}-input-chunk-*.safetensors"
+                for path in layer_root.glob(pattern):
+                    with safe_open(path, framework="pt", device="cpu") as handle:
+                        metadata = handle.metadata() or {}
+                        if metadata.get("control_generation") == str(generation):
+                            hidden_shape = tuple(
+                                handle.get_slice("hidden_states").get_shape()
+                            )
+                            if hidden_shape != (len(token_ids), 6144):
+                                raise ValueError(
+                                    f"capture {path.name} has hidden shape "
+                                    f"{hidden_shape}"
+                                )
+                            matches.append(path)
+                if len(matches) != 1:
+                    raise RuntimeError(
+                        f"layer {model_layer} control generation {generation} "
+                        f"produced {len(matches)} captures"
+                    )
+                path = matches[0]
+                records_by_layer[model_layer].append(
+                    {
+                        "collection": collection,
+                        "window_id": window["window_id"],
+                        "token_count": len(token_ids),
+                        "control_generation": generation,
+                        "capture_file": path.name,
+                        "capture_file_bytes": path.stat().st_size,
+                        "capture_file_sha256": sha256_file(path),
+                        "route_support": route_support_summary(
+                            layer_routes,
+                            selected_experts=selected_experts_by_layer[model_layer],
+                        ),
+                    }
+                )
     atomic_write_control(
         control_path,
         mode="off",
@@ -322,26 +350,60 @@ def _capture_planned_layer_inputs(
         generation=generation + 1,
         capture_enabled=False,
     )
-    capture_manifest = {
-        "schema": "qsrt_glm52_layer_input_capture_manifest",
+    layer_manifests: dict[str, dict[str, Any]] = {}
+    for model_layer, records in records_by_layer.items():
+        layer_root = (
+            capture_dir
+            if len(model_layers) == 1
+            else capture_dir / f"layer-{model_layer:03d}"
+        )
+        capture_manifest = {
+            "schema": "qsrt_glm52_layer_input_capture_manifest",
+            "schema_version": 1,
+            "status": "complete",
+            "model_layer": model_layer,
+            "corpus_plan_path": str(corpus_plan_path),
+            "corpus_plan_sha256": plan_sha256,
+            "intervention_artifact_manifest_sha256": artifact_manifest_sha256,
+            "selected_experts": list(selected_experts_by_layer[model_layer]),
+            "records": records,
+            "collections": {
+                collection: sum(
+                    record["collection"] == collection for record in records
+                )
+                for collection in ("activation_fit", "candidate_selection")
+            },
+            "evidence_boundary": (
+                f"exact resident-EXL3 layer-{model_layer} inputs, route IDs, "
+                "and applied route weights from document-disjoint fit and "
+                "candidate-selection articles"
+            ),
+        }
+        atomic_write_json(layer_root / "manifest.json", capture_manifest)
+        layer_manifests[str(model_layer)] = {
+            "root": str(layer_root),
+            "manifest_sha256": sha256_file(layer_root / "manifest.json"),
+            "collections": capture_manifest["collections"],
+        }
+    if len(model_layers) == 1:
+        return capture_manifest
+    capture_index = {
+        "schema": "qsrt_glm52_multi_layer_input_capture_index",
         "schema_version": 1,
         "status": "complete",
-        "model_layer": 3,
+        "model_layers": list(model_layers),
         "corpus_plan_path": str(corpus_plan_path),
         "corpus_plan_sha256": plan_sha256,
         "intervention_artifact_manifest_sha256": artifact_manifest_sha256,
-        "records": records,
-        "collections": {
-            collection: sum(record["collection"] == collection for record in records)
-            for collection in ("activation_fit", "candidate_selection")
-        },
+        "layers": layer_manifests,
+        "collections": capture_manifest["collections"],
         "evidence_boundary": (
-            "exact resident-EXL3 layer-3 inputs, route IDs, and applied route "
-            "weights from document-disjoint fit and candidate-selection articles"
+            "each prompt was run once through resident EXL3 while rank zero "
+            "captured the four declared layer inputs without changing model output"
         ),
     }
-    atomic_write_json(capture_dir / "manifest.json", capture_manifest)
-    return capture_manifest
+    atomic_write_json(capture_dir / "manifest.json", capture_index)
+    return capture_index
 
 
 def _capture_reporting_layer_input(
@@ -486,6 +548,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dest", type=Path, required=True)
     parser.add_argument("--corpus-plan", type=Path)
     parser.add_argument("--activation-capture-dir", type=Path)
+    parser.add_argument(
+        "--activation-capture-panel-manifest",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "frozen error-blind panel for one captured layer; repeat once per "
+            "layer and order entries to match QSRT_GLM52_ACTIVATION_CAPTURE_LAYERS"
+        ),
+    )
     parser.add_argument("--reporting-activation-capture-dir", type=Path)
     parser.add_argument("--context-length", type=int, default=2048)
     parser.add_argument(
@@ -715,6 +787,16 @@ def main() -> None:
             )
     args.dest.mkdir(parents=True, exist_ok=False)
     artifact = validate_dense_intervention_artifact(args.intervention_artifact)
+    capture_panels_by_layer: dict[int, tuple[int, ...]] = {}
+    for path in args.activation_capture_panel_manifest:
+        raw_panel = json.loads(path.read_text())
+        model_layer = raw_panel.get("layer")
+        if isinstance(model_layer, bool) or not isinstance(model_layer, int):
+            raise ValueError(f"capture panel {path} has no integer model layer")
+        panel = load_frozen_real_weight_panel(path, layer=model_layer)
+        if model_layer in capture_panels_by_layer:
+            raise ValueError(f"capture panels repeat model layer {model_layer}")
+        capture_panels_by_layer[model_layer] = panel["experts"]
     candidate_expert_subsets = parse_candidate_expert_subsets(
         args.candidate_expert_subsets_json,
         artifact_expert_ids=artifact["expert_ids"],
@@ -805,13 +887,17 @@ def main() -> None:
             "together"
         )
     if args.corpus_plan is not None and args.activation_capture_dir is not None:
+        if not capture_panels_by_layer:
+            capture_panels_by_layer = {
+                artifact["model_layer"]: artifact["expert_ids"]
+            }
         activation_capture = _capture_planned_layer_inputs(
             llm,
             corpus_plan_path=args.corpus_plan,
             capture_dir=args.activation_capture_dir,
             control_path=args.control,
             artifact_manifest_sha256=artifact["manifest_sha256"],
-            selected_experts=artifact["expert_ids"],
+            selected_experts_by_layer=capture_panels_by_layer,
         )
     if (
         args.corpus_plan is not None
@@ -896,20 +982,21 @@ def main() -> None:
 
     baseline_layer_routes = target_layer_routes(
         routes["resident_exl3"],
-        model_layer=3,
+        model_layer=artifact["model_layer"],
         total_decoder_layers=78,
         first_moe_layer=3,
     )
     for arm, _, _ in arm_definitions[1:]:
         arm_layer_routes = target_layer_routes(
             routes[arm],
-            model_layer=3,
+            model_layer=artifact["model_layer"],
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         if not np.array_equal(baseline_layer_routes, arm_layer_routes):
             raise RuntimeError(
-                f"layer-3 routing changed before the {arm!r} intervention"
+                f"layer-{artifact['model_layer']} routing changed before the "
+                f"{arm!r} intervention"
             )
     controls = measurement_control_summary(klds, routes)
     candidate_measured = "selected_candidate" in klds
@@ -928,6 +1015,7 @@ def main() -> None:
                 "expert_ids",
                 "expert_count",
                 "dense_endpoint_bytes",
+                "model_layer",
             )
         },
         "runtime": {
@@ -1012,7 +1100,7 @@ def main() -> None:
                     klds["resident_exl3"],
                     klds[f"selected_candidate_expert_{expert:03d}"],
                 ),
-                "layer_3_route_support": route_support_summary(
+                "intervention_layer_route_support": route_support_summary(
                     baseline_layer_routes, selected_experts=[expert]
                 ),
             }
@@ -1028,7 +1116,7 @@ def main() -> None:
                     klds["resident_exl3"],
                     klds[f"selected_candidate_subset_{name}"],
                 ),
-                "layer_3_route_support": route_support_summary(
+                "intervention_layer_route_support": route_support_summary(
                     baseline_layer_routes, selected_experts=experts
                 ),
             }
@@ -1036,7 +1124,8 @@ def main() -> None:
         }
         if candidate_measured and candidate_expert_subsets
         else None,
-        "layer_3_route_support": route_support_summary(
+        "intervention_model_layer": artifact["model_layer"],
+        "intervention_layer_route_support": route_support_summary(
             baseline_layer_routes, selected_experts=artifact["expert_ids"]
         ),
         "all_layer_route_array_equal": {

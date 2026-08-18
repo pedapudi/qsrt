@@ -364,7 +364,9 @@ def run_low_rank_down_panel(
     )
     capture_manifest_path = capture_root / "manifest.json"
     capture_manifest = json.loads(capture_manifest_path.read_text())
-    routed = _read_capture_rows(capture_root, experts=experts)
+    routed = _read_capture_rows(
+        capture_root, experts=experts, model_layer=layer
+    )
     manifest = {
         "kind": f"{INTERVENTION_ARTIFACT_KIND}_manifest",
         "source": source_inventory,

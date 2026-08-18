@@ -158,6 +158,27 @@ def test_frozen_panel_slices_are_disjoint_and_ordered() -> None:
     assert tuple(expert for group in slices for expert in group) == panel["experts"]
 
 
+@pytest.mark.parametrize(
+    "layer,expected_experts",
+    [
+        (52, (254, 186, 96, 116, 68, 29, 36, 235)),
+        (60, (78, 125, 186, 28, 230, 136, 180, 142)),
+        (63, (215, 32, 123, 164, 199, 118, 149, 29)),
+        (64, (241, 253, 76, 90, 85, 155, 106, 210)),
+    ],
+)
+def test_high_impact_and_nearby_control_panels_are_error_blind(
+    layer: int, expected_experts: tuple[int, ...]
+) -> None:
+    panel = load_frozen_real_weight_panel(
+        Path(f"experiments/glm52_layer{layer}_rate_pattern_panel.json"),
+        layer=layer,
+    )
+
+    assert panel["experts"] == expected_experts
+    assert len(set(panel["rate_patterns"].values())) >= 4
+
+
 @pytest.mark.parametrize("offset,count", [(-1, 1), (0, 0), (7, 2), (8, 1)])
 def test_frozen_panel_slice_rejects_invalid_bounds(offset: int, count: int) -> None:
     panel = load_frozen_real_weight_panel(

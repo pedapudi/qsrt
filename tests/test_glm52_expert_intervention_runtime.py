@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,11 +17,71 @@ from qsrt.glm52_expert_intervention_runtime import (
     _apply_with_per_expert_exl3_moe,
     _r7_fused_kernel_selection_disabled,
     _capture_layer_input,
+    _parse_capture_layers,
     atomic_write_control,
     evaluate_expert_with_factorized_down,
     read_control,
     routed_candidate_delta,
+    validate_dense_intervention_artifact,
 )
+
+
+def test_capture_layer_list_is_explicit_and_unique() -> None:
+    assert _parse_capture_layers(None, default_layer=3) == (3,)
+    assert _parse_capture_layers("52,60,63,64", default_layer=3) == (
+        52,
+        60,
+        63,
+        64,
+    )
+    with pytest.raises(ValueError, match="repeats"):
+        _parse_capture_layers("60,60", default_layer=3)
+    with pytest.raises(ValueError, match="comma-separated"):
+        _parse_capture_layers("60, 64", default_layer=3)
+
+
+def test_dense_intervention_artifact_declares_its_model_layer(
+    tmp_path: Path,
+) -> None:
+    expert_root = tmp_path / "experts"
+    expert_root.mkdir()
+    endpoint = expert_root / "layer-060-expert-007.safetensors"
+    endpoint.write_bytes(b"bounded endpoint fixture")
+    endpoint_sha256 = hashlib.sha256(endpoint.read_bytes()).hexdigest()
+    manifest = {
+        "kind": "qsrt_glm52_dense_expert_intervention_v1_manifest",
+        "candidate": {"tensor_prefix": "qsrt_k3"},
+        "exl3_endpoint_identity": {"layer": 60},
+    }
+    manifest_sha256 = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    record = {
+        "layer": 60,
+        "expert": 7,
+        "dense_endpoint_file": endpoint.name,
+        "dense_endpoint_file_bytes": endpoint.stat().st_size,
+        "dense_endpoint_file_sha256": endpoint_sha256,
+    }
+    (tmp_path / "report.json").write_text(
+        json.dumps(
+            {
+                "kind": "qsrt_glm52_dense_expert_intervention_v1",
+                "status": "complete",
+                "manifest_sha256": manifest_sha256,
+                "layer": 60,
+                "expert_count": 1,
+                "dense_endpoint_bytes": endpoint.stat().st_size,
+                "experts": [record],
+            }
+        )
+    )
+
+    validated = validate_dense_intervention_artifact(tmp_path)
+
+    assert validated["model_layer"] == 60
+    assert validated["expert_ids"] == (7,)
 
 
 def test_per_expert_execution_temporarily_disables_r7_kernel_flags() -> None:
@@ -402,6 +463,7 @@ def test_layer_input_capture_preserves_hidden_routes_and_applied_weights(
 ) -> None:
     path = _capture_layer_input(
         root=tmp_path,
+        model_layer=60,
         x=torch.arange(24, dtype=torch.bfloat16).reshape(2, 3, 4),
         topk_weights=torch.tensor(
             [[[0.7, 0.3], [0.4, 0.6], [0.2, 0.8]], [[0.1, 0.9], [0.5, 0.5], [0.6, 0.4]]]
@@ -418,7 +480,7 @@ def test_layer_input_capture_preserves_hidden_routes_and_applied_weights(
     with safe_open(path, framework="pt", device="cpu") as handle:
         assert handle.metadata() == {
             "schema": "qsrt_glm52_layer_input_capture_v1",
-            "model_layer": "3",
+            "model_layer": "60",
             "control_generation": "3",
             "corpus_plan_sha256": "a" * 64,
         }
@@ -431,6 +493,7 @@ def test_layer_input_capture_preserves_hidden_routes_and_applied_weights(
     with pytest.raises(ValueError, match="lowercase SHA-256"):
         _capture_layer_input(
             root=tmp_path,
+            model_layer=60,
             x=torch.ones(1, 4),
             topk_weights=torch.ones(1, 1),
             topk_ids=torch.zeros(1, 1, dtype=torch.int64),

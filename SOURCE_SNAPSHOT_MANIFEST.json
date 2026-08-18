@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-18T21:22:00Z",
+  "snapshot_timestamp_utc": "2026-08-18T21:47:54Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -126,6 +126,7 @@
       "docs/qsrt-improvement-strategy.md",
       "docs/qsrt-three-improvements-infographic.html",
       "docs/qsrt-two-bit-research-corpus.md",
+      "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
       "experiments/create_glm52_per_expert_correctness_kld_control_container.sh",
       "experiments/create_glm52_uniform_k3_kld_chunked_full_vocabulary_container.sh",
       "experiments/create_glm52_uniform_k3_kld_only_lower_memory_container.sh",
@@ -138,6 +139,10 @@
       "experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json",
       "experiments/glm52_layer3_rate_pattern_panel.json",
       "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json",
+      "experiments/glm52_layer52_rate_pattern_panel.json",
+      "experiments/glm52_layer60_rate_pattern_panel.json",
+      "experiments/glm52_layer63_rate_pattern_panel.json",
+      "experiments/glm52_layer64_rate_pattern_panel.json",
       "experiments/glm52_layers_52_60_63_64_source_shards.json",
       "experiments/glm52_public_reference_auxiliary_plan.json",
       "experiments/glm52_source_teacher_weight_identity.json",
@@ -152,6 +157,9 @@
       "experiments/run_glm52_document_disjoint_reference_confirmation_on_kossel.sh",
       "experiments/run_glm52_down_construction_slice_on_kossel.sh",
       "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
+      "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
+      "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
+      "experiments/run_glm52_layers60_64_52_63_uniform_k3_and_merge_on_kossel.sh",
       "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
       "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
       "experiments/run_glm52_reporting_expert_output_comparison_on_kossel.sh",
@@ -243,7 +251,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 122
+    "untracked_file_count": 130
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -268,8 +276,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 441,
-  "total_file_bytes": 8478911,
+  "file_count": 449,
+  "total_file_bytes": 8518907,
   "files": [
     {
       "path": ".gitignore",
@@ -372,6 +380,11 @@
       "sha256": "fbe628f1f84e9c6d0c96a9111fb0a6cb16754be767a955f88d8410240eba79a0"
     },
     {
+      "path": "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
+      "bytes": 832,
+      "sha256": "f4beaf9372b2b8df273ed2ad278bd23556dc5f60390fe08ae4be61e72be95cee"
+    },
+    {
       "path": "experiments/create_glm52_per_expert_correctness_kld_control_container.sh",
       "bytes": 5259,
       "sha256": "9eba52294f36945a0d0d046a4c839ed75489c5c0bdcf7929ad489f39c99ba6b3"
@@ -430,6 +443,26 @@
       "path": "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json",
       "bytes": 7295,
       "sha256": "d9f34c83e1d152018ae9305cc6f9835c3efd0e380ed43e99d81a7c6490d0aa3b"
+    },
+    {
+      "path": "experiments/glm52_layer52_rate_pattern_panel.json",
+      "bytes": 1510,
+      "sha256": "59230d23c5ad02e2bb6f1c6fd876803ac8d5e2a8c5b9769639e6e031ae206b41"
+    },
+    {
+      "path": "experiments/glm52_layer60_rate_pattern_panel.json",
+      "bytes": 1541,
+      "sha256": "01d8c587a2d97f66528e49f04402950fec000f6e038f2eb424f961b21f0e7500"
+    },
+    {
+      "path": "experiments/glm52_layer63_rate_pattern_panel.json",
+      "bytes": 1512,
+      "sha256": "16a465e72ef23e65c95f378472501ff415e7c651bd6bc457bba91573589e322d"
+    },
+    {
+      "path": "experiments/glm52_layer64_rate_pattern_panel.json",
+      "bytes": 1540,
+      "sha256": "38f52f0a0b3ab152b4c7ea47c5cdfc05b3d104014eba7c2a1f64c05dd4b62928"
     },
     {
       "path": "experiments/glm52_layers_52_60_63_64_source_shards.json",
@@ -500,6 +533,21 @@
       "path": "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
       "bytes": 3731,
       "sha256": "de4f13d737ebd4ff2b76d992f3742795add2666921241ce801bb094e284cb568"
+    },
+    {
+      "path": "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
+      "bytes": 7512,
+      "sha256": "323069fcc8a80b0cf25971739f47b5227149e1a0ec03b57d09b414e99c79b982"
+    },
+    {
+      "path": "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
+      "bytes": 5138,
+      "sha256": "3d9b281e79ff6242b306c0ae75726620be6872f62d132a1c83df66130ee5ee74"
+    },
+    {
+      "path": "experiments/run_glm52_layers60_64_52_63_uniform_k3_and_merge_on_kossel.sh",
+      "bytes": 5222,
+      "sha256": "8e75b0d6c6483344b8fa115f6c69ea892a47a7718360c195e0f49e2e478df08d"
     },
     {
       "path": "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
@@ -688,8 +736,8 @@
     },
     {
       "path": "qsrt/glm52_down_refit.py",
-      "bytes": 22347,
-      "sha256": "7829e8e2235a322298520b5fd0b82a65ebee796457f55cb66abb763d9501ad79"
+      "bytes": 22473,
+      "sha256": "bf3da22438c4a232273f73c336e8d069be813ef54395e3a1b938a584b51dd720"
     },
     {
       "path": "qsrt/glm52_down_refit_rate_pool.py",
@@ -713,8 +761,8 @@
     },
     {
       "path": "qsrt/glm52_expert_intervention_runtime.py",
-      "bytes": 33128,
-      "sha256": "f4c5c70d00252875b812d972ed399c3aea04369b2c5e4084f2c634f415c19ab2"
+      "bytes": 36521,
+      "sha256": "5ffcdfa2bf55852a3bfad57221c870dbd4dab27624408881b0c4652bf796a1e7"
     },
     {
       "path": "qsrt/glm52_k3_k4_allocation.py",
@@ -723,8 +771,8 @@
     },
     {
       "path": "qsrt/glm52_low_rank_down_adapter.py",
-      "bytes": 18986,
-      "sha256": "a4b4259485c652621f1ee85ad5bf3775e790e7a60af61804ba30043c591b45fa"
+      "bytes": 19019,
+      "sha256": "4bdd4fa28054e3c49418ce26a4742a77cacfef54864ca301b0f246137d560b6f"
     },
     {
       "path": "qsrt/glm52_paired_kld.py",
@@ -738,8 +786,8 @@
     },
     {
       "path": "qsrt/glm52_real_weight_benchmark.py",
-      "bytes": 30476,
-      "sha256": "d439e02ab5754b46eca56ff0159efbaabea5fbc7513399c263684409b467e97a"
+      "bytes": 30780,
+      "sha256": "59b4f6dbeba91a8527ff850bb3ae9915d19d9bf9b2c5ac9de39fb492f96ca5c8"
     },
     {
       "path": "qsrt/glm52_reporting_output.py",
@@ -1608,8 +1656,8 @@
     },
     {
       "path": "scripts/run_glm52_document_disjoint_reference_confirmation.py",
-      "bytes": 19991,
-      "sha256": "38514d47946e2ed56e4f62437bb9c1545d181ea88c3a3abd9eebd79863ca2362"
+      "bytes": 20898,
+      "sha256": "53db3f03fbb1314a573b9fe5024fe925fc87eb904f87c3c9a8b3b1d2bcd733e5"
     },
     {
       "path": "scripts/run_glm52_fp4_roundtrip_pilot.py",
@@ -1618,8 +1666,8 @@
     },
     {
       "path": "scripts/run_glm52_paired_expert_intervention_kld.py",
-      "bytes": 41528,
-      "sha256": "14a100e0bdbb8c1ebb3608cf4cbed65f2f9cf36f7c86491c81539696a3d71249"
+      "bytes": 45701,
+      "sha256": "834225c5d60dfaa323c6c604b0af3acd5ab3f6151fb5c7d7c1247568fa212607"
     },
     {
       "path": "scripts/run_glm52_qsrt_codec_pilot.py",
@@ -1983,8 +2031,8 @@
     },
     {
       "path": "tests/test_glm52_expert_intervention_runtime.py",
-      "bytes": 14163,
-      "sha256": "857871d89d9591c7b5b9495a8ebbc0d642da8fab2b13d2c4e1c12870f4335f04"
+      "bytes": 16324,
+      "sha256": "d12708c87594d917cf1d795fbe832810bc97bc5a6508aa37f5aaea3a62441bbc"
     },
     {
       "path": "tests/test_glm52_k3_k4_allocation.py",
@@ -2003,8 +2051,8 @@
     },
     {
       "path": "tests/test_glm52_paired_kld.py",
-      "bytes": 13729,
-      "sha256": "9904c3e80c8d5da8f74e2050f0d8bc55ccb3c49b404c9946675c61332d374187"
+      "bytes": 17160,
+      "sha256": "83073c5dfa06d5984d23ab77762247f9a8338e59e67e994787dca5c041598b54"
     },
     {
       "path": "tests/test_glm52_pilot.py",
@@ -2013,8 +2061,8 @@
     },
     {
       "path": "tests/test_glm52_real_weight_benchmark.py",
-      "bytes": 5383,
-      "sha256": "636a46525a7f64524782b881e41bcce25ff0bdde5b281430c3f0730ccf981c2a"
+      "bytes": 6044,
+      "sha256": "f99b0019e650dd9a18da82f2c1a11ed982b6ea7eff3cbf71e11b51c39a4292e2"
     },
     {
       "path": "tests/test_glm52_reporting_output.py",

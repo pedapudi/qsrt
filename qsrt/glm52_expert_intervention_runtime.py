@@ -6,9 +6,11 @@ expert on the same input and adds their output difference.  Tensor-parallel
 ranks own disjoint 512-neuron gate, up, and down slices, so the existing vLLM
 all-reduce reconstructs the complete substituted expert output.
 
-This module is an experiment hook, not a serving format.  It accepts only the
+This module is an experiment hook, not a serving format. It accepts only the
 hash-bound dense endpoint artifact emitted by
-``qsrt.glm52_expert_intervention`` and only layer 3 at tensor parallelism four.
+``qsrt.glm52_expert_intervention`` at tensor parallelism four. The artifact
+declares the one layer that may be changed. Input capture may observe one or
+more explicitly configured mixture-of-experts layers without changing them.
 """
 
 from __future__ import annotations
@@ -33,7 +35,8 @@ from qsrt.glm52_pilot import HIDDEN_SIZE, INTERMEDIATE_SIZE, TP_RANKS
 
 
 CONTROL_SCHEMA = "qsrt_glm52_expert_intervention_control_v2"
-TARGET_LAYER_NAME = "model.layers.3.mlp.experts"
+FIRST_MOE_LAYER = 3
+LAST_MOE_LAYER = 77
 CANDIDATE_MODE = "candidate"
 FACTORIZED_LOW_RANK_CANDIDATE_MODE = "factorized_low_rank_candidate"
 MATERIALIZED_LOW_RANK_CANDIDATE_MODE = (
@@ -51,6 +54,40 @@ SUPPORTED_MODES = (
 )
 RANK_INTERMEDIATE_SIZE = INTERMEDIATE_SIZE // TP_RANKS
 FORCE_PER_EXPERT_EXL3_MOE_ENV = "QSRT_GLM52_FORCE_PER_EXPERT_EXL3_MOE"
+ACTIVATION_CAPTURE_LAYERS_ENV = "QSRT_GLM52_ACTIVATION_CAPTURE_LAYERS"
+
+
+def _validate_model_layer(value: object) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not FIRST_MOE_LAYER <= value <= LAST_MOE_LAYER
+    ):
+        raise ValueError(
+            f"model layer must be an integer from {FIRST_MOE_LAYER} through "
+            f"{LAST_MOE_LAYER}"
+        )
+    return value
+
+
+def _layer_name(model_layer: int) -> str:
+    return f"model.layers.{_validate_model_layer(model_layer)}.mlp.experts"
+
+
+def _parse_capture_layers(value: str | None, *, default_layer: int) -> tuple[int, ...]:
+    """Parse the mixture-of-experts layers observed by one capture run."""
+
+    if value is None:
+        return (_validate_model_layer(default_layer),)
+    pieces = value.split(",")
+    if not pieces or any(not piece or not piece.isdecimal() for piece in pieces):
+        raise ValueError(
+            f"{ACTIVATION_CAPTURE_LAYERS_ENV} must be a comma-separated layer list"
+        )
+    layers = tuple(_validate_model_layer(int(piece)) for piece in pieces)
+    if len(set(layers)) != len(layers):
+        raise ValueError(f"{ACTIVATION_CAPTURE_LAYERS_ENV} repeats a layer")
+    return layers
 
 
 def _canonical_json_sha256(value: object) -> str:
@@ -151,11 +188,11 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
     if manifest.get("kind") != f"{INTERVENTION_ARTIFACT_KIND}_manifest":
         raise ValueError("dense intervention manifest kind mismatch")
     manifest_sha256 = _canonical_json_sha256(manifest)
+    model_layer = _validate_model_layer(report.get("layer"))
     required_report = {
         "kind": INTERVENTION_ARTIFACT_KIND,
         "status": "complete",
         "manifest_sha256": manifest_sha256,
-        "layer": 3,
     }
     for field, expected in required_report.items():
         if report.get(field) != expected:
@@ -163,6 +200,11 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
                 f"dense intervention report field {field!r} is "
                 f"{report.get(field)!r}, expected {expected!r}"
             )
+    endpoint = manifest.get("exl3_endpoint")
+    if endpoint is None:
+        endpoint = manifest.get("exl3_endpoint_identity")
+    if not isinstance(endpoint, dict) or endpoint.get("layer") != model_layer:
+        raise ValueError("dense intervention manifest and report layer mismatch")
     candidate = manifest.get("candidate")
     if not isinstance(candidate, dict):
         raise TypeError("dense intervention manifest candidate must be an object")
@@ -189,6 +231,8 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
             or expert in seen
         ):
             raise ValueError("dense intervention expert IDs must be unique 0..255")
+        if record.get("layer") != model_layer:
+            raise ValueError(f"expert {expert} receipt layer mismatch")
         seen.add(expert)
         filename = record.get("dense_endpoint_file")
         if not isinstance(filename, str) or Path(filename).name != filename:
@@ -212,6 +256,7 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
         "expert_count": len(seen),
         "dense_endpoint_bytes": total_bytes,
         "candidate_tensor_prefix": tensor_prefix,
+        "model_layer": model_layer,
         "report": report,
     }
 
@@ -382,11 +427,11 @@ class DenseEndpointStore:
             "tensor_prefix", LEGACY_K3_CANDIDATE_MODE
         )
         report = json.loads((self.root / "report.json").read_text())
+        self.model_layer = _validate_model_layer(report.get("layer"))
         if (
             report.get("kind") != INTERVENTION_ARTIFACT_KIND
             or report.get("status") != "complete"
             or report.get("manifest_sha256") != expected_manifest_sha256
-            or report.get("layer") != 3
         ):
             raise ValueError("runtime intervention report identity mismatch")
         records = report.get("experts")
@@ -586,6 +631,7 @@ def _apply_with_per_expert_exl3_moe(
 def _capture_layer_input(
     *,
     root: Path,
+    model_layer: int,
     x: torch.Tensor,
     topk_weights: torch.Tensor,
     topk_ids: torch.Tensor,
@@ -595,12 +641,15 @@ def _capture_layer_input(
     """Atomically save one rank-zero layer-input chunk on the host filesystem."""
 
     global _CAPTURE_CHUNK
+    model_layer = _validate_model_layer(model_layer)
     if len(plan_sha256) != 64 or any(character not in "0123456789abcdef" for character in plan_sha256):
         raise ValueError("activation-capture plan identity must be a lowercase SHA-256")
     root.mkdir(parents=True, exist_ok=True)
     chunk = _CAPTURE_CHUNK
     _CAPTURE_CHUNK += 1
-    destination = root / f"layer-003-input-chunk-{chunk:06d}.safetensors"
+    destination = root / (
+        f"layer-{model_layer:03d}-input-chunk-{chunk:06d}.safetensors"
+    )
     if destination.exists():
         raise FileExistsError(destination)
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
@@ -627,7 +676,7 @@ def _capture_layer_input(
             temporary,
             metadata={
                 "schema": "qsrt_glm52_layer_input_capture_v1",
-                "model_layer": "3",
+                "model_layer": str(model_layer),
                 "control_generation": str(generation),
                 "corpus_plan_sha256": plan_sha256,
             },
@@ -666,6 +715,12 @@ def install_vllm_patch() -> None:
         install_vllm_engine_kld_patch()
         root = Path(root_text)
         control_path = Path(control_text)
+        manifest = json.loads((root / "manifest.json").read_text())
+        if _canonical_json_sha256(manifest) != manifest_sha256:
+            raise RuntimeError("intervention manifest identity mismatch")
+        artifact_report = json.loads((root / "report.json").read_text())
+        target_model_layer = _validate_model_layer(artifact_report.get("layer"))
+        target_layer_name = _layer_name(target_model_layer)
         capture_root_text = os.environ.get("QSRT_GLM52_ACTIVATION_CAPTURE_DIR")
         capture_plan_sha256 = os.environ.get(
             "QSRT_GLM52_ACTIVATION_CAPTURE_PLAN_SHA256"
@@ -675,6 +730,18 @@ def install_vllm_patch() -> None:
                 "activation capture requires its directory and corpus-plan "
                 "SHA-256 environment variables together"
             )
+        capture_model_layers = (
+            _parse_capture_layers(
+                os.environ.get(ACTIVATION_CAPTURE_LAYERS_ENV),
+                default_layer=target_model_layer,
+            )
+            if capture_root_text
+            else ()
+        )
+        capture_layer_names = {
+            _layer_name(model_layer): model_layer
+            for model_layer in capture_model_layers
+        }
 
         from vllm.distributed import (  # type: ignore[import-not-found]
             get_tensor_model_parallel_rank,
@@ -732,7 +799,9 @@ def install_vllm_patch() -> None:
                     shared_experts,
                     shared_experts_input,
                 )
-            if layer.layer_name != TARGET_LAYER_NAME:
+            layer_name = layer.layer_name
+            capture_model_layer = capture_layer_names.get(layer_name)
+            if capture_model_layer is None and layer_name != target_layer_name:
                 return output
             control = read_control(
                 control_path, expected_manifest_sha256=manifest_sha256
@@ -740,20 +809,27 @@ def install_vllm_patch() -> None:
             world_size = get_tensor_model_parallel_world_size()
             rank = get_tensor_model_parallel_rank()
             if (
-                capture_root_text
+                capture_model_layer is not None
+                and capture_root_text
                 and control["mode"] == "off"
                 and control["capture_enabled"]
                 and rank == 0
                 and x.numel() // x.shape[-1] >= 128
             ):
+                capture_root = Path(capture_root_text)
+                if len(capture_model_layers) > 1:
+                    capture_root = capture_root / f"layer-{capture_model_layer:03d}"
                 _capture_layer_input(
-                    root=Path(capture_root_text),
+                    root=capture_root,
+                    model_layer=capture_model_layer,
                     x=x,
                     topk_weights=topk_weights,
                     topk_ids=topk_ids,
                     generation=control["generation"],
                     plan_sha256=str(capture_plan_sha256),
                 )
+            if layer_name != target_layer_name:
+                return output
             if control["mode"] == "off":
                 return output
             if world_size != TP_RANKS:
@@ -810,6 +886,7 @@ def install_vllm_patch() -> None:
 
 __all__ = [
     "CONTROL_SCHEMA",
+    "ACTIVATION_CAPTURE_LAYERS_ENV",
     "FORCE_PER_EXPERT_EXL3_MOE_ENV",
     "DenseEndpointStore",
     "DenseExpertSlice",
@@ -823,6 +900,7 @@ __all__ = [
     "evaluate_expert",
     "evaluate_expert_with_factorized_down",
     "_capture_layer_input",
+    "_parse_capture_layers",
     "_apply_with_per_expert_exl3_moe",
     "install_vllm_patch",
     "read_control",
