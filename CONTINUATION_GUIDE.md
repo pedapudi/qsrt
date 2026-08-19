@@ -417,6 +417,17 @@ After the download receipt closes, generate only the screening references:
 bash experiments/generate_glm52_screening_teacher_logits_on_kossel.sh
 ```
 
+The generator accepts a comma-separated GPU list. For example, the following
+command uses GPUs 1 through 3 while leaving an unrelated service on GPU 0:
+
+```bash
+TEACHER_LOGIT_DEVICES=1,2,3 \
+  bash experiments/generate_glm52_screening_teacher_logits_on_kossel.sh
+```
+
+Every selected GPU must be idle. The candidate-evaluation launchers still use
+tensor parallelism four and therefore require all four GPUs.
+
 The generator uses the existing pinned container image with network access
 disabled. It vocabulary-shards the endpoint across four GPUs, checks captured
 token hashes, repeats the BF16 calculation bit for bit, and records a 32-bit

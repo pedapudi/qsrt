@@ -12,6 +12,7 @@ IMAGE="verdictai/glm52-exl3-sparkinfer:v39-r28-r7fused-broadcast-cu132-sm120a"
 IMAGE_ID="sha256:12f86065d7fe64d30dad678585e68c91f47f1f2a32bed45ccaf108382f3928ac"
 PLAN_RELATIVE="experiments/glm52_terminal_hidden_teacher_reference_plan.json"
 REQUIRED_FREE_BYTES=12000000000
+TEACHER_LOGIT_DEVICES="${TEACHER_LOGIT_DEVICES:-0,1,2,3}"
 
 test -f "${SOURCE_ROOT}/${PLAN_RELATIVE}"
 test -f "${REFERENCE_ROOT}/assets/complete.json"
@@ -23,11 +24,24 @@ if [[ ! "${available_bytes}" =~ ^[0-9]+$ ]] || (( available_bytes < REQUIRED_FRE
   echo "screening teacher-reference generation needs at least ${REQUIRED_FREE_BYTES} free bytes" >&2
   exit 1
 fi
-gpu_processes=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits)
-if [[ -n "${gpu_processes}" ]]; then
-  echo "screening teacher-reference generation requires four idle GPUs" >&2
+if [[ ! "${TEACHER_LOGIT_DEVICES}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+  echo "TEACHER_LOGIT_DEVICES must be a comma-separated GPU index list" >&2
   exit 1
 fi
+IFS=',' read -r -a teacher_logit_devices <<<"${TEACHER_LOGIT_DEVICES}"
+declare -A seen_devices=()
+for device in "${teacher_logit_devices[@]}"; do
+  if [[ -n "${seen_devices[${device}]:-}" ]]; then
+    echo "TEACHER_LOGIT_DEVICES repeats GPU ${device}" >&2
+    exit 1
+  fi
+  seen_devices["${device}"]=1
+  gpu_processes=$(nvidia-smi --id="${device}" --query-compute-apps=pid --format=csv,noheader,nounits)
+  if [[ -n "${gpu_processes}" ]]; then
+    echo "screening teacher-reference generation requires idle GPU ${device}" >&2
+    exit 1
+  fi
+done
 
 docker run --rm --pull never --network none --gpus all --ipc=host \
   --user "$(id -u):$(id -g)" \
@@ -44,7 +58,7 @@ docker run --rm --pull never --network none --gpus all --ipc=host \
   --assets /reference/assets \
   --tokenizer /model \
   --evaluation-tier screening \
-  --devices 0,1,2,3 \
+  --devices "${TEACHER_LOGIT_DEVICES}" \
   --closure-rows 8 \
   --dest /reference/screening-logits \
   >"${REFERENCE_ROOT}/screening-logit-generation-report.json"

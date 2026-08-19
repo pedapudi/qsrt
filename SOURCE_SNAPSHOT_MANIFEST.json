@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-19T05:29:06Z",
+  "snapshot_timestamp_utc": "2026-08-19T05:32:40Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -295,7 +295,7 @@
   ],
   "maximum_file_bytes": 10485760,
   "file_count": 538,
-  "total_file_bytes": 9132259,
+  "total_file_bytes": 9134223,
   "files": [
     {
       "path": ".gitignore",
@@ -309,8 +309,8 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 33055,
-      "sha256": "882c7d1399b002dcb9db2b095e88bb25aeb50406c0567ab56e8ff6568190f1ed"
+      "bytes": 33463,
+      "sha256": "9303a17528758accc752c2effa22bf6997c0c4a3457f864ec0544d56407499a6"
     },
     {
       "path": "README.md",
@@ -549,13 +549,13 @@
     },
     {
       "path": "experiments/generate_glm52_confirmation_teacher_logits_on_kossel.sh",
-      "bytes": 3663,
-      "sha256": "a46d09598ba7ed50bd36f3c33f5bd4081c62dbcd34a9fa4280bde2537c61276a"
+      "bytes": 4232,
+      "sha256": "43a89a150ca0b6040eeab68bed7faa52a46d599d6b1a9d13273960de33fab062"
     },
     {
       "path": "experiments/generate_glm52_screening_teacher_logits_on_kossel.sh",
-      "bytes": 2536,
-      "sha256": "dcf39f853696749e049ab8bb4e889ccf16a08911743994991874893aaead4523"
+      "bytes": 3105,
+      "sha256": "a6f66126730ac06b1c113282fd27ab3e2b926e9819ada52c5e8399bdc54351ea"
     },
     {
       "path": "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
@@ -2524,8 +2524,8 @@
     },
     {
       "path": "tests/test_glm52_terminal_reference_evaluation.py",
-      "bytes": 3920,
-      "sha256": "68cb90967a0af7f82149be7bf1b91a50b7dfb36c6864b1291116b5dc3e3a3b92"
+      "bytes": 4338,
+      "sha256": "49c0596093c66ff7a82abfc7ce227162051d048c1c1226f2cf59b679cbe400e8"
     },
     {
       "path": "tests/test_glm52_terminal_teacher_assets.py",

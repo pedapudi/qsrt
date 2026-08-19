@@ -24,6 +24,9 @@ FREEZE_LAUNCHER = (
 CONFIRMATION_GENERATOR = (
     ROOT / "experiments/generate_glm52_confirmation_teacher_logits_on_kossel.sh"
 )
+SCREENING_GENERATOR = (
+    ROOT / "experiments/generate_glm52_screening_teacher_logits_on_kossel.sh"
+)
 CONFIRMATION_LAUNCHER = (
     ROOT
     / "experiments/evaluate_glm52_layer3_expert103_rank4_on_terminal_confirmation_references.sh"
@@ -97,6 +100,7 @@ def test_terminal_screening_launcher_is_offline_and_explicit() -> None:
 def test_confirmation_pipeline_is_sealed_and_offline() -> None:
     freeze = FREEZE_LAUNCHER.read_text()
     generator = CONFIRMATION_GENERATOR.read_text()
+    screening_generator = SCREENING_GENERATOR.read_text()
     confirmation = CONFIRMATION_LAUNCHER.read_text()
 
     assert "--network none" in freeze
@@ -108,6 +112,10 @@ def test_confirmation_pipeline_is_sealed_and_offline() -> None:
     assert "--confirmation-freeze /confirmation-freeze.json" in generator
     assert "--screening-report /screening-report.json" in generator
     assert "test ! -e \"${DESTINATION}\"" in generator
+    for source in (screening_generator, generator):
+        assert 'TEACHER_LOGIT_DEVICES="${TEACHER_LOGIT_DEVICES:-0,1,2,3}"' in source
+        assert '--devices "${TEACHER_LOGIT_DEVICES}"' in source
+        assert 'nvidia-smi --id="${device}"' in source
     assert "--network none" in confirmation
     assert "--pull never" in confirmation
     assert "--evaluation-tier confirmation" in confirmation
