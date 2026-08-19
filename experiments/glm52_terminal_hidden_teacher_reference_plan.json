@@ -1,0 +1,908 @@
+{
+  "confirmation_document_count": 32,
+  "documents": [
+    {
+      "axis": "axis1_general",
+      "context_tokens": 1880,
+      "corpus_line": 7853,
+      "document_epoch": 747,
+      "document_sha256": "53051bf5f35c35c9f371efa7b154c87dc5751ea4fff075fd16744033cc55932a",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        1879,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "6db221cd789d535621b93dabc122f7a8981cbbec30b3d8b0f7dfc7cea438d4db",
+      "logit_rows": 1879,
+      "reference_file": "screening-axis1-general-00.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 1880,
+      "terminal_hidden_row_start": 432371,
+      "terminal_hidden_row_stop_exclusive": 434250,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 1792,
+      "corpus_line": 8765,
+      "document_epoch": 1622,
+      "document_sha256": "95bcc3ae175fb9b63ba643c861b70227d11a8dbbaa5a1eee1328c13ee3dccc78",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        1791,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "3e61b21f946df72d88a687e46aa68c3e47ce9ad04f27c0a8b0d0e293541fda7a",
+      "logit_rows": 1791,
+      "reference_file": "screening-axis1-general-01.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 1792,
+      "terminal_hidden_row_start": 953314,
+      "terminal_hidden_row_stop_exclusive": 955105,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis2_legal",
+      "context_tokens": 973,
+      "corpus_line": 11941,
+      "document_epoch": 280,
+      "document_sha256": "8e161c872ea81788df2d70af31168c6fa2b0507345d11ba60e3e309cd1af5eb2",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        972,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "243391f0817f50c7d7b4298ccb5c7ba924e5198bf9346a3eebe6eefa87c36a6c",
+      "logit_rows": 972,
+      "reference_file": "screening-axis2-legal-00.safetensors",
+      "source": "neo4j_statute:doc_text",
+      "source_document_tokens": 973,
+      "terminal_hidden_row_start": 174764,
+      "terminal_hidden_row_stop_exclusive": 175736,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis2_legal",
+      "context_tokens": 802,
+      "corpus_line": 4916,
+      "document_epoch": 1102,
+      "document_sha256": "1b907b81d10fd952fcb7724d41c5d77e312f079e6a6051d2d4eded129c631730",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        801,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "fefc1bf6ff50d9aa59ff426662563406952a151c5176e7f50a407d1e22ae3c5c",
+      "logit_rows": 801,
+      "reference_file": "screening-axis2-legal-01.safetensors",
+      "source": "cap_markdown_case",
+      "source_document_tokens": 802,
+      "terminal_hidden_row_start": 651537,
+      "terminal_hidden_row_stop_exclusive": 652338,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 1988,
+      "corpus_line": 2411,
+      "document_epoch": 810,
+      "document_sha256": "e910804369e4994533bba49a233682cbf6131bd0c6e5fbfd6ac852f78d24272e",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        1987,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "b4175b9d41f289d41405abe5a1aa73ea164487c9446a427bfba34035b3b1834e",
+      "logit_rows": 1987,
+      "reference_file": "screening-axis3-code-agentic-00.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 1988,
+      "terminal_hidden_row_start": 477471,
+      "terminal_hidden_row_stop_exclusive": 479458,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 1767,
+      "corpus_line": 1259,
+      "document_epoch": 427,
+      "document_sha256": "f47f3fb3a8334226996a2ede6a0fc7a304b8cbc55442b00f3672dc896bcda0fb",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        1766,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "486988e1c21188c70009a6bff8a2201b9fa25c7aa46413168da804a9ae82ccb2",
+      "logit_rows": 1766,
+      "reference_file": "screening-axis3-code-agentic-01.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 1767,
+      "terminal_hidden_row_start": 267300,
+      "terminal_hidden_row_stop_exclusive": 269066,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis4_reasoning_termination",
+      "context_tokens": 70,
+      "corpus_line": 8611,
+      "document_epoch": 1049,
+      "document_sha256": "23e550762d817656b2fa0c81295ccfc11ff0486ba58335dcd55922c89bbb44e3",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        69,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "1a36902448f60cd2138409a53b1b4a612663ad26ba7736349aed5aaf9452778b",
+      "logit_rows": 69,
+      "reference_file": "screening-axis4-reasoning-termination-00.safetensors",
+      "source": "synthetic_termination_x6:pipes",
+      "source_document_tokens": 70,
+      "terminal_hidden_row_start": 627804,
+      "terminal_hidden_row_stop_exclusive": 627873,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis4_reasoning_termination",
+      "context_tokens": 70,
+      "corpus_line": 846,
+      "document_epoch": 1181,
+      "document_sha256": "351c67af37375d5c4480dd6e1512740846a7014b58cb16c0ae98329b0c5fd494",
+      "evaluation_tier": "screening",
+      "expected_logits_shape": [
+        69,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "0c929e554379f309fd667959670d4ad9bfd47f5d0f8cdc4c324fc890b9db755d",
+      "logit_rows": 69,
+      "reference_file": "screening-axis4-reasoning-termination-01.safetensors",
+      "source": "synthetic_termination_x6:pipes",
+      "source_document_tokens": 70,
+      "terminal_hidden_row_start": 693524,
+      "terminal_hidden_row_stop_exclusive": 693593,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 7966,
+      "document_epoch": 51,
+      "document_sha256": "08f495177661ebd22c9b22ef4df8cf45276808bcf166a52fb1201a095e8dd0a3",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "001f37edd4ee4e4f0b1e3ab7f88e1d3f56db8eba22928035847ce891762de685",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-00.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 30683,
+      "terminal_hidden_row_stop_exclusive": 32730,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 11400,
+      "document_epoch": 398,
+      "document_sha256": "0a9df0ceaa2a8577a86ab0d46223dcb7fd09fc4c6fae8767772e9ef626cb788e",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "64ec1019f8347d4f6e66e930175dd878d5ec8721d67ef34541f275094452ca8e",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-01.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2896,
+      "terminal_hidden_row_start": 241433,
+      "terminal_hidden_row_stop_exclusive": 243480,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 4516,
+      "document_epoch": 1193,
+      "document_sha256": "20b340083c7f3fa7b117134ac199337d79fa66ada2edbd540a89c1ea2a018a82",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "f798cdc76a40ad7ac931916fa35d5ea5f0b07dc3214f592901ce71f24d59d64c",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-02.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 698951,
+      "terminal_hidden_row_stop_exclusive": 700998,
+      "tier_index_within_axis": 2
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 3976,
+      "document_epoch": 1472,
+      "document_sha256": "21962cd358e336bd681d7317d91d790bf2902ad90121582355d4ac91c2bf6371",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "6bbf3e55382c84cd075479330c658522905b7d1dca513edeb93d266987223913",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-00.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 3108,
+      "terminal_hidden_row_start": 874210,
+      "terminal_hidden_row_stop_exclusive": 876257,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 3995,
+      "document_epoch": 593,
+      "document_sha256": "2e633b9b16d4481929939cc47bbf86770f86373eefe57a03d9ba5cedbd5e4394",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "206048ee79b4e6fe079304cd77af4c37195e062f2a9daee7ca9b867063f1e64e",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-01.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2064,
+      "terminal_hidden_row_start": 358493,
+      "terminal_hidden_row_stop_exclusive": 360540,
+      "tier_index_within_axis": 1
+    },
+    {
+      "axis": "axis2_legal",
+      "context_tokens": 2048,
+      "corpus_line": 10430,
+      "document_epoch": 815,
+      "document_sha256": "49bc612f2967b06162d7606508b0bcd162d50a24a51fad04dcd987782ff34d09",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "40402f0c5d1ea0d0ae362182ba0305e168c45c0bb3f6664052127ced1e171894",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis2-legal-00.safetensors",
+      "source": "neo4j_statute:doc_text",
+      "source_document_tokens": 4009,
+      "terminal_hidden_row_start": 484809,
+      "terminal_hidden_row_stop_exclusive": 486856,
+      "tier_index_within_axis": 0
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 2592,
+      "document_epoch": 999,
+      "document_sha256": "50d6a0320b5ca1eeb82c53ca0fce8603ebd322f17f03e53b3005947d403def2d",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "a746588fedfe027c80f41e5e31e18d4482c4cbd27556759a5dd22806bf25bce8",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-03.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3189,
+      "terminal_hidden_row_start": 589649,
+      "terminal_hidden_row_stop_exclusive": 591696,
+      "tier_index_within_axis": 3
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 8712,
+      "document_epoch": 651,
+      "document_sha256": "5dec9ec029d8bbd5f18d8e1b88a8bf17b14bedaf84eacee90f4fa4354f7b5451",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "8d5e69c5c844976cb231a3b78b893ff6997c2412fe1ee69daf32d20405a930dc",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-04.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3659,
+      "terminal_hidden_row_start": 386994,
+      "terminal_hidden_row_stop_exclusive": 389041,
+      "tier_index_within_axis": 4
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 7178,
+      "document_epoch": 581,
+      "document_sha256": "5fff1de662abd7a303bec43a301b378497635714c0a0c6f9d67d26578e8abce7",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "172c5abb6c2c8ce2a465d7314b81375a51bc0da5d45f89c0d21fa89523198186",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-05.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2262,
+      "terminal_hidden_row_start": 351930,
+      "terminal_hidden_row_stop_exclusive": 353977,
+      "tier_index_within_axis": 5
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 3518,
+      "document_epoch": 446,
+      "document_sha256": "7249ec7751dd0202f6a072bf2c9d4515197874b6408ff092e9454ba3a6ce5983",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "f86e30a25a0a31b2c058b4f5088238b27733ce00fabd57c44b84ca94492017c2",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-02.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2467,
+      "terminal_hidden_row_start": 276293,
+      "terminal_hidden_row_stop_exclusive": 278340,
+      "tier_index_within_axis": 2
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 11908,
+      "document_epoch": 630,
+      "document_sha256": "733f5f96ae3551bc9e1632af0ca2fe0a7c846287ceef1711034734e24bdd03dc",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "939054100ba18f03cb0ff9f6420cf965217a122fe97ffcc071fdc8ff109dc44d",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-03.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2583,
+      "terminal_hidden_row_start": 374608,
+      "terminal_hidden_row_stop_exclusive": 376655,
+      "tier_index_within_axis": 3
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 4316,
+      "document_epoch": 1194,
+      "document_sha256": "7409f803333ef7570d9832be715058daa7dc4d832532139d9dc205b1d593d7df",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "f6a9a77666ae34be12c13ea21a7bdf7eaf54ba12a3931412dcad33a1dbfc8c8a",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-06.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 703047,
+      "terminal_hidden_row_stop_exclusive": 705094,
+      "tier_index_within_axis": 6
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 355,
+      "document_epoch": 1208,
+      "document_sha256": "779a34da9ee1b9331300527dc0435518a7a3799697ed7dde4913bc1dfe65a0c5",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "7d17d86aa89de9c9745daa40487f47b6d4832db15501d983deffbabcf6d645e3",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-04.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2070,
+      "terminal_hidden_row_start": 712206,
+      "terminal_hidden_row_stop_exclusive": 714253,
+      "tier_index_within_axis": 4
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 679,
+      "document_epoch": 1094,
+      "document_sha256": "77e5077b623ce46674a2f575dc9bcb8e141a8792556243e93c974836312c99ef",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "8383ad809d59ca66f8660cda78f4253416c1f031290a1bfc928cb0caab045b3e",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-07.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2208,
+      "terminal_hidden_row_start": 647904,
+      "terminal_hidden_row_stop_exclusive": 649951,
+      "tier_index_within_axis": 7
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 4155,
+      "document_epoch": 140,
+      "document_sha256": "781f5193d3dfa3ad859a7d8db90ae1293aee0b9e3461473dc8b078807ae25123",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "593a75dd45a7a505bf1dfd4e4945bbfe72e303cbd5f86ca0934d1b8df78ecbed",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-08.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 78543,
+      "terminal_hidden_row_stop_exclusive": 80590,
+      "tier_index_within_axis": 8
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 5075,
+      "document_epoch": 1291,
+      "document_sha256": "7d2cf04782595f9835a7703c30ae8d8bbf647571d4d414497fd962bdc204bc65",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "e7f45baf916fb6a96d61669f980eda99d4668cedef4feba9360550b336ffd9dd",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-09.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4075,
+      "terminal_hidden_row_start": 762083,
+      "terminal_hidden_row_stop_exclusive": 764130,
+      "tier_index_within_axis": 9
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 2714,
+      "document_epoch": 1337,
+      "document_sha256": "8e606040ed0e92e5d9692a1b31d9fc685463b3f5dc4983434eeadcf5fb9e0c9e",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "dc417fe7b47405f7a7265abaa42aaddb45af92e08436a3966dec3a808944f465",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-10.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2937,
+      "terminal_hidden_row_start": 790200,
+      "terminal_hidden_row_stop_exclusive": 792247,
+      "tier_index_within_axis": 10
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 3613,
+      "document_epoch": 517,
+      "document_sha256": "9174f57603de064b4413f1a49675d784eec5de64de57b841fce6a115518995f5",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "10b87e933a17b1806cd250d21d57e94c60fcf974c90efde50571d9f555698933",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-11.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 315935,
+      "terminal_hidden_row_stop_exclusive": 317982,
+      "tier_index_within_axis": 11
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 9732,
+      "document_epoch": 1436,
+      "document_sha256": "a1b779dd9512aba19f9c075209cd9a7d91a412c84558cdee086ba81cb2749ef5",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "ce6b9518d154e89243aee2a7d507acd7e4e1bbd65a12fab0b03cf950de031b87",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-05.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2901,
+      "terminal_hidden_row_start": 846757,
+      "terminal_hidden_row_stop_exclusive": 848804,
+      "tier_index_within_axis": 5
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 754,
+      "document_epoch": 801,
+      "document_sha256": "b369073530d19eebc5e1fcd1e0b79aed53e08813c42d53f699276129bceea1b5",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "34316c832f315f30a128a7b9f05625fa5beeaf48a207dddfdd87583f9f2fa6a6",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-06.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 3102,
+      "terminal_hidden_row_start": 469134,
+      "terminal_hidden_row_stop_exclusive": 471181,
+      "tier_index_within_axis": 6
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 6941,
+      "document_epoch": 1290,
+      "document_sha256": "ba241e34fbb1d83b4fc4322ad8839bbe3fe7e0373647dbca04a50f1e9d5608ac",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "dd0ec6e783668ac2b5f5dbac92187c0f560c078b21737c1a4a97cf2bd9e023fa",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-12.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 757987,
+      "terminal_hidden_row_stop_exclusive": 760034,
+      "tier_index_within_axis": 12
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 8754,
+      "document_epoch": 350,
+      "document_sha256": "c42dfff86cef070408b4994f3956525057da38fe9b74acdc4dabb4f9f339a0c7",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "719c18ab748e4033419980a84aa6f9d7b6f0b2fa2b58956346693c71a3bad424",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-13.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2504,
+      "terminal_hidden_row_start": 218567,
+      "terminal_hidden_row_stop_exclusive": 220614,
+      "tier_index_within_axis": 13
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 10409,
+      "document_epoch": 1585,
+      "document_sha256": "c5536f402994daf5b2ffc6edac62a7eb078adebe74ba47e2190c3ed8f23a0bce",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "8dc3a6fb935737f03f55e66c3a750c5b5617d8e83e0f025db37cfb005a036935",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-07.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2160,
+      "terminal_hidden_row_start": 927159,
+      "terminal_hidden_row_stop_exclusive": 929206,
+      "tier_index_within_axis": 7
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 3042,
+      "document_epoch": 419,
+      "document_sha256": "c8ad78ddc277dbdf3fd99122bda896cea7a617f88d3f6add6a4963ac4271052f",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "2a5508854abc5d4f923eb5dc5c81fbb39e1c4dc6c8eb6ee4161b23aefa1872c3",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-14.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 4096,
+      "terminal_hidden_row_start": 258700,
+      "terminal_hidden_row_stop_exclusive": 260747,
+      "tier_index_within_axis": 14
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 2218,
+      "document_epoch": 807,
+      "document_sha256": "cb251ad96db8306d62e5af8cf83d96b7948dda8f50ea0181ea0f17765d0e7ed5",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "35aaee23b3f9b9a2c156ac184e2a5587a73ce51ddb74964cc5d15d48b01701a3",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-15.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3034,
+      "terminal_hidden_row_start": 473418,
+      "terminal_hidden_row_stop_exclusive": 475465,
+      "tier_index_within_axis": 15
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 7862,
+      "document_epoch": 1180,
+      "document_sha256": "df5ebd16ac13c10349f82727fc6c60e0b0ccd4975555eef739c0a61f2bb71123",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "ac44544211d56effb8d9ac4c2e9782c31e00f1e5f9003f3c76ab922bc8da2192",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-16.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2632,
+      "terminal_hidden_row_start": 690892,
+      "terminal_hidden_row_stop_exclusive": 692939,
+      "tier_index_within_axis": 16
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 98,
+      "document_epoch": 306,
+      "document_sha256": "e26e5d43789f4253069677fb518e69bd5dee28db38c17404f6886d27af076425",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "bd1244a6c25c9b3b88f534dad459c28c7c3afcf2f6d8e88ff3ebf4507baab9bf",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-17.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3759,
+      "terminal_hidden_row_start": 187242,
+      "terminal_hidden_row_stop_exclusive": 189289,
+      "tier_index_within_axis": 17
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 822,
+      "document_epoch": 1163,
+      "document_sha256": "e976c46ef35df449bdc7646cc5dff95f7d3f71d8758754ad995c4ab4855226cd",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "49825c6e348f1140a14d799d81acf08a1ac51a00e3d4a5e800e19353aab41f8f",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-18.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2596,
+      "terminal_hidden_row_start": 683159,
+      "terminal_hidden_row_stop_exclusive": 685206,
+      "tier_index_within_axis": 18
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 4977,
+      "document_epoch": 820,
+      "document_sha256": "e9df1525db42f7c760f2dfb13f4e32cb24ac66f0174e50e0f902f654ff2b5192",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "6c77ae2a4d2200b3b6cbd584b1cc3028707426581a8301dae5105d5ca90d9a99",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-19.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3493,
+      "terminal_hidden_row_start": 489350,
+      "terminal_hidden_row_stop_exclusive": 491397,
+      "tier_index_within_axis": 19
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2048,
+      "corpus_line": 2723,
+      "document_epoch": 411,
+      "document_sha256": "f23dd942a6eee60a133db1451dd9c92d97ccc0b13e8c0b15e745ab0a5282f5ef",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "c7b3ea449400168c851704800229a56b583959de05cfb84fed1683cbae917be4",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis1-general-20.safetensors",
+      "source": "luke_style:deep_calib.jsonl",
+      "source_document_tokens": 3536,
+      "terminal_hidden_row_start": 249836,
+      "terminal_hidden_row_stop_exclusive": 251883,
+      "tier_index_within_axis": 20
+    },
+    {
+      "axis": "axis3_code_agentic",
+      "context_tokens": 2048,
+      "corpus_line": 1155,
+      "document_epoch": 905,
+      "document_sha256": "f57a5c81adbff5086a0d48069204f3677c784ee6237024a47d31cae262f653d0",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2047,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "b2c38b8b7a63dbfea533f2805a0a4efe935ad0a8c1fbd0e8f193c27decae366f",
+      "logit_rows": 2047,
+      "reference_file": "confirmation-axis3-code-agentic-08.safetensors",
+      "source": "luke_style:agentic_coding_calib_generic.jsonl",
+      "source_document_tokens": 2912,
+      "terminal_hidden_row_start": 546746,
+      "terminal_hidden_row_stop_exclusive": 548793,
+      "tier_index_within_axis": 8
+    },
+    {
+      "axis": "axis1_general",
+      "context_tokens": 2026,
+      "corpus_line": 10535,
+      "document_epoch": 1740,
+      "document_sha256": "dbddd525414f6d9faf4208d537920eb1c14251ff93539466de6005da666d2e0a",
+      "evaluation_tier": "confirmation",
+      "expected_logits_shape": [
+        2025,
+        154880
+      ],
+      "full_token_ids_sha256_u32le": "385b1b590c79c3f01ca6b6068e81e30d0f597abb145e479906f0eb1e150e14e6",
+      "logit_rows": 2025,
+      "reference_file": "confirmation-axis1-general-21.safetensors",
+      "source": "luke_style:diverse_calib.jsonl",
+      "source_document_tokens": 2026,
+      "terminal_hidden_row_start": 1028137,
+      "terminal_hidden_row_stop_exclusive": 1030162,
+      "tier_index_within_axis": 21
+    }
+  ],
+  "evidence_boundary": "The eight screening documents may select among already-built candidates. The thirty-two confirmation documents remain sealed until candidate construction, selection, factor dtype, and exact charged bytes are frozen.",
+  "frozen_at_utc": "2026-08-19T04:39:00Z",
+  "reference_assets": {
+    "final_normalization": {
+      "dtype": "BF16",
+      "epsilon": 1e-05,
+      "extracted_bytes": 12288,
+      "extracted_file": "model.norm.weight.bf16.bin",
+      "repository": "zai-org/GLM-5.2",
+      "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+      "safetensors_header_bytes": 552,
+      "shape": [
+        6144
+      ],
+      "source_byte_start": 293605936,
+      "source_byte_stop_exclusive": 293618224,
+      "source_shard": "model-00282-of-00282.safetensors",
+      "source_shard_sha256": "46c23d3a25db83ab8b7e47d0a5efec49e00f57a815358323f1ab45136de327d7",
+      "tensor": "model.norm.weight"
+    },
+    "language_model_head": {
+      "dtype": "BF16",
+      "extracted_bytes": 1903165440,
+      "extracted_file": "lm_head.weight.bf16.bin",
+      "repository": "zai-org/GLM-5.2",
+      "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+      "safetensors_header_bytes": 4128,
+      "shape": [
+        154880,
+        6144
+      ],
+      "source_byte_start": 4136,
+      "source_byte_stop_exclusive": 1903169576,
+      "source_shard": "model-00001-of-00282.safetensors",
+      "source_shard_sha256": "004bf9404964da8ea71ea2d3ebf02148fa766b956bd4fca3f54b093e58a6a74c",
+      "tensor": "lm_head.weight"
+    },
+    "terminal_hidden": {
+      "bytes": 12897349632,
+      "dtype": "bfloat16-little-endian",
+      "path": "raw_capture/terminal_layer_077/hidden.bf16.bin",
+      "published_tag": "canonical-v1",
+      "repository": "brandonmusic/GLM-5.2-BMM-Law-SQG-Hessians-Canonical",
+      "revision": "1be5d12221bf885a5568a431562041ce2e073352",
+      "semantics": "decoder layer-77 output before the final RMS normalization",
+      "sha256": "68548c3f76feb4e568c6c282ddb60779e7ef2574b828697f8b75407078186105",
+      "shape": [
+        1049589,
+        6144
+      ]
+    }
+  },
+  "schema": "qsrt_glm52_terminal_hidden_teacher_reference_plan",
+  "schema_version": 1,
+  "screening_document_count": 8,
+  "selection_rule": {
+    "axes": [
+      "axis1_general",
+      "axis2_legal",
+      "axis3_code_agentic",
+      "axis4_reasoning_termination"
+    ],
+    "confirmation_axis_counts": {
+      "axis1_general": 22,
+      "axis2_legal": 1,
+      "axis3_code_agentic": 9,
+      "axis4_reasoning_termination": 0
+    },
+    "confirmation_document_count": 32,
+    "confirmation_ordering": "descending available context length across holdout documents, then ascending document SHA-256",
+    "eligible_role": "holdout",
+    "maximum_context_tokens": 2048,
+    "minimum_context_tokens": 64,
+    "screening_documents_per_axis": 2,
+    "screening_ordering": "after confirmation documents are excluded, descending available context length and then ascending document SHA-256 within each axis",
+    "selection_uses_model_output": false
+  },
+  "sources": {
+    "calibration_corpus": {
+      "bytes": 34002059,
+      "path": "calibration data/reap_recall_calib.jsonl",
+      "repository": "brandonmusic/GLM-5.2-NVFP4-REAP-Recall-N172",
+      "revision": "52d000a10666178fc648e806cb240a8106c061a9",
+      "rows": 12228,
+      "sha256": "cf247acc7c5da9f0600c7d6ab3b7c2fcfc54ec30b794e3b6047559285fa44df4"
+    },
+    "canonical_dataset": {
+      "document_plan_bytes": 811558,
+      "document_plan_path": "capture_view/document_plan.json",
+      "document_plan_sha256": "f1d3bae9c1ab6cc52fc3d98cd76ef94a85391efb698d86efaf39beeab052b2a8",
+      "id": "brandonmusic/GLM-5.2-BMM-Law-SQG-Hessians-Canonical",
+      "published_tag": "canonical-v1",
+      "revision": "1be5d12221bf885a5568a431562041ce2e073352"
+    }
+  },
+  "status": "frozen_before_teacher_reference_generation",
+  "teacher": {
+    "earlier_reference_revision": "4d67f66cc64d3219133b767c253b2ad1425c6c88",
+    "logit_equation": "lm_head(final_rms_norm(layer_77_output))",
+    "model_id": "zai-org/GLM-5.2",
+    "source_revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "weight_identity": "all 282 safetensors objects and the tensor index are byte-identical"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-19T03:49:39Z",
+  "snapshot_timestamp_utc": "2026-08-19T04:39:57Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -294,8 +294,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 518,
-  "total_file_bytes": 8912205,
+  "file_count": 530,
+  "total_file_bytes": 9045079,
   "files": [
     {
       "path": ".gitignore",
@@ -309,8 +309,8 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 30057,
-      "sha256": "49d64a2922ef661b4839e3186834d9d6a6ec8a189b4d4a8d95446babd4eb21d1"
+      "bytes": 31560,
+      "sha256": "392a7c301d79f5f6635236c56cf162741bf748152167a643390c3143d27ced47"
     },
     {
       "path": "README.md",
@@ -374,8 +374,8 @@
     },
     {
       "path": "docs/qsrt-improvement-strategy.md",
-      "bytes": 59400,
-      "sha256": "f1b05e31a12b4fddff64ccbe252f8b432e88bd21d28f3fb356031028d3796a20"
+      "bytes": 61684,
+      "sha256": "8207e65ade4836add77ec3232aeb0a083265cadb140f0eb1cee662bb5d39aa4a"
     },
     {
       "path": "docs/qsrt-technical-brief.md",
@@ -526,6 +526,16 @@
       "path": "experiments/download_glm52_public_reference_auxiliary_on_kossel.sh",
       "bytes": 3413,
       "sha256": "21572fc71a7f9138e33afd15d8a6ef84e474c69b0d58f2edb5592958d82e3b94"
+    },
+    {
+      "path": "experiments/download_glm52_terminal_teacher_assets_on_kossel.sh",
+      "bytes": 1833,
+      "sha256": "df459cb77e2df6990350a1d2c2f83e09638417c14cf67930099fdd50409b9374"
+    },
+    {
+      "path": "experiments/generate_glm52_screening_teacher_logits_on_kossel.sh",
+      "bytes": 2536,
+      "sha256": "dcf39f853696749e049ab8bb4e889ccf16a08911743994991874893aaead4523"
     },
     {
       "path": "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
@@ -706,6 +716,11 @@
       "path": "experiments/glm52_source_teacher_weight_identity.json",
       "bytes": 1451,
       "sha256": "41fb68d72f2e44b9526d6400ce39809725703e0637f47c18df5de70c0e16965d"
+    },
+    {
+      "path": "experiments/glm52_terminal_hidden_teacher_reference_plan.json",
+      "bytes": 34588,
+      "sha256": "b73690cb3507e64b51c45312d7817ccb1d9d8a0372d05ee3b68c28a3ff1e9519"
     },
     {
       "path": "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
@@ -1091,6 +1106,21 @@
       "path": "qsrt/glm52_routed_input_curvature.py",
       "bytes": 18560,
       "sha256": "18a0433161cf1a1e9986a0e3b2f7e57bbc8e2cd411833196de33d769e98ad721"
+    },
+    {
+      "path": "qsrt/glm52_terminal_teacher_assets.py",
+      "bytes": 21299,
+      "sha256": "93eb6e3415532231c6d23c39556cd00a5c76284f0bb21ec7275f7766dbfd259d"
+    },
+    {
+      "path": "qsrt/glm52_terminal_teacher_logits.py",
+      "bytes": 21617,
+      "sha256": "2b893f09fe1b0dbf5e7058aecd582d75302ca85122627ac2f9af6838ac1f679b"
+    },
+    {
+      "path": "qsrt/glm52_terminal_teacher_reference.py",
+      "bytes": 19100,
+      "sha256": "39a2266ff197370566cbaec70fde498d9da5834641215412adadd62f6c672a16"
     },
     {
       "path": "qsrt/glm52_tiny_benchmark.py",
@@ -1668,6 +1698,11 @@
       "sha256": "2d5b974749a286ddfa15ed50d13f34c357d1bf8372b7fcced7763ecab347cbfa"
     },
     {
+      "path": "scripts/build_glm52_terminal_teacher_reference_plan.py",
+      "bytes": 1265,
+      "sha256": "74e861d5d5507a061a3c289a97a71729c6996297969294e9571b8984a40eed7d"
+    },
+    {
       "path": "scripts/build_glm52_wikitext_corpus_plan.py",
       "bytes": 10355,
       "sha256": "7da8817494b365b56f8cb95a517b93d260dd15e52f3bb15e8b76229b8a791b85"
@@ -1778,6 +1813,11 @@
       "sha256": "d562af243e7f6933fe069f1daf4511c910498771c196b4b7a37ce3b5334226f3"
     },
     {
+      "path": "scripts/download_glm52_terminal_teacher_assets.py",
+      "bytes": 1853,
+      "sha256": "bf7c6243b3a0ac3f7ae71f1610e75e138a252f3bd8d9ea05112d5dae3e7a3bd2"
+    },
+    {
       "path": "scripts/embed_glm52_tiny_benchmark_in_infographic.py",
       "bytes": 3122,
       "sha256": "ee526502e31761960192dfe121b4ba864b04e1f713b519c04fc9a35c44c377be"
@@ -1821,6 +1861,11 @@
       "path": "scripts/fit_qsrt_low_rank_error_probe.py",
       "bytes": 21093,
       "sha256": "a31175568962bdee587d5aa1369b5e0072a0b86134603f9bb8b815f457e279ed"
+    },
+    {
+      "path": "scripts/generate_glm52_terminal_teacher_logits.py",
+      "bytes": 3925,
+      "sha256": "9eec2efa49336ff3798cddbb3f3e12d7325e07c99b8e94e5af15583753cc263e"
     },
     {
       "path": "scripts/index_glm52_experiment_artifacts.py",
@@ -2441,6 +2486,21 @@
       "path": "tests/test_glm52_source_shard_manifest.py",
       "bytes": 1575,
       "sha256": "347e30409eb7c8672839bfd54f84469c3cc4349762bf0c56437dfd93cf13de67"
+    },
+    {
+      "path": "tests/test_glm52_terminal_teacher_assets.py",
+      "bytes": 7984,
+      "sha256": "9c0e64881b4cb25cecfee0e4073bceeb18ba361b7a702647960ad920eb510a45"
+    },
+    {
+      "path": "tests/test_glm52_terminal_teacher_logits.py",
+      "bytes": 7298,
+      "sha256": "a1985fb3866501bc976f83afbcb7519cf0bf39e339c0cbba4b3f945c1862ed67"
+    },
+    {
+      "path": "tests/test_glm52_terminal_teacher_reference.py",
+      "bytes": 5789,
+      "sha256": "fb85ce16aa36a13db7b00fa24777703be3ab886dc5e47b949834848653ec964e"
     },
     {
       "path": "tests/test_glm52_tiny_benchmark.py",

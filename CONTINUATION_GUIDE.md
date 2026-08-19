@@ -18,7 +18,7 @@ Weight error, tile error, expert-output error, and a local second-order loss
 estimate called curvature can reject a weak idea before a model run. None of
 those measurements establishes the checkpoint objective.
 
-This repository is a source snapshot updated at `2026-08-18T21:22:00Z`. It
+This repository is a source snapshot updated at `2026-08-19T04:39:57Z`. It
 contains the working implementation, tests, experiment launchers, runtime
 adapter source, documentation, and the complete source-controlled experiment
 inputs that are small enough for Git. It does not contain model weights,
@@ -79,15 +79,14 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The GLM public-reference, low-rank, paired-KLD, intervention-runtime, and
-intervention tests pass. The focused public-reference and low-rank suite passed
-23 tests. Repository-wide collection requires the optional Triton and
-InstantTensor packages used by upstream recovery code. It also exposes API
-mismatches in upstream recovery tests. A run that excluded the eleven
-collection blockers and deselected the unrelated fixture that lacks
-`candidate_codebook` passed 873 tests and skipped 21. Install the optional
-dependencies or reconcile those imports before treating a repository-wide
-result as authoritative; do not hide the collection errors by deleting tests.
+The focused terminal-reference suite passes 15 tests. Repository-wide
+collection requires the optional Triton and InstantTensor packages used by
+upstream recovery code. It also exposes API mismatches in upstream recovery
+tests. A run that excluded the eleven collection blockers and deselected the
+unrelated fixture that lacks `candidate_codebook` passed 955 tests and skipped
+21. Install the optional dependencies or reconcile those imports before
+treating a repository-wide result as authoritative; do not hide the collection
+errors by deleting tests.
 
 Verify the published source files before using them:
 
@@ -204,7 +203,7 @@ and four bits per weight. One published BF16 reference contains a
 2,048-token context, which yields 2,047 correlated next-token comparisons.
 A second public cache supplied 16 eligible untouched documents with 512 tokens
 each for an independent auxiliary replication. Neither set satisfies the
-registered 32-document, 2,048-token qualification contract.
+frozen 32-document terminal-hidden-state confirmation plan.
 
 The bounded BF16 source windows name revision
 `b4734de4facf877f85769a911abafc5283eab3d9`. The published reporting-logit
@@ -369,17 +368,52 @@ factor-aware GLM container exists.
 
 ## Active GLM-5.2 work
 
-### Obtain document-disjoint BF16 reference logits
+### Generate document-disjoint BF16 reference logits from terminal hidden states
 
-The available references include one 2,048-token document and 16 public
-documents with 512 tokens each. The 16-document set is now candidate-selection
-data. The single longer document supports one frozen development screen. No
-available machine holds the complete BF16 teacher, and the program prohibits
-downloading that checkpoint. At least 32 sealed 2,048-token confirmation
-contexts therefore remain unavailable. An external model holder must generate
-them before checkpoint qualification can proceed. The generation manifest must
-record the documents, tokenizer, chat template, teacher revision, runtime
-configuration, and output hashes.
+The canonical public Hessian archive contains the official unquantized BF16
+output of decoder layer 77 for 1,049,589 captured tokens. The official source
+model computes logits by applying its final root-mean-square normalization and
+untied language-model head to those rows. Reference generation therefore needs
+selected terminal rows and the two endpoint tensors. It does not need the
+complete BF16 checkpoint.
+
+The frozen plan is
+[`experiments/glm52_terminal_hidden_teacher_reference_plan.json`](experiments/glm52_terminal_hidden_teacher_reference_plan.json).
+Its SHA-256 is
+`b73690cb3507e64b51c45312d7817ccb1d9d8a0372d05ee3b68c28a3ff1e9519`.
+It reserves eight holdout documents for candidate screening and 32 different
+holdout documents for confirmation. The screening tier supplies 9,334
+next-token comparisons. The confirmation tier supplies 65,482 comparisons;
+31 documents have 2,048 tokens and one has 2,026 tokens.
+
+The confirmation tier maximizes the number of paired positions available from
+the canonical holdout pool. It contains 22 general documents, one legal
+document, nine code or agentic documents, and no reasoning documents. A result
+on this set establishes document replication for the canonical capture
+distribution. It cannot establish broad legal or reasoning quality.
+
+The range downloader transfers 2,857,330,353 bytes: selected terminal rows,
+the official 1.90 GB language-model head, the 12 KB final-normalization vector,
+and provenance metadata. It excludes every decoder-layer weight and all
+unselected terminal rows. Run:
+
+```bash
+bash experiments/download_glm52_terminal_teacher_assets_on_kossel.sh
+```
+
+After the download receipt closes, generate only the screening references:
+
+```bash
+bash experiments/generate_glm52_screening_teacher_logits_on_kossel.sh
+```
+
+The generator uses the existing pinned container image with network access
+disabled. It vocabulary-shards the endpoint across four GPUs, checks captured
+token hashes, repeats the BF16 calculation bit for bit, and records a 32-bit
+floating-point endpoint comparison. The screening outputs occupy about 2.89
+GB. The confirmation outputs occupy about 20.28 GB and must remain sealed until
+the candidate construction, factor dtype, exact charged bytes, and selection
+evidence are frozen.
 
 ### Confirm the frozen rank-four expert-103 correction
 
@@ -519,10 +553,10 @@ and shrink noisy output factors toward an explicit fallback.
 ### Add document-level KLD evidence
 
 The repository contains one published 2,048-token BF16-logit context and a
-16-document, 512-token selection set. It must not obtain the complete BF16
-checkpoint. Additional confirmation logits require an external owner of the
-official model to run the frozen, document-disjoint corpus plan. Reference-logit
-files contain model outputs and remain outside Git.
+16-document, 512-token selection set. The terminal-hidden-state plan adds a
+larger source-derived reference route without obtaining the complete BF16
+checkpoint. Reference-logit files contain model outputs and remain outside
+Git.
 
 Report paired per-document KLD differences, a clustered bootstrap interval,
 repeatability controls, exact artifact hashes, route equality, and tail

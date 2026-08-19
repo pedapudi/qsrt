@@ -1,6 +1,6 @@
 # GLM-5.2 QSRT improvement testing strategy
 
-**Status:** Active execution specification, 2026-08-18.
+**Status:** Active execution specification, 2026-08-19.
 
 ## Decision that the testing program must support
 
@@ -76,8 +76,7 @@ measured 0.09279619 equal-document mean KLD; the candidate measured
 lost on 7. Its 95% document-bootstrap interval for `candidate minus resident`
 was `[-0.00333255, 0.00263672]`, so the improvement is not statistically
 established. Candidate p99, CVaR1%, and maximum improved, but this shorter
-public set does not satisfy the registered requirement for 32 documents with
-2,048 tokens each.
+public set does not satisfy the frozen 32-document confirmation plan.
 
 The measurements support the following mechanism decisions.
 
@@ -239,11 +238,13 @@ The GLM experiments use three document roles.
    targets, and closed-form low-rank factors.
 2. **Candidate-selection documents** choose ridge strength, expert fallback,
    factor rank and dtype, alternation, rate tuples, and complete panel
-   configurations. The rapid KLD selection set must contain eight 2,048-token
-   contexts.
-3. **Confirmation documents** report the frozen configuration. The first
-   confirmation set must contain at least 32 independent 2,048-token contexts
-   across the intended deployment domains.
+   configurations. The canonical terminal-hidden-state plan reserves eight
+   holdout documents, with two from each available corpus domain. Those
+   documents supply 9,334 next-token comparisons.
+3. **Confirmation documents** report the frozen configuration. The canonical
+   plan reserves 32 independent holdout documents and 65,482 next-token
+   comparisons. Thirty-one documents contain 2,048 tokens; one contains 2,026
+   tokens.
 
 The roles must be disjoint at document level. Splitting adjacent segments from
 one document across roles violates the contract. If a reporting result
@@ -266,10 +267,14 @@ manifest also records the immutable model and tokenizer revisions, chat
 template, token identifiers, attention and mask settings, logits dtype and
 vocabulary width, runtime and container identities, and every scored position.
 
-The eight-context set provides fast configuration selection. The 32-context
-set provides the first document-replicated acceptance result. A power analysis
-after the first eight contexts may increase the confirmation count, but it may
-not reduce the frozen minimum.
+The eight-document set provides fast configuration selection. The 32-document
+set provides the first document-replicated acceptance result for the canonical
+capture distribution. The confirmation set contains 22 general documents, one
+legal document, nine code or agentic documents, and no reasoning documents.
+It therefore cannot establish broad legal or reasoning quality. A broader
+release claim still requires document-disjoint confirmation from those
+domains. A power analysis after the first eight documents may increase the
+confirmation count, but it may not reduce the frozen minimum.
 
 The rapid screen may use a six-of-eight same-direction rule. Under an
 independent symmetric null, the probability of at least six positive results
@@ -579,10 +584,10 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 
 | Work | Result required before advancement |
 |---|---|
-| Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for any selected composition |
+| Verify model identity and prepare reference logits | Weight identity is reconciled; the bounded endpoint generator must close numerically and produce the frozen eight-document screening references plus the sealed 32-document confirmation references |
 | Select down-recovery candidate experts | Reconstructed-input covariance and local-error selection are excluded; direct model KLD must improve in both frozen eight-document groups before an expert enters a composition |
 | Freeze one composition | The complete expert set, tensors, factor dtypes, and exact charged bytes are fixed before any new confirmation reference is opened |
-| Confirm the frozen composition | At least 32 document-disjoint 2,048-token contexts show lower paired mean KLD than EXL3 and CVaR1% non-inferiority |
+| Confirm the frozen composition | The 32 documents and 65,482 positions in the sealed terminal-hidden-state plan show lower paired mean KLD than EXL3 and CVaR1% non-inferiority |
 | Serialize and execute low-rank factors if the composition uses them | Load-time fusion reproduces screened endpoints bit for bit; the complete serialized byte ledger and production serving path remain |
 | Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
@@ -620,11 +625,40 @@ control.
 A second public dataset contains 565 full-vocabulary teacher-logprob chunks
 with 512 tokens each. After the frozen candidate's fitting, selection, and
 screening documents were excluded, 16 eligible documents remained. Their
-auxiliary result is inconclusive and cannot supply the 32 sealed 2,048-token
-confirmation contexts. No available machine holds the complete BF16 teacher,
-and this program prohibits downloading that checkpoint. Qualification
-therefore requires an external model holder to generate the registered
-reference set or a later change to the checkpoint-access constraint.
+auxiliary result is inconclusive.
+
+The canonical Hessian archive now supplies a bounded route to stronger teacher
+references. Its terminal tensor contains the official unquantized BF16 output
+of decoder layer 77 for 1,049,589 captured tokens. Source-controlled document
+metadata maps every terminal row back to its document and token sequence. The
+official GLM-5.2 endpoint applies the final root-mean-square normalization and
+the untied language-model head to those rows. The preceding 78-layer decoder
+computation has already occurred, so reference generation does not need the
+complete BF16 checkpoint.
+
+The frozen reference plan is
+[`experiments/glm52_terminal_hidden_teacher_reference_plan.json`](../experiments/glm52_terminal_hidden_teacher_reference_plan.json).
+Its SHA-256 is
+`b73690cb3507e64b51c45312d7817ccb1d9d8a0372d05ee3b68c28a3ff1e9519`.
+The plan was derived before any endpoint logits were generated and uses only
+documents marked as holdout in the canonical capture. It binds the official
+source revision, terminal tensor, source corpus, token hashes, row ranges, and
+document roles.
+
+The range-download contract transfers 2,857,330,353 bytes. It consists of the
+selected terminal rows, the 1,903,165,440-byte language-model head, the
+12,288-byte final-normalization vector, and two small provenance files. The
+contract excludes all decoder-layer weights, the MTP layer, unselected terminal
+rows, and unused portions of the two source shards. The generated screening
+logits occupy about 2.89 GB before file metadata. The sealed confirmation
+logits occupy about 20.28 GB. This route preserves the prohibition on
+downloading the complete BF16 model.
+
+The endpoint generator vocabulary-shards the language-model head across four
+GPUs. It verifies source hashes, reproduces the captured tokenization, repeats
+the BF16 endpoint calculation bit for bit, and compares selected endpoint rows
+with a 32-bit floating-point head calculation. A GPU run must close those
+checks before its logits may enter candidate scoring.
 
 Before another GPU run, inventory the artifacts needed by each analysis:
 
@@ -966,14 +1000,15 @@ Do not run every branch after a failure. Each added experiment must answer the
 specific unresolved cause and must retain the same data-separation and
 acceptance contract.
 
-The immediate blocking input for the registered rank-four expert-103 candidate
-is at least 32 sealed confirmation contexts. No available host has the
-complete BF16 checkpoint, and downloading it remains prohibited. The existing
-16-document selection set and one 2,048-token reference support mechanism
-screens, but they cannot qualify a checkpoint. Kossel can still use the
-completed bounded source windows to replicate the construction at independently
-chosen layers, finish the factor-container byte ledger, and construct
-unselected coherent rate-conditioned candidates.
+The registered rank-four expert-103 candidate still needs document-replicated
+confirmation. Reference generation no longer depends on a host with the
+complete BF16 checkpoint. The canonical terminal-hidden-state plan supplies
+eight screening documents and 32 sealed confirmation documents through the
+bounded endpoint calculation described above. The four-GPU numerical closure,
+screening generation, and paired EXL3 baseline measurement remain unfinished.
+The confirmation outputs must remain inaccessible to candidate selection until
+the candidate identity, factor dtype, exact byte ledger, and selection evidence
+have been frozen.
 
 Do not change the registered correction after opening a confirmation context.
 A different rank, expert, dtype, ridge, factor value, base representation, or
