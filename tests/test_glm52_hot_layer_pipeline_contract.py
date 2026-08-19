@@ -51,6 +51,12 @@ def test_hot_layer_recovery_pipeline_rebuilds_each_dependent_candidate() -> None
 
     assert "build_uniform_k3" in launcher
     assert "build_down_refit \"${uniform_name}\"" in launcher
+    assert "build_uniform_k4" in launcher
+    assert 'build_k4_down_refit "${uniform_name}" "${refit_name}"' in launcher
+    assert "build_glm52_all_panel_k4_down_registration.py" in launcher
+    assert "build_glm52_down_refit_rate_pool.py" in launcher
+    assert "materialize_glm52_registered_partial_rate_map.py" in launcher
+    assert '"k4-down-refit"' in launcher
     assert "build_rank4_down_recovery \"${refit_name}\"" in launcher
     assert "--base-construction reconstructed_activation_down_refit" in launcher
     assert "--include-complete-panel" in launcher

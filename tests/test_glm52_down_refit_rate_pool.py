@@ -404,3 +404,36 @@ def test_registered_partial_rate_map_charges_unchanged_exl3_experts(
         "up_proj": 3,
         "down_proj": 4,
     }
+
+    records[1]["down_refit_accepted"] = False
+    records[1]["down_target"] = {"kind": "source_target_fallback"}
+    receipt_path = _expert_path(root, 63, 20)
+    atomic_write_json(
+        receipt_path,
+        {key: value for key, value in records[1].items() if key != "receipt_sha256"},
+    )
+    records[1]["receipt_sha256"] = rate_pool.sha256_file(receipt_path)
+    report["accepted_down_refit_count"] = 1
+    report["experts"] = records
+    atomic_write_json(root / "report.json", report)
+
+    with pytest.raises(ValueError, match="did not retain its down-refit target"):
+        materialize_registered_partial_rate_map(
+            rate_pool_root=root,
+            registration_path=registration_path,
+            dest=tmp_path / "candidate-without-fallback",
+        )
+
+    registration["candidate_construction"] = {
+        "allow_source_target_fallback": True
+    }
+    atomic_write_json(registration_path, registration)
+    fallback_materialized = materialize_registered_partial_rate_map(
+        rate_pool_root=root,
+        registration_path=registration_path,
+        dest=tmp_path / "candidate-with-fallback",
+    )
+
+    assert fallback_materialized["experts"][0]["down_target_kind"] == (
+        "source_target_fallback"
+    )

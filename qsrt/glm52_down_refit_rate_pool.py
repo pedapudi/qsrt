@@ -1171,8 +1171,16 @@ def materialize_registered_partial_rate_map(
     selected_experts = tuple(
         expert for expert in expert_order if expert in rates_by_expert
     )
+    candidate_construction = registration.get("candidate_construction")
+    allow_source_target_fallback = bool(
+        isinstance(candidate_construction, dict)
+        and candidate_construction.get("allow_source_target_fallback") is True
+    )
     for expert in selected_experts:
-        if not bool(pool_records[expert]["down_refit_accepted"]):
+        if (
+            not bool(pool_records[expert]["down_refit_accepted"])
+            and not allow_source_target_fallback
+        ):
             raise ValueError(
                 f"registered expert {expert} did not retain its down-refit target"
             )

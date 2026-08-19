@@ -36,6 +36,9 @@ root = Path(sys.argv[1])
 queue_path = Path(sys.argv[2])
 constructions = {
     "down-refit": "hot-band-frozen8-reconstructed-activation-down-refit-merged",
+    "k4-down-refit": (
+        "hot-band-frozen8-k3-gate-k3-up-k4-down-refit-merged"
+    ),
     "rank4-down-recovery": (
         "hot-band-frozen8-low-rank-down-refit-bf16-rank4-merged"
     ),
