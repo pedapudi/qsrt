@@ -24,6 +24,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 
 from qsrt.glm52_pilot import atomic_write_json
+from qsrt.glm52_document_disjoint_confirmation import token_ids_sha256
 from qsrt.glm52_terminal_teacher_assets import (
     build_terminal_teacher_asset_download_contract,
     validate_downloaded_terminal_teacher_assets,
@@ -197,12 +198,17 @@ def build_terminal_teacher_logit_generation_contract(
     evaluation_tier: str,
     devices: Sequence[torch.device],
     closure_rows: int,
+    confirmation_authorization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Bind reference outputs to inputs, endpoint arithmetic, and GPU runtime."""
 
     validated = validate_terminal_teacher_reference_plan(plan)
     if evaluation_tier not in {"screening", "confirmation"}:
         raise ValueError("evaluation tier must be screening or confirmation")
+    if evaluation_tier == "screening" and confirmation_authorization is not None:
+        raise ValueError("screening cannot consume confirmation authorization")
+    if evaluation_tier == "confirmation" and confirmation_authorization is None:
+        raise PermissionError("confirmation generation requires frozen authorization")
     if closure_rows < 1:
         raise ValueError("numerical closure needs at least one row")
     tier_count = (
@@ -235,6 +241,11 @@ def build_terminal_teacher_logit_generation_contract(
         },
         "vocabulary_slices": [list(value) for value in vocabulary_slices],
         "numerical_closure_rows": closure_rows,
+        "confirmation_authorization": (
+            dict(confirmation_authorization)
+            if confirmation_authorization is not None
+            else None
+        ),
         "runtime": _runtime_identity(devices),
     }
 
@@ -436,6 +447,7 @@ def generate_terminal_teacher_references(
     devices: Sequence[torch.device],
     closure_rows: int,
     destination: Path,
+    confirmation_authorization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate or resume one tier of document-level teacher references."""
 
@@ -450,6 +462,7 @@ def generate_terminal_teacher_references(
         evaluation_tier=evaluation_tier,
         devices=devices,
         closure_rows=closure_rows,
+        confirmation_authorization=confirmation_authorization,
     )
     destination = _prepare_generation_destination(
         destination=destination, contract=contract
@@ -547,7 +560,7 @@ def generate_terminal_teacher_references(
         "status": (
             "available_for_candidate_screening"
             if evaluation_tier == "screening"
-            else "sealed_until_candidate_construction_and_bytes_are_frozen"
+            else "available_only_for_frozen_candidate_confirmation"
         ),
         "generation_contract": contract,
         "numerical_closure": numerical_closure,
@@ -565,6 +578,227 @@ def generate_terminal_teacher_references(
     return manifest
 
 
+def load_validated_terminal_teacher_reference_documents(
+    *,
+    plan: Mapping[str, Any],
+    plan_sha256: str,
+    reference_directory: Path,
+    evaluation_tier: str,
+    confirmation_authorization: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate one generated tier and return its embedded prompt tokens.
+
+    Confirmation is denied before the manifest or any reference tensor is
+    opened unless the caller has already validated a frozen-candidate record.
+    This keeps the sealed tier unavailable to candidate construction and
+    screening code by default.
+    """
+
+    validated_plan = validate_terminal_teacher_reference_plan(plan)
+    if evaluation_tier not in {"screening", "confirmation"}:
+        raise ValueError("evaluation tier must be screening or confirmation")
+    if evaluation_tier == "confirmation" and confirmation_authorization is None:
+        raise PermissionError(
+            "confirmation references require a validated frozen-candidate record"
+        )
+    if evaluation_tier == "screening" and confirmation_authorization is not None:
+        raise ValueError("screening cannot consume confirmation authorization")
+    if len(plan_sha256) != 64 or any(
+        digit not in "0123456789abcdef" for digit in plan_sha256
+    ):
+        raise ValueError("teacher-reference plan SHA-256 must have 64 digits")
+
+    reference_directory = reference_directory.resolve()
+    manifest_path = reference_directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    expected_status = (
+        "available_for_candidate_screening"
+        if evaluation_tier == "screening"
+        else "available_only_for_frozen_candidate_confirmation"
+    )
+    contract = manifest.get("generation_contract")
+    expected_document_count = (
+        validated_plan["screening_document_count"]
+        if evaluation_tier == "screening"
+        else validated_plan["confirmation_document_count"]
+    )
+    if (
+        manifest.get("schema") != REFERENCE_MANIFEST_SCHEMA
+        or manifest.get("schema_version") != 1
+        or manifest.get("status") != expected_status
+        or manifest.get("document_count") != expected_document_count
+        or not isinstance(contract, Mapping)
+        or contract.get("schema") != GENERATION_CONTRACT_SCHEMA
+        or contract.get("schema_version") != 1
+        or contract.get("teacher_reference_plan_sha256") != plan_sha256
+        or contract.get("evaluation_tier") != evaluation_tier
+        or contract.get("document_count") != expected_document_count
+        or contract.get("confirmation_authorization")
+        != (
+            dict(confirmation_authorization)
+            if confirmation_authorization is not None
+            else None
+        )
+    ):
+        raise ValueError("terminal teacher-reference manifest identity differs")
+    endpoint = contract.get("endpoint")
+    if (
+        not isinstance(endpoint, Mapping)
+        or endpoint.get("equation")
+        != "lm_head(final_rms_norm(layer_77_output))"
+        or endpoint.get("hidden_size") != HIDDEN_SIZE
+        or endpoint.get("vocabulary_size") != VOCABULARY_SIZE
+        or endpoint.get("normalization_variance_dtype") != "float32"
+        or endpoint.get("normalization_output_dtype") != "bfloat16"
+        or endpoint.get("head_weight_dtype") != "bfloat16"
+        or endpoint.get("logit_dtype") != "bfloat16"
+    ):
+        raise ValueError("terminal teacher-reference endpoint contract differs")
+    closure = manifest.get("numerical_closure")
+    if not isinstance(closure, Mapping) or closure.get(
+        "bf16_repeat_bit_exact"
+    ) is not True:
+        raise ValueError("terminal teacher-reference numerical closure differs")
+
+    expected_rows = {
+        row["reference_file"]: row
+        for row in plan["documents"]
+        if row["evaluation_tier"] == evaluation_tier
+    }
+    receipts = manifest.get("documents")
+    if not isinstance(receipts, list) or len(receipts) != len(expected_rows):
+        raise ValueError("terminal teacher-reference receipt count differs")
+    documents: list[dict[str, Any]] = []
+    total_payload_bytes = 0
+    total_logit_rows = 0
+    seen_files: set[str] = set()
+    for receipt in receipts:
+        if not isinstance(receipt, Mapping):
+            raise TypeError("terminal teacher-reference receipt must be an object")
+        filename = receipt.get("file")
+        if (
+            not isinstance(filename, str)
+            or filename not in expected_rows
+            or filename in seen_files
+        ):
+            raise ValueError("terminal teacher-reference receipt filename differs")
+        seen_files.add(filename)
+        plan_row = expected_rows[filename]
+        document = receipt.get("document")
+        token_receipt = (
+            document.get("token_receipt")
+            if isinstance(document, Mapping)
+            else None
+        )
+        if (
+            receipt.get("schema") != DOCUMENT_RECEIPT_SCHEMA
+            or receipt.get("schema_version") != 1
+            or not isinstance(document, Mapping)
+            or document.get("reference_plan_row") != plan_row
+            or not isinstance(token_receipt, Mapping)
+            or receipt.get("logits_key") != "logits"
+            or receipt.get("logits_shape") != plan_row["expected_logits_shape"]
+            or receipt.get("logits_dtype") != "bfloat16"
+        ):
+            raise ValueError("terminal teacher-reference document receipt differs")
+        prompt_token_ids = token_receipt.get("prompt_token_ids")
+        target_token_ids = token_receipt.get("target_token_ids")
+        if (
+            not isinstance(prompt_token_ids, list)
+            or not isinstance(target_token_ids, list)
+            or len(prompt_token_ids) != plan_row["context_tokens"]
+            or target_token_ids != prompt_token_ids[1:]
+            or token_receipt.get("context_tokens") != plan_row["context_tokens"]
+            or token_receipt.get("logit_rows") != plan_row["logit_rows"]
+            or token_receipt.get("prompt_token_ids_sha256_u32le")
+            != token_ids_sha256(prompt_token_ids)
+        ):
+            raise ValueError("terminal teacher-reference prompt tokens differ")
+
+        path = reference_directory / filename
+        if (
+            not path.is_file()
+            or receipt.get("bytes") != path.stat().st_size
+            or receipt.get("sha256") != sha256_file(path)
+        ):
+            raise ValueError(f"terminal teacher-reference file differs at {path}")
+        with safe_open(path, framework="pt", device="cpu") as handle:
+            metadata = handle.metadata()
+            expected_metadata = {
+                "schema": DOCUMENT_RECEIPT_SCHEMA,
+                "teacher_model": plan["teacher"]["model_id"],
+                "teacher_revision": plan["teacher"]["source_revision"],
+                "document_sha256": plan_row["document_sha256"],
+                "evaluation_tier": evaluation_tier,
+                "logit_equation": contract["endpoint"]["equation"],
+            }
+            if metadata != expected_metadata:
+                raise ValueError(
+                    f"terminal teacher-reference metadata differs at {path}"
+                )
+            if set(handle.keys()) != {
+                "logits",
+                "prompt_token_ids",
+                "target_token_ids",
+            }:
+                raise ValueError(
+                    f"terminal teacher-reference tensor keys differ at {path}"
+                )
+            logits_slice = handle.get_slice("logits")
+            prompt_slice = handle.get_slice("prompt_token_ids")
+            target_slice = handle.get_slice("target_token_ids")
+            if (
+                list(logits_slice.get_shape()) != plan_row["expected_logits_shape"]
+                or logits_slice.get_dtype() != "BF16"
+                or list(prompt_slice.get_shape()) != [plan_row["context_tokens"]]
+                or prompt_slice.get_dtype() != "I32"
+                or list(target_slice.get_shape()) != [plan_row["logit_rows"]]
+                or target_slice.get_dtype() != "I32"
+            ):
+                raise ValueError(
+                    f"terminal teacher-reference tensor contract differs at {path}"
+                )
+            stored_prompt = [
+                int(value) for value in handle.get_tensor("prompt_token_ids").tolist()
+            ]
+            stored_targets = [
+                int(value) for value in handle.get_tensor("target_token_ids").tolist()
+            ]
+        if stored_prompt != prompt_token_ids or stored_targets != target_token_ids:
+            raise ValueError(
+                f"terminal teacher-reference stored token IDs differ at {path}"
+            )
+        total_payload_bytes += int(receipt["bytes"])
+        total_logit_rows += int(plan_row["logit_rows"])
+        documents.append(
+            {
+                **dict(plan_row),
+                "prompt_token_ids": stored_prompt,
+                "target_token_ids": stored_targets,
+                "reference_path": path,
+                "reference_file_sha256": str(receipt["sha256"]),
+                "reference_file_bytes": int(receipt["bytes"]),
+            }
+        )
+
+    if seen_files != set(expected_rows):
+        raise ValueError("terminal teacher-reference tier is incomplete")
+    if (
+        manifest.get("total_logit_rows") != total_logit_rows
+        or manifest.get("total_payload_bytes") != total_payload_bytes
+    ):
+        raise ValueError("terminal teacher-reference manifest totals differ")
+    return {
+        "evaluation_tier": evaluation_tier,
+        "document_count": len(documents),
+        "total_logit_rows": total_logit_rows,
+        "total_payload_bytes": total_payload_bytes,
+        "manifest_path": manifest_path,
+        "manifest_sha256": sha256_file(manifest_path),
+        "documents": documents,
+    }
+
+
 __all__ = [
     "DOCUMENT_RECEIPT_SCHEMA",
     "GENERATION_CONTRACT_SCHEMA",
@@ -574,6 +808,7 @@ __all__ = [
     "compute_terminal_teacher_logits",
     "exact_glm52_final_rms_norm",
     "generate_terminal_teacher_references",
+    "load_validated_terminal_teacher_reference_documents",
     "selected_document_token_receipts",
     "tokenizer_file_identity",
 ]

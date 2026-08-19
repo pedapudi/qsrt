@@ -79,14 +79,15 @@ uv sync --dev
 .venv/bin/pytest -q
 ```
 
-The focused terminal-reference suite passes 15 tests. Repository-wide
+The focused terminal-reference suite passes 34 tests. Repository-wide
 collection requires the optional Triton and InstantTensor packages used by
 upstream recovery code. It also exposes API mismatches in upstream recovery
-tests. A run that excluded the eleven collection blockers and deselected the
-unrelated fixture that lacks `candidate_codebook` passed 955 tests and skipped
-21. Install the optional dependencies or reconcile those imports before
-treating a repository-wide result as authoritative; do not hide the collection
-errors by deleting tests.
+tests. A run that excluded the eleven collection blockers passed 964 tests,
+skipped 21, and failed one unrelated fixture whose manifest lacks the required
+`candidate_codebook` field. Install the optional dependencies or reconcile
+those imports before treating a repository-wide result as authoritative. Keep
+the collection errors and incompatible fixture visible until their contracts
+are repaired.
 
 Verify the published source files before using them:
 
@@ -117,11 +118,20 @@ The inventory generated at `2026-08-18T21:21:09Z` contains 20,620 regular-file
 records covering 481,515,914,716 bytes, with zero unhashed files. The inventory
 SHA-256 is
 `7ca6263be32c7db3c31a6b7df2e0b8e11e1754be15cae4a24533c43ddee6718d`.
-The synchronized source copy is:
+The general experiment snapshot is:
 
 ```text
 /home/sunil/qsrt-glm52-experiments/source/qsrt-working-tree/
 ```
+
+The terminal-reference launchers use a separately verified snapshot:
+
+```text
+/home/sunil/qsrt-glm52-experiments/source/qsrt-terminal-teacher-reference-b4734de/
+```
+
+Regenerate that snapshot manifest and synchronize the updated repository before
+running the screening, freeze, or confirmation launchers in this guide.
 
 The experiment journal records the SHA-256 identities for results that matter
 to a scientific conclusion. Treat the remote artifact index and journal as
@@ -411,18 +421,44 @@ The generator uses the existing pinned container image with network access
 disabled. It vocabulary-shards the endpoint across four GPUs, checks captured
 token hashes, repeats the BF16 calculation bit for bit, and records a 32-bit
 floating-point endpoint comparison. The screening outputs occupy about 2.89
-GB. The confirmation outputs occupy about 20.28 GB and must remain sealed until
-the candidate construction, factor dtype, exact charged bytes, and selection
-evidence are frozen.
+GB. The confirmation outputs occupy about 20.28 GB. Their generator refuses to
+run until a freeze record binds the candidate construction, factor dtype,
+serialized correction bytes, and screening result.
 
 ### Confirm the frozen rank-four expert-103 correction
 
-The exact registered candidate may proceed directly to at least 32 sealed
-confirmation documents because its fields are already frozen. Evaluate it
-without changing the rank, expert, dtype, ridge, factor values, base artifact,
-or bolt-on construction. Require the paired-bootstrap upper bound for
-candidate-minus-EXL3 document-mean KLD to fall below zero. Apply the frozen
-document-level CVaR1% non-inferiority rule as a safety gate.
+The registered candidate must first pass the eight-document screen:
+
+```bash
+bash experiments/evaluate_glm52_layer3_expert103_rank4_on_terminal_screening_references.sh
+```
+
+The screen passes only when the candidate lowers the equal-document mean,
+improves at least six documents, and does not increase pooled position CVaR1%.
+Six or more same-sign outcomes among eight independent symmetric outcomes
+occur in 37 out of 256 cases, or 14.453125 percent. A screening pass therefore
+authorizes confirmation access but does not establish generalization.
+
+Freeze the registered factors, runtime mode, screening report, and every byte
+of the standalone BF16 factor payload:
+
+```bash
+bash experiments/freeze_glm52_layer3_expert103_rank4_after_terminal_screening.sh
+```
+
+The freeze command fails if the screen did not pass. It also records the
+confirmation decision before producing any confirmation logits. Generate and
+score the 32-document tier with these explicit commands:
+
+```bash
+bash experiments/generate_glm52_confirmation_teacher_logits_on_kossel.sh
+bash experiments/evaluate_glm52_layer3_expert103_rank4_on_terminal_confirmation_references.sh
+```
+
+The confirmation decision requires the one-sided 95 percent document-bootstrap
+upper bound for candidate-minus-EXL3 mean KLD to fall below zero. It also
+requires candidate pooled position CVaR1% to remain at or below the resident
+value. The zero CVaR1% tolerance is part of the pre-access freeze record.
 
 Do not use the absolute `0.059` value across reference suites. On the public
 512-token suite, resident EXL3 itself measured `0.092796188456`. The decisive
@@ -432,9 +468,10 @@ frozen runtime and reference contract.
 The stored-factor runtime now reconstructs the screened FP16 endpoint bit for
 bit when the expert is loaded. It retains the existing one-GEMM expert path.
 Complete the factor-aware container layout and exact byte ledger while the
-reference contexts are generated. The serialized panel and complete
-checkpoint must remain smaller than EXL3 after headers, scales, alignment, and
-directories are charged.
+reference contexts are generated. The freeze charges every byte in the
+standalone factor file. The serialized panel and complete checkpoint must
+remain smaller than EXL3 after headers, scales, alignment, and directories are
+charged.
 
 ### Use model KLD to select individual recovery experts
 

@@ -8,12 +8,14 @@ import pytest
 import torch
 
 from qsrt.glm52_document_disjoint_confirmation import (
+    evaluate_terminal_reference_confirmation_decision,
     retarget_reference_symlink,
     summarize_document_paired_kld,
     token_ids_sha256,
     validate_frozen_low_rank_candidate,
     validate_public_reference_auxiliary_plan,
     validate_public_reference_files,
+    validate_terminal_reference_confirmation_freeze,
 )
 
 
@@ -206,3 +208,109 @@ def test_runtime_artifact_must_match_the_frozen_correction() -> None:
     artifact["report"]["experts"][0]["factor_a_sha256"] = "d" * 64
     with pytest.raises(ValueError, match="differs"):
         validate_frozen_low_rank_candidate(registration, artifact)
+
+
+def test_terminal_confirmation_requires_the_frozen_screening_result(
+    tmp_path: Path,
+) -> None:
+    screening_report = tmp_path / "screening-report.json"
+    screening_report.write_text(
+        json.dumps(
+            {
+                "schema": "qsrt_glm52_document_disjoint_candidate_evaluation",
+                "status": "complete",
+                "evaluation_tier": "screening",
+                "intervention_artifact": {"manifest_sha256": "a" * 64},
+                "teacher_references": {"plan_sha256": "b" * 64},
+            }
+        )
+        + "\n"
+    )
+    screening_hash = hashlib.sha256(screening_report.read_bytes()).hexdigest()
+    artifact = {"manifest_sha256": "a" * 64}
+    record = {
+        "schema": "qsrt_glm52_terminal_reference_confirmation_freeze",
+        "schema_version": 1,
+        "status": "frozen_before_confirmation_reference_access",
+        "artifact_manifest_sha256": artifact["manifest_sha256"],
+        "candidate_runtime_mode": (
+            "stored_low_rank_factors_materialized_at_load_candidate"
+        ),
+        "teacher_reference_plan_sha256": "b" * 64,
+        "screening_report_sha256": screening_hash,
+        "total_charged_bytes": 65536,
+        "frozen_at_utc": "2026-08-19T00:00:00+00:00",
+        "confirmation_quality_gate": {
+            "minimum_document_count": 32,
+            "mean_rule": (
+                "paired document-bootstrap one-sided 95% upper bound is below zero"
+            ),
+            "tail_metric": "pooled position CVaR1%",
+            "maximum_absolute_tail_increase": 0.0,
+        },
+        "frozen_candidate": {"model_layer": 3, "expert": 103, "rank": 4},
+    }
+
+    validated = validate_terminal_reference_confirmation_freeze(
+        record,
+        artifact=artifact,
+        candidate_runtime_mode=(
+            "stored_low_rank_factors_materialized_at_load_candidate"
+        ),
+        teacher_reference_plan_sha256="b" * 64,
+        screening_report_path=screening_report,
+    )
+
+    assert validated["total_charged_bytes"] == 65536
+    screening_report.write_text('{"status":"changed"}\n')
+    with pytest.raises(ValueError, match="screening report differs"):
+        validate_terminal_reference_confirmation_freeze(
+            record,
+            artifact=artifact,
+            candidate_runtime_mode=(
+                "stored_low_rank_factors_materialized_at_load_candidate"
+            ),
+            teacher_reference_plan_sha256="b" * 64,
+            screening_report_path=screening_report,
+        )
+
+
+def test_terminal_confirmation_decision_uses_the_pre_access_quality_gate() -> None:
+    authorization = {
+        "artifact_manifest_sha256": "a" * 64,
+        "confirmation_quality_gate": {
+            "minimum_document_count": 32,
+            "mean_rule": (
+                "paired document-bootstrap one-sided 95% upper bound is below zero"
+            ),
+            "tail_metric": "pooled position CVaR1%",
+            "maximum_absolute_tail_increase": 0.0,
+        },
+    }
+    report = {
+        "schema": "qsrt_glm52_document_disjoint_candidate_evaluation",
+        "status": "complete",
+        "evaluation_tier": "confirmation",
+        "measurement_controls": {"passed": True},
+        "intervention_artifact": {"manifest_sha256": "a" * 64},
+        "summary": {
+            "document_count": 32,
+            "paired_document_bootstrap": {
+                "difference_upper_one_sided_95_percentile": -0.0001
+            },
+            "tail_metrics": {
+                "baseline": {"cvar1": 1.2},
+                "candidate": {"cvar1": 1.19},
+            },
+        },
+    }
+
+    assert evaluate_terminal_reference_confirmation_decision(
+        report, authorization
+    )["passed"] is True
+    report["summary"]["tail_metrics"]["candidate"]["cvar1"] = 1.21
+    decision = evaluate_terminal_reference_confirmation_decision(
+        report, authorization
+    )
+    assert decision["passed"] is False
+    assert decision["tail"]["passed"] is False

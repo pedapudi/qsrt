@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Screen a frozen GLM-5.2 intervention on public document-disjoint references.
+"""Evaluate a frozen GLM-5.2 intervention on document-disjoint references.
 
-The runner loads the resident EXL3 checkpoint once. It evaluates the unchanged
-resident and one prebuilt intervention on one published 512-token reference
-chunk from each untouched WikiText document. The public reference files
-contain BF16-teacher log-probabilities from the same source weights as the
-bounded QSRT source shards.
+The runner loads the resident EXL3 checkpoint once and evaluates the unchanged
+resident and one prebuilt intervention on every document in one reference
+tier. It supports the published 512-token WikiText auxiliary references and
+the bounded terminal-hidden-state references generated from the exact GLM-5.2
+source endpoint. The thirty-two-document terminal confirmation tier cannot be
+opened without a content-addressed candidate-freeze record.
 """
 
 from __future__ import annotations
@@ -25,11 +26,13 @@ from safetensors import safe_open
 
 from qsrt.correctness import sha256_file
 from qsrt.glm52_document_disjoint_confirmation import (
+    evaluate_terminal_reference_confirmation_decision,
     retarget_reference_symlink,
     summarize_document_paired_kld,
     token_ids_sha256,
     validate_frozen_low_rank_candidate,
     validate_public_reference_files,
+    validate_terminal_reference_confirmation_freeze,
 )
 from qsrt.glm52_engine_kld import (
     ENGINE_KLD_CHUNK_ROWS_ENV,
@@ -48,6 +51,9 @@ from qsrt.glm52_expert_intervention_runtime import (
 )
 from qsrt.glm52_paired_kld import route_support_summary, target_layer_routes
 from qsrt.glm52_pilot import atomic_write_json
+from qsrt.glm52_terminal_teacher_logits import (
+    load_validated_terminal_teacher_reference_documents,
+)
 
 
 def _public_reference_token_ids(
@@ -169,10 +175,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--reference-directory", type=Path, required=True)
-    parser.add_argument("--reference-plan", type=Path, required=True)
+    reference_kind = parser.add_mutually_exclusive_group(required=True)
+    reference_kind.add_argument("--reference-plan", type=Path)
+    reference_kind.add_argument("--terminal-reference-plan", type=Path)
+    parser.add_argument(
+        "--evaluation-tier", choices=("screening", "confirmation")
+    )
     parser.add_argument("--reference-link", type=Path, required=True)
     parser.add_argument("--intervention-artifact", type=Path, required=True)
     parser.add_argument("--confirmation-registration", type=Path)
+    parser.add_argument("--terminal-confirmation-freeze", type=Path)
+    parser.add_argument("--terminal-screening-report", type=Path)
     parser.add_argument(
         "--candidate-runtime-mode",
         choices=(CANDIDATE_MODE, MATERIALIZED_LOW_RANK_CANDIDATE_MODE),
@@ -205,8 +218,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     args.dest.mkdir(parents=True, exist_ok=False)
-    plan = json.loads(args.reference_plan.read_text())
-    references = validate_public_reference_files(plan, args.reference_directory)
     artifact = validate_intervention_artifact(args.intervention_artifact)
     if args.confirmation_registration is not None:
         if artifact["artifact_kind"] != "single_layer":
@@ -221,7 +232,7 @@ def main() -> None:
         frozen = {
             "role": (
                 "complete multi-layer intervention frozen before "
-                "public-reference scoring"
+                "document-disjoint reference scoring"
             ),
             "model_layers": list(artifact["model_layers"]),
             "expert_ids_by_layer": {
@@ -234,7 +245,10 @@ def main() -> None:
         selected_experts = None
     else:
         frozen = {
-            "role": "complete intervention artifact frozen before public-reference scoring",
+            "role": (
+                "complete intervention artifact frozen before document-disjoint "
+                "reference scoring"
+            ),
             "model_layer": artifact["model_layer"],
             "expert_ids": list(artifact["expert_ids"]),
             "artifact_manifest_sha256": artifact["manifest_sha256"],
@@ -242,32 +256,141 @@ def main() -> None:
         }
         selected_experts = list(artifact["expert_ids"])
 
+    terminal_confirmation_freeze: dict[str, Any] | None = None
+    if args.reference_plan is not None:
+        if (
+            args.evaluation_tier is not None
+            or args.terminal_confirmation_freeze is not None
+            or args.terminal_screening_report is not None
+        ):
+            raise ValueError(
+                "terminal-reference options cannot accompany a public-reference plan"
+            )
+        plan = json.loads(args.reference_plan.read_text())
+        references = validate_public_reference_files(plan, args.reference_directory)
+        all_token_ids, tokenization_receipt = _public_reference_token_ids(
+            model=args.model, plan=plan
+        )
+        document_inputs: list[dict[str, Any]] = []
+        for row in references["rows"]:
+            chunk = row["selected_chunk"]
+            prompt = all_token_ids[chunk * 512 : (chunk + 1) * 512]
+            if len(prompt) != 512 or token_ids_sha256(prompt) != row[
+                "prompt_token_ids_sha256"
+            ]:
+                raise ValueError("public-reference prompt token hash changed")
+            reference_path = args.reference_directory / row["reference_file"]
+            _validate_reference_tensor(reference_path, prompt_token_ids=prompt)
+            document_inputs.append(
+                {
+                    **row,
+                    "prompt_token_ids": prompt,
+                    "target_token_ids": prompt[1:],
+                    "reference_path": reference_path,
+                }
+            )
+        reference_key = "logprobs"
+        reference_representation = "logprobs"
+        evaluation_tier = "public_auxiliary_confirmation"
+        reference_report = {
+            "kind": "published_public_auxiliary",
+            "plan_path": str(args.reference_plan.resolve()),
+            "plan_sha256": sha256_file(args.reference_plan),
+            "repository": plan["reference_repository"],
+            "revision": plan["reference_revision"],
+            "teacher_model": plan["teacher_model"],
+            "teacher_revision": plan["teacher_revision"],
+            "total_reference_bytes": references["total_reference_bytes"],
+        }
+        evidence_boundary = (
+            "The candidate was frozen before these reference files were accessed, "
+            "and all sixteen documents are disjoint from its fit, ridge-selection, "
+            "attribution, and candidate-selection documents. The public cache uses "
+            "512-token contexts and supplies independent auxiliary evidence; it does "
+            "not satisfy the registered thirty-two-document confirmation requirement."
+        )
+    else:
+        if args.evaluation_tier is None:
+            raise ValueError("terminal references require an evaluation tier")
+        assert args.terminal_reference_plan is not None
+        plan_sha256 = sha256_file(args.terminal_reference_plan)
+        plan = json.loads(args.terminal_reference_plan.read_text())
+        if args.evaluation_tier == "confirmation":
+            if (
+                args.terminal_confirmation_freeze is None
+                or args.terminal_screening_report is None
+            ):
+                raise PermissionError(
+                    "terminal confirmation requires a freeze record and screening report"
+                )
+            terminal_confirmation_freeze = (
+                validate_terminal_reference_confirmation_freeze(
+                    json.loads(args.terminal_confirmation_freeze.read_text()),
+                    artifact=artifact,
+                    candidate_runtime_mode=args.candidate_runtime_mode,
+                    teacher_reference_plan_sha256=plan_sha256,
+                    screening_report_path=args.terminal_screening_report,
+                )
+            )
+        elif (
+            args.terminal_confirmation_freeze is not None
+            or args.terminal_screening_report is not None
+        ):
+            raise ValueError(
+                "terminal screening cannot consume a confirmation freeze record"
+            )
+        references = load_validated_terminal_teacher_reference_documents(
+            plan=plan,
+            plan_sha256=plan_sha256,
+            reference_directory=args.reference_directory,
+            evaluation_tier=args.evaluation_tier,
+            confirmation_authorization=terminal_confirmation_freeze,
+        )
+        document_inputs = list(references["documents"])
+        tokenization_receipt = {
+            "source": "prompt and target token IDs embedded in each reference file",
+            "document_count": references["document_count"],
+            "total_logit_rows": references["total_logit_rows"],
+        }
+        reference_key = "logits"
+        reference_representation = "logits"
+        evaluation_tier = args.evaluation_tier
+        reference_report = {
+            "kind": "bounded_terminal_hidden_teacher_endpoint",
+            "plan_path": str(args.terminal_reference_plan.resolve()),
+            "plan_sha256": plan_sha256,
+            "manifest_path": str(references["manifest_path"]),
+            "manifest_sha256": references["manifest_sha256"],
+            "teacher_model": plan["teacher"]["model_id"],
+            "teacher_revision": plan["teacher"]["source_revision"],
+            "evaluation_tier": evaluation_tier,
+            "document_count": references["document_count"],
+            "total_logit_rows": references["total_logit_rows"],
+            "total_reference_bytes": references["total_payload_bytes"],
+        }
+        evidence_boundary = (
+            "The bounded references reproduce the exact source-model endpoint from "
+            "captured BF16 decoder-layer-77 outputs, the official final RMS "
+            "normalization, and the official language-model head. They do not require "
+            "the preceding BF16 decoder weights. Screening documents may select a "
+            "candidate. Confirmation documents are opened only after the candidate, "
+            "runtime mode, and exact charged bytes are frozen in a hash-bound record."
+        )
+
     configured_link = Path(os.environ[ENGINE_KLD_REFERENCE_PATH_ENV])
     if configured_link.absolute() != args.reference_link.absolute():
         raise ValueError("engine KLD reference link differs from the runner input")
-    if os.environ.get(ENGINE_KLD_REFERENCE_KEY_ENV) != "logprobs":
-        raise ValueError("engine KLD reference tensor key must be 'logprobs'")
-    if os.environ.get(ENGINE_KLD_REFERENCE_REPRESENTATION_ENV) != "logprobs":
-        raise ValueError("engine KLD reference representation must be 'logprobs'")
+    if os.environ.get(ENGINE_KLD_REFERENCE_KEY_ENV) != reference_key:
+        raise ValueError("engine KLD reference tensor key differs from the reference")
+    if (
+        os.environ.get(ENGINE_KLD_REFERENCE_REPRESENTATION_ENV)
+        != reference_representation
+    ):
+        raise ValueError(
+            "engine KLD reference representation differs from the reference"
+        )
     if os.environ.get(ENGINE_KLD_CHUNK_ROWS_ENV) != str(args.kld_chunk_rows):
         raise ValueError("engine and runner KLD chunk-row settings differ")
-
-    all_token_ids, tokenization_receipt = _public_reference_token_ids(
-        model=args.model, plan=plan
-    )
-    document_inputs: list[dict[str, Any]] = []
-    for row in references["rows"]:
-        chunk = row["selected_chunk"]
-        prompt = all_token_ids[chunk * 512 : (chunk + 1) * 512]
-        if len(prompt) != 512 or token_ids_sha256(prompt) != row[
-            "prompt_token_ids_sha256"
-        ]:
-            raise ValueError("public-reference prompt token hash changed")
-        reference_path = args.reference_directory / row["reference_file"]
-        _validate_reference_tensor(reference_path, prompt_token_ids=prompt)
-        document_inputs.append(
-            {**row, "prompt_token_ids": prompt, "reference_path": reference_path}
-        )
 
     first = document_inputs[0]
     retarget_reference_symlink(args.reference_link, first["reference_path"])
@@ -341,7 +464,7 @@ def main() -> None:
         and np.array_equal(first_routes, first_identity_routes)
     )
     if not controls_passed:
-        raise RuntimeError("public-reference measurement controls failed")
+        raise RuntimeError("document-reference measurement controls failed")
 
     baseline_by_document: dict[str, torch.Tensor] = {}
     candidate_by_document: dict[str, torch.Tensor] = {}
@@ -385,7 +508,11 @@ def main() -> None:
         document_hash = row["document_sha256"]
         baseline_by_document[document_hash] = baseline
         candidate_by_document[document_hash] = candidate
-        stem = f"chunk-{row['selected_chunk']:06d}"
+        stem = (
+            f"chunk-{row['selected_chunk']:06d}"
+            if "selected_chunk" in row
+            else f"document-{document_hash[:16]}"
+        )
         torch.save(baseline, args.dest / f"{stem}-resident-forward-kld.pt")
         torch.save(candidate, args.dest / f"{stem}-candidate-forward-kld.pt")
         np.savez_compressed(
@@ -396,8 +523,11 @@ def main() -> None:
         document_reports.append(
             {
                 "document_sha256": document_hash,
-                "document_title": row["document_title"],
-                "selected_chunk": row["selected_chunk"],
+                "document_title": row.get("document_title"),
+                "source": row.get("source"),
+                "axis": row.get("axis"),
+                "selected_chunk": row.get("selected_chunk"),
+                "context_tokens": len(row["prompt_token_ids"]),
                 "reference_file": row["reference_file"],
                 "reference_file_sha256": row["reference_file_sha256"],
                 "resident_mean_forward_kld": float(baseline.mean().item()),
@@ -453,9 +583,10 @@ def main() -> None:
         bootstrap_seed=0,
     )
     report = {
-        "schema": "qsrt_glm52_document_disjoint_public_reference_confirmation",
+        "schema": "qsrt_glm52_document_disjoint_candidate_evaluation",
         "schema_version": 1,
         "status": "complete",
+        "evaluation_tier": evaluation_tier,
         "candidate": frozen,
         "intervention_artifact": {
             "root": artifact["root"],
@@ -483,15 +614,16 @@ def main() -> None:
             if args.confirmation_registration is not None
             else None
         ),
-        "public_reference_plan": {
-            "path": str(args.reference_plan.resolve()),
-            "sha256": sha256_file(args.reference_plan),
-            "repository": plan["reference_repository"],
-            "revision": plan["reference_revision"],
-            "teacher_model": plan["teacher_model"],
-            "teacher_revision": plan["teacher_revision"],
-            "total_reference_bytes": references["total_reference_bytes"],
-        },
+        "terminal_confirmation_freeze": (
+            {
+                "path": str(args.terminal_confirmation_freeze.resolve()),
+                "sha256": sha256_file(args.terminal_confirmation_freeze),
+                **terminal_confirmation_freeze,
+            }
+            if terminal_confirmation_freeze is not None
+            else None
+        ),
+        "teacher_references": reference_report,
         "tokenization": tokenization_receipt,
         "measurement_controls": {
             "initial_resident_repeat_bitwise_equal": bool(
@@ -522,9 +654,15 @@ def main() -> None:
             "kv_cache_dtype": args.kv_cache_dtype,
             "load_format": args.load_format,
             "attention_backend": args.attention_backend,
-            "context_tokens": 512,
+            "minimum_context_tokens": min(
+                len(row["prompt_token_ids"]) for row in document_inputs
+            ),
+            "maximum_context_tokens": max(
+                len(row["prompt_token_ids"]) for row in document_inputs
+            ),
             "model_load_seconds": model_load_seconds,
-            "engine_reference_representation": "logprobs",
+            "engine_reference_key": reference_key,
+            "engine_reference_representation": reference_representation,
             "kld_chunk_rows": args.kld_chunk_rows,
             "exl3_moe_execution": (
                 "three_gemm_per_expert_correctness"
@@ -538,21 +676,20 @@ def main() -> None:
             "comparison_status": "not_comparable_across_reference_suites",
             "reason": (
                 "the 0.059 target belongs to the registered 2,048-token suite; "
-                "these public references use 512-token document chunks and can "
-                "screen only paired candidate-minus-resident change"
+                "a different document set can establish paired candidate-minus-"
+                "resident change but cannot reuse that absolute threshold"
             ),
         },
-        "evidence_boundary": (
-            "The candidate was frozen before these reference files were accessed, "
-            "and all 16 documents are disjoint from its fit, ridge-selection, "
-            "attribution, and candidate-selection documents. The public cache uses "
-            "512-token contexts and contains only 16 eligible untouched documents. "
-            "This result therefore supplies independent auxiliary evidence but does "
-            "not satisfy the registered requirement for 32 documents with 2,048 "
-            "tokens each."
-        ),
+        "evidence_boundary": evidence_boundary,
         "model_downloads_performed": False,
     }
+    if evaluation_tier == "confirmation":
+        assert terminal_confirmation_freeze is not None
+        report["confirmation_decision"] = (
+            evaluate_terminal_reference_confirmation_decision(
+                report, terminal_confirmation_freeze
+            )
+        )
     atomic_write_json(args.dest / "report.json", report)
     print(json.dumps(report, indent=2, sort_keys=True), flush=True)
 

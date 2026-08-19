@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import re
@@ -16,6 +17,172 @@ from qsrt.correctness import sha256_file
 
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
+
+
+def validate_terminal_reference_confirmation_generation_authorization(
+    record: Mapping[str, Any],
+    *,
+    teacher_reference_plan_sha256: str,
+    screening_report_path: Path,
+) -> dict[str, Any]:
+    """Authorize confirmation-logit generation after screening is frozen."""
+
+    if (
+        record.get("schema")
+        != "qsrt_glm52_terminal_reference_confirmation_freeze"
+        or record.get("schema_version") != 1
+        or record.get("status")
+        != "frozen_before_confirmation_reference_access"
+    ):
+        raise ValueError("terminal-reference confirmation freeze identity differs")
+    artifact_manifest_sha256 = record.get("artifact_manifest_sha256")
+    candidate_runtime_mode = record.get("candidate_runtime_mode")
+    screening_report_sha256 = record.get("screening_report_sha256")
+    charged_bytes = record.get("total_charged_bytes")
+    quality_gate = record.get("confirmation_quality_gate")
+    if (
+        not isinstance(artifact_manifest_sha256, str)
+        or _DIGEST.fullmatch(artifact_manifest_sha256) is None
+        or not isinstance(candidate_runtime_mode, str)
+        or not candidate_runtime_mode
+        or record.get("teacher_reference_plan_sha256")
+        != teacher_reference_plan_sha256
+        or not isinstance(screening_report_sha256, str)
+        or _DIGEST.fullmatch(screening_report_sha256) is None
+        or isinstance(charged_bytes, bool)
+        or not isinstance(charged_bytes, int)
+        or charged_bytes < 0
+        or not isinstance(record.get("frozen_at_utc"), str)
+        or not record["frozen_at_utc"]
+        or not isinstance(record.get("frozen_candidate"), Mapping)
+        or not isinstance(quality_gate, Mapping)
+        or quality_gate.get("minimum_document_count") != 32
+        or quality_gate.get("mean_rule")
+        != "paired document-bootstrap one-sided 95% upper bound is below zero"
+        or quality_gate.get("tail_metric") != "pooled position CVaR1%"
+        or quality_gate.get("maximum_absolute_tail_increase") != 0.0
+    ):
+        raise ValueError("terminal-reference confirmation freeze differs")
+    if (
+        not screening_report_path.is_file()
+        or sha256_file(screening_report_path) != screening_report_sha256
+    ):
+        raise ValueError("terminal-reference screening report differs from its freeze")
+    screening_report = json.loads(screening_report_path.read_text())
+    screening_artifact = screening_report.get("intervention_artifact")
+    screening_references = screening_report.get("teacher_references")
+    if (
+        screening_report.get("schema")
+        != "qsrt_glm52_document_disjoint_candidate_evaluation"
+        or screening_report.get("status") != "complete"
+        or screening_report.get("evaluation_tier") != "screening"
+        or not isinstance(screening_artifact, Mapping)
+        or screening_artifact.get("manifest_sha256")
+        != artifact_manifest_sha256
+        or not isinstance(screening_references, Mapping)
+        or screening_references.get("plan_sha256")
+        != teacher_reference_plan_sha256
+    ):
+        raise ValueError("terminal-reference screening report identity differs")
+    return {
+        "artifact_manifest_sha256": artifact_manifest_sha256,
+        "candidate_runtime_mode": candidate_runtime_mode,
+        "teacher_reference_plan_sha256": teacher_reference_plan_sha256,
+        "screening_report_sha256": screening_report_sha256,
+        "total_charged_bytes": charged_bytes,
+        "frozen_at_utc": str(record["frozen_at_utc"]),
+        "frozen_candidate": dict(record["frozen_candidate"]),
+        "confirmation_quality_gate": dict(quality_gate),
+    }
+
+
+def validate_terminal_reference_confirmation_freeze(
+    record: Mapping[str, Any],
+    *,
+    artifact: Mapping[str, Any],
+    candidate_runtime_mode: str,
+    teacher_reference_plan_sha256: str,
+    screening_report_path: Path,
+) -> dict[str, Any]:
+    """Authorize sealed references only for one content-addressed candidate."""
+
+    validated = validate_terminal_reference_confirmation_generation_authorization(
+        record,
+        teacher_reference_plan_sha256=teacher_reference_plan_sha256,
+        screening_report_path=screening_report_path,
+    )
+    if (
+        validated["artifact_manifest_sha256"] != artifact.get("manifest_sha256")
+        or validated["candidate_runtime_mode"] != candidate_runtime_mode
+    ):
+        raise ValueError("terminal-reference confirmation freeze differs")
+    return validated
+
+
+def evaluate_terminal_reference_confirmation_decision(
+    report: Mapping[str, Any], authorization: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Apply the quality rules frozen before confirmation-reference access."""
+
+    gate = authorization.get("confirmation_quality_gate")
+    summary = report.get("summary")
+    controls = report.get("measurement_controls")
+    artifact = report.get("intervention_artifact")
+    if (
+        report.get("schema")
+        != "qsrt_glm52_document_disjoint_candidate_evaluation"
+        or report.get("status") != "complete"
+        or report.get("evaluation_tier") != "confirmation"
+        or not isinstance(controls, Mapping)
+        or controls.get("passed") is not True
+        or not isinstance(artifact, Mapping)
+        or artifact.get("manifest_sha256")
+        != authorization.get("artifact_manifest_sha256")
+        or not isinstance(gate, Mapping)
+        or not isinstance(summary, Mapping)
+    ):
+        raise ValueError("terminal-reference confirmation report identity differs")
+    document_count = summary.get("document_count")
+    bootstrap = summary.get("paired_document_bootstrap")
+    tails = summary.get("tail_metrics")
+    if (
+        isinstance(document_count, bool)
+        or not isinstance(document_count, int)
+        or document_count < gate.get("minimum_document_count", 0)
+        or not isinstance(bootstrap, Mapping)
+        or not isinstance(tails, Mapping)
+        or not isinstance(tails.get("baseline"), Mapping)
+        or not isinstance(tails.get("candidate"), Mapping)
+    ):
+        raise ValueError("terminal-reference confirmation statistics are incomplete")
+    upper_bound = float(bootstrap["difference_upper_one_sided_95_percentile"])
+    baseline_cvar1 = float(tails["baseline"]["cvar1"])
+    candidate_cvar1 = float(tails["candidate"]["cvar1"])
+    tolerance = float(gate["maximum_absolute_tail_increase"])
+    if not all(
+        math.isfinite(value)
+        for value in (upper_bound, baseline_cvar1, candidate_cvar1, tolerance)
+    ):
+        raise ValueError("terminal-reference confirmation statistics are invalid")
+    mean_passed = upper_bound < 0.0
+    tail_passed = candidate_cvar1 <= baseline_cvar1 + tolerance
+    return {
+        "status": "passed" if mean_passed and tail_passed else "failed",
+        "passed": bool(mean_passed and tail_passed),
+        "document_count": document_count,
+        "mean": {
+            "candidate_minus_resident_one_sided_95_percent_upper_bound": upper_bound,
+            "required_upper_bound": 0.0,
+            "passed": mean_passed,
+        },
+        "tail": {
+            "metric": "pooled position CVaR1%",
+            "resident": baseline_cvar1,
+            "candidate": candidate_cvar1,
+            "maximum_absolute_increase": tolerance,
+            "passed": tail_passed,
+        },
+    }
 
 
 def token_ids_sha256(token_ids: Sequence[int]) -> str:
@@ -324,10 +491,13 @@ def summarize_document_paired_kld(
 
 
 __all__ = [
+    "evaluate_terminal_reference_confirmation_decision",
     "retarget_reference_symlink",
     "summarize_document_paired_kld",
     "token_ids_sha256",
     "validate_frozen_low_rank_candidate",
     "validate_public_reference_auxiliary_plan",
     "validate_public_reference_files",
+    "validate_terminal_reference_confirmation_freeze",
+    "validate_terminal_reference_confirmation_generation_authorization",
 ]

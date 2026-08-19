@@ -293,6 +293,13 @@ Its record must distinguish three quantities:
 - sampling uncertainty from the paired document bootstrap; and
 - the largest tail degradation that the release policy considers acceptable.
 
+The registered layer-3 expert-103 rank-four correction uses a zero absolute
+CVaR1% tolerance. Its eight-document screen must lower the equal-document mean,
+improve at least six documents, and avoid a pooled CVaR1% increase. A passing
+screen freezes the artifact hash, runtime construction, BF16 factor payload,
+serialized correction bytes, and confirmation decision before the 32-document
+logits can be generated or opened.
+
 ## Standard candidate report
 
 Every full-model candidate report contains the following measurements.
@@ -564,11 +571,11 @@ to their stored dtype and loaded through the packed serving path.
 |---:|---|---|
 | 1 | Fit BF16 down-only rank-two and rank-four factors on an early-layer eight-expert panel | Complete: both ranks improved activation-weighted error on candidate-selection rows |
 | 2 | Measure the early-layer bolt-on factors through complete-expert reconstruction and model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached one-context KLD 0.05825746 |
-| 3 | Freeze and measure the rank-four expert-103 candidate on document-disjoint data | Complete for the available 16-document auxiliary set: the point estimate improved by 0.1736%, and the confidence interval included zero |
+| 3 | Freeze and measure the rank-four expert-103 candidate on document-disjoint data | The available 16-document auxiliary result improved by 0.1736%, and its confidence interval included zero. The stronger endpoint workflow now requires a fresh eight-document screen before it can generate or open the 32-document confirmation tier |
 | 4 | Replicate the local low-rank selector across independently sampled high layers | Complete for layers 52, 60, 63, and 64: all four complete panels had worse mean KLD than resident EXL3; layer-60 and layer-64 regressions had confidence intervals above zero |
 | 5 | Screen every frozen down-recovery candidate expert by direct model KLD | Complete for the measured pool: layer-52 down-refit expert 36 and rank-four expert 186 were the only candidates that improved both ordered document groups |
 | 6 | Freeze and screen a model-KLD-selected composition | Complete and rejected: the layer-52 expert-36 plus expert-186 composition improved the overall mean but regressed in the first ordered document group, so the longer reference remained unopened |
-| 7 | Extend direct model-KLD selection into the reported late-middle damage band | In progress: error-blind panels for layers 55–58 are frozen, and the bounded 16-shard BF16 source window is downloading without the complete checkpoint |
+| 7 | Extend direct model-KLD selection into the reported late-middle damage band | The error-blind panels for layers 55–58 are frozen, and the bounded 16-shard BF16 source window plus routed-input captures are complete. No candidate has been selected from these layers |
 | 8 | Build uniform K3, reconstructed-activation down refits, and rank-four down corrections for layers 55–58 | Every dependent endpoint is rebuilt from its own upstream candidate; one resident-model load measures all eight singletons and the predeclared complete panel for each construction |
 | 9 | Freeze one candidate or coherent cross-layer composition | A downstream correction must be refitted against inputs produced with every selected upstream intervention active; copied endpoints cannot authorize a cross-layer composition |
 | 10 | Compare the frozen candidate with coherent K3/K4 configurations at matched bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
@@ -584,9 +591,10 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 
 | Work | Result required before advancement |
 |---|---|
-| Verify model identity and prepare reference logits | Weight identity is reconciled; the bounded endpoint generator must close numerically and produce the frozen eight-document screening references plus the sealed 32-document confirmation references |
+| Verify model identity and prepare screening references | Weight identity is reconciled; the bounded endpoint generator must close numerically and produce the eight-document screening references |
 | Select down-recovery candidate experts | Reconstructed-input covariance and local-error selection are excluded; direct model KLD must improve in both frozen eight-document groups before an expert enters a composition |
-| Freeze one composition | The complete expert set, tensors, factor dtypes, and exact charged bytes are fixed before any new confirmation reference is opened |
+| Freeze one composition | The complete expert set, tensors, factor dtypes, standalone correction payload, runtime mode, screening result, and exact charged correction bytes are fixed before confirmation logits are generated or opened |
+| Generate confirmation references | The bounded endpoint generator produces the 32-document tier only after validating the content-addressed freeze and screening report |
 | Confirm the frozen composition | The 32 documents and 65,482 positions in the sealed terminal-hidden-state plan show lower paired mean KLD than EXL3 and CVaR1% non-inferiority |
 | Serialize and execute low-rank factors if the composition uses them | Load-time fusion reproduces screened endpoints bit for bit; the complete serialized byte ledger and production serving path remain |
 | Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
@@ -1007,8 +1015,9 @@ eight screening documents and 32 sealed confirmation documents through the
 bounded endpoint calculation described above. The four-GPU numerical closure,
 screening generation, and paired EXL3 baseline measurement remain unfinished.
 The confirmation outputs must remain inaccessible to candidate selection until
-the candidate identity, factor dtype, exact byte ledger, and selection evidence
-have been frozen.
+the candidate identity, factor dtype, exact serialized correction bytes,
+runtime construction, and screening evidence have been frozen. The complete
+checkpoint byte ledger remains a separate release requirement.
 
 Do not change the registered correction after opening a confirmation context.
 A different rank, expert, dtype, ridge, factor value, base representation, or

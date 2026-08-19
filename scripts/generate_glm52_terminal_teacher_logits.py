@@ -11,6 +11,9 @@ from pathlib import Path
 
 import torch
 
+from qsrt.glm52_document_disjoint_confirmation import (
+    validate_terminal_reference_confirmation_generation_authorization,
+)
 from qsrt.glm52_terminal_teacher_assets import (
     build_terminal_teacher_asset_download_contract,
     validate_downloaded_terminal_teacher_assets,
@@ -37,6 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--devices", default="0,1,2,3")
     parser.add_argument("--closure-rows", type=int, default=8)
+    parser.add_argument("--confirmation-freeze", type=Path)
+    parser.add_argument("--screening-report", type=Path)
     parser.add_argument("--dest", type=Path, required=True)
     return parser
 
@@ -65,6 +70,21 @@ def main() -> None:
     plan_sha256 = hashlib.sha256(plan_bytes).hexdigest()
     plan = json.loads(plan_bytes)
     validate_terminal_teacher_reference_plan(plan)
+    confirmation_authorization = None
+    if args.evaluation_tier == "confirmation":
+        if args.confirmation_freeze is None or args.screening_report is None:
+            raise PermissionError(
+                "confirmation generation requires a freeze record and screening report"
+            )
+        confirmation_authorization = (
+            validate_terminal_reference_confirmation_generation_authorization(
+                json.loads(args.confirmation_freeze.read_text()),
+                teacher_reference_plan_sha256=plan_sha256,
+                screening_report_path=args.screening_report,
+            )
+        )
+    elif args.confirmation_freeze is not None or args.screening_report is not None:
+        raise ValueError("screening generation cannot consume confirmation inputs")
     asset_contract = build_terminal_teacher_asset_download_contract(
         plan=plan, plan_sha256=plan_sha256
     )
@@ -105,6 +125,7 @@ def main() -> None:
         devices=devices,
         closure_rows=args.closure_rows,
         destination=args.dest,
+        confirmation_authorization=confirmation_authorization,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
 
