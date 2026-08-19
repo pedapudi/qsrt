@@ -1,0 +1,27 @@
+{
+  "schema": "qsrt_glm52_model_kld_candidate_subset_selection",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_subset_kld_measurement",
+  "frozen_at_utc": "2026-08-18T23:51:23Z",
+  "objective": "Measure the model-KLD effect of each frozen layer-60 candidate expert without assuming that local complete-expert error predicts its model effect. Six experts contain accepted reconstructed-activation refits; experts 186 and 180 retain their uniform-K3 down endpoints after the local fallback rule rejected their refits.",
+  "evidence_boundary": "The 16 public 512-token documents are candidate-selection data for this plan. A singleton or later composition selected with these documents requires confirmation on a new document-disjoint reference tier.",
+  "artifact_manifest_sha256": "13fdde80894d5728d3f78b28e52c22fc266a6295b22cb2b8dd7d5138bf21eabc",
+  "model_layer": 60,
+  "selection_protocol": {
+    "document_order_source": "selected_chunks in public-reference plan order",
+    "screening_document_count": 8,
+    "selection_check_document_count": 8,
+    "retention_rule": "Retain a singleton only when candidate-minus-resident equal-document mean KLD is negative on both document groups. Rank retained singletons by the mean over all 16 documents.",
+    "composition_boundary": "A composition chosen from singleton results is another selection candidate and requires a new document-disjoint confirmation tier."
+  },
+  "candidate_arms": [
+    {"name": "expert-28-alone", "selected_experts": [28], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-78-alone", "selected_experts": [78], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-125-alone", "selected_experts": [125], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-136-alone", "selected_experts": [136], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-142-alone", "selected_experts": [142], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-180-alone", "selected_experts": [180], "reason": "Measure the uniform-K3 fallback expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-186-alone", "selected_experts": [186], "reason": "Measure the uniform-K3 fallback expert against resident EXL3 with no other candidate expert active."},
+    {"name": "expert-230-alone", "selected_experts": [230], "reason": "Measure one frozen candidate expert against resident EXL3 with no other candidate expert active."}
+  ]
+}

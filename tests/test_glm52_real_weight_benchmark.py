@@ -162,12 +162,16 @@ def test_frozen_panel_slices_are_disjoint_and_ordered() -> None:
     "layer,expected_experts",
     [
         (52, (254, 186, 96, 116, 68, 29, 36, 235)),
+        (55, (130, 74, 172, 83, 249, 84, 214, 232)),
+        (56, (186, 215, 221, 197, 2, 173, 209, 201)),
+        (57, (111, 164, 4, 194, 168, 90, 179, 58)),
+        (58, (156, 55, 133, 165, 86, 76, 96, 21)),
         (60, (78, 125, 186, 28, 230, 136, 180, 142)),
         (63, (215, 32, 123, 164, 199, 118, 149, 29)),
         (64, (241, 253, 76, 90, 85, 155, 106, 210)),
     ],
 )
-def test_high_impact_and_nearby_control_panels_are_error_blind(
+def test_late_middle_layer_panels_are_error_blind(
     layer: int, expected_experts: tuple[int, ...]
 ) -> None:
     panel = load_frozen_real_weight_panel(

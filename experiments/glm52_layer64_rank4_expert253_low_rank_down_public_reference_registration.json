@@ -1,0 +1,49 @@
+{
+  "schema": "qsrt_glm52_low_rank_down_confirmation_registration",
+  "schema_version": 1,
+  "status": "frozen_before_document_disjoint_confirmation",
+  "frozen_at_utc": "2026-08-18T22:19:33Z",
+  "objective": "Determine whether the layer-64 expert-253 activation-weighted rank-four down correction improves GLM-5.2 forward KLD on document-disjoint public references.",
+  "evidence_boundary": "Expert 253 was selected only from held-out routed-output reconstruction error before any layer-64 model-KLD result was available. Its selection support is seventy-three routed rows, so the result must be treated as a sparse-support mechanism screen. The public reference set contains sixteen 512-token documents and cannot qualify a checkpoint.",
+  "selection_reason": {
+    "candidate_selection_routed_rows": 73,
+    "base_weighted_relative_sse": 0.05085407615421039,
+    "candidate_weighted_relative_sse": 0.043035528691088884,
+    "relative_sse_reduction": 0.15374475468618232,
+    "rule": "Freeze the one layer-64 expert with a materially larger held-out reconstruction gain than every other expert in the error-blind eight-expert panel."
+  },
+  "source_weights": {
+    "model_id": "zai-org/GLM-5.2",
+    "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "complete_checkpoint_required_on_kossel": false
+  },
+  "base_representation": {
+    "description": "K3 gate and up encodes plus the reconstructed-activation down-refit policy, with the input down projection retained wherever that refit did not pass its local selection rule",
+    "artifact_relative_path": "results/glm52-layer64-frozen8-reconstructed-activation-down-refit-merged",
+    "manifest_file_sha256": "0097b9340272936ea0e2c7139114c4cb5dfd6e72129b1ffb1acb47cd1f3f7d64",
+    "report_file_sha256": "efa8d2bdd759a23ad3dbe0959b6836947a690eb5676f341278395bf2810291b8"
+  },
+  "frozen_correction": {
+    "layer": 64,
+    "expert": 253,
+    "matrix": "down_proj",
+    "construction": "activation_weighted_bolt_on_correction",
+    "rank": 4,
+    "factor_dtype": "BF16",
+    "selected_ridge_factor": 0.001,
+    "factor_a_shape": [2048, 4],
+    "factor_b_shape": [6144, 4],
+    "factor_a_sha256": "cdb39fb501f80937a43cc5ed31cf493900abc49a3492da08bf37ee4ef905b4c2",
+    "factor_b_sha256": "735c4237f382db4d5074e9d6489b53112099b3f0002a5ba953a195cdbca81833",
+    "logical_factor_bytes": 65536,
+    "materialized_down_sha256": "cfb4926f14f10283642d8c36000e0c33229c9535f0ee45cd29d213d87e5b7082",
+    "merged_artifact_relative_path": "results/glm52-layer64-frozen8-low-rank-down-reconstructed-activation-refit-derived-input-identity-checked-selection-fallback-bf16-rank-4-merged",
+    "merged_artifact_manifest_file_sha256": "5f86e5d33e91c05ffbf65d2792b24e445eb712b14ee5c444dd57e218d58bbd4c",
+    "merged_artifact_report_file_sha256": "a965d7335e81dfdc6a08cff483f7a246e7c2524513ea344748f4de9eba12b948"
+  },
+  "confirmation_contract": {
+    "selection_documents_must_not_enter_reporting": true,
+    "candidate_changes_after_registration": "Any change to the layer, expert, rank, dtype, ridge, factor hashes, base representation, or bolt-on construction creates a different candidate.",
+    "quality_decision": "Advance only if paired mean KLD improves and the document-level tail report does not show material harm."
+  }
+}

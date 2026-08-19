@@ -79,7 +79,38 @@ established. Candidate p99, CVaR1%, and maximum improved, but this shorter
 public set does not satisfy the registered requirement for 32 documents with
 2,048 tokens each.
 
-These values establish four mechanism decisions.
+The measurements support the following mechanism decisions.
+
+The same 16 public documents measured frozen panels from layers 52, 60, 63,
+and 64. Every row used the same resident EXL3 checkpoint and the same 8,176
+scored positions. A negative difference favors the candidate. Every unchanged
+resident repeat, identity intervention, and final resident bracket matched
+KLD values and routes bit for bit.
+
+| Frozen eight-expert intervention | Equal-document mean KLD | Candidate minus EXL3 | Documents | 95% paired document interval |
+|---|---:|---:|---|---|
+| Layer 52, K3 with down refit | 0.09305502 | +0.00025883 | 7 better, 9 worse | [-0.00037826, +0.00088783] |
+| Layer 52, down refit plus locally accepted rank-four corrections | 0.09299236 | +0.00019618 | 8 better, 8 worse | [-0.00029264, +0.00070142] |
+| Layer 60, K3 with down refit | 0.09295164 | +0.00015545 | 6 better, 10 worse | [-0.00028785, +0.00061493] |
+| Layer 60, down refit plus locally accepted rank-four corrections | 0.09329399 | +0.00049780 | 3 better, 13 worse | [+0.00021016, +0.00083257] |
+| Layer 63, uniform K3 | 0.09277434 | -0.00002184 | 8 better, 8 worse | [-0.00032288, +0.00026261] |
+| Layer 63, K3 with down refit | 0.09273545 | -0.00006074 | 9 better, 7 worse | [-0.00029071, +0.00017891] |
+| Layer 63, down refit plus locally accepted rank-four corrections | 0.09287780 | +0.00008161 | 9 better, 7 worse | [-0.00025256, +0.00045111] |
+| Layer 64, K3 with down refit | 0.09328136 | +0.00048517 | 4 better, 12 worse | [+0.00015330, +0.00081810] |
+| Layer 64, down refit plus locally accepted rank-four corrections | 0.09321172 | +0.00041553 | 5 better, 11 worse | [+0.00004587, +0.00081100] |
+
+Uniform K3 and down refitting at layer 63 produced the only favorable mean
+point estimates. Both confidence intervals include zero. The complete layer-60
+and layer-64 low-rank panels regressed with confidence intervals above zero.
+The refit-only layer-64 panel also regressed with an interval above zero.
+
+Two low-rank singleton screens support the same limitation. Layer-63 expert
+164 improved local complete-expert error by 33.5% and worsened mean KLD by
+0.00026485. Layer-64 expert 253 improved local error by 15.4% and improved the
+mean-KLD point estimate by 0.00004955, but its confidence interval included
+zero. Six additional layer-63 subsets, including five singleton experts, all
+had adverse mean point estimates. These documents now serve as candidate-
+selection data for those interventions.
 
 - **Reconstruction-table training remains rejected for the measured GLM
   residuals.** Values presented to Viterbi after blockwise quantization-error
@@ -92,13 +123,13 @@ These values establish four mechanism decisions.
   complete-expert output error substantially, then increased full-model mean
   KLD by 2.3453% relative to uniform K3. A locally accurate reconstruction can
   perturb a downstream probability direction that matters more to the model.
-- **The earlier reconstructed-activation down refit remains a candidate, but
-  local refit selection is rejected.** The earlier frozen construction
-  recovered 87.3960% of uniform K3's excess mean KLD above EXL3. A later rule
-  hard-encoded every ridge candidate and required both local mean and row-tail
-  improvement. Five expert tensors matched the earlier result, but three new
-  local choices raised model mean KLD to 0.06413429. Complete-expert mean and
-  local row CVaR therefore cannot authorize ridge or fallback decisions.
+- **Reconstructed-activation down refitting remains a candidate construction,
+  but blanket application and local selection are rejected.** The layer-3
+  construction recovered 87.3960% of uniform K3's excess mean KLD above EXL3
+  on one context. The 16-document layer-63 panel also had a favorable point
+  estimate. Layers 52 and 60 had adverse, inconclusive point estimates, while
+  layer 64 regressed with a confidence interval above zero. Complete-expert
+  mean and local row CVaR cannot authorize ridge, fallback, or expert decisions.
 - **Reconstructed-input covariance for the down encoder is rejected on this
   panel.** It reduced local complete-expert error by 48.7027% for the source
   target and raised model mean KLD by 5.5688% relative to uniform K3. Refitting
@@ -111,17 +142,37 @@ These values establish four mechanism decisions.
   also changed none of the reconstructed tensor bytes. This result covers
   eight layer-3 experts at K3. It does not establish the result at K2 or under
   a captured dense metric.
-- **An activation-weighted low-rank down correction is the first mechanism to
-  cross the numerical KLD target.** A BF16 rank-four correction on layer-3
-  expert 103 reduced mean KLD to 0.05825746. It also improved p99, CVaR1%, and
-  maximum KLD relative to EXL3 on the available context. The rank and expert
-  were chosen after inspecting other KLD arms on that same context. The result
-  is therefore a mechanism screen. On 16 untouched public documents, the same
-  frozen candidate improved the paired point estimate by only 0.1736%; the
-  confidence interval crossed zero. The stored K3 base and BF16 factors now
-  reproduce the screened FP16 endpoint bit for bit when the expert is loaded.
-  A qualifying 32-document reference set, complete factor-aware container, and
-  production-serving qualification remain unimplemented.
+- **Activation-weighted low-rank correction produced one favorable mechanism
+  screen, but local-error selection is rejected.** A BF16 rank-four correction
+  on layer-3 expert 103 reduced one-context mean KLD to 0.05825746. The rank and
+  expert were chosen after inspecting other KLD arms on the same context. On 16
+  untouched public documents, the frozen candidate improved the paired point
+  estimate by 0.1736%, and the confidence interval included zero. Locally
+  selected rank-four panels from layers 52, 60, 63, and 64 all had worse mean
+  KLD than resident EXL3. Layer-60 and layer-64 regressions had confidence
+  intervals above zero. The stored K3 base and BF16 factors reproduce the
+  screened FP16 endpoint bit for bit at load time, but the selection objective
+  does not generalize to model KLD. A qualifying 32-document reference set,
+  factor-aware container, and production-serving qualification remain missing.
+- **Direct singleton KLD selection retained two layer-52 recovery experts.**
+  The public reference plan fixes two ordered groups of eight documents. The
+  selector follows the top-level plan-order document array. The nested summary
+  sorts documents by hash and must not define the group split.
+  Down-refit expert 36 and rank-four expert 186 were the only measured recovery
+  candidates with negative candidate-minus-EXL3 mean KLD in both groups.
+  Expert 186 reduced the all-document point estimate by 0.3679%, from
+  0.09279619 to 0.09245475. Its document-bootstrap interval included zero,
+  its CVaR1% improved, and its p99 and maximum worsened. The two experts were
+  registered as a same-layer composition before their individual development
+  screens. On the separate 2,048-token development context, expert 186
+  regressed from `0.06107434` to `0.06151378` under bitwise-stable controls.
+  Expert 36 improved that context to `0.06090743`, a 0.2733% reduction that
+  remains above the `0.059` target. The frozen two-expert composition improved
+  the overall 16-document mean by `0.00006838`, but it regressed by
+  `0.00029425` in the first ordered eight-document group. The second group
+  improved by `0.00043102`. The composition therefore failed its registered
+  requirement that both groups improve. Its separate 2,048-token development
+  screen remained unopened.
 
 The logical eight-expert ledger charges 133,791,744 bytes for EXL3 and
 113,643,520 bytes for uniform QSRT K3. This 20,148,224-byte margin is large
@@ -506,16 +557,18 @@ to their stored dtype and loaded through the packed serving path.
 
 | Order | Work | Recorded state or advance rule |
 |---:|---|---|
-| 1 | Fit BF16 down-only rank-two and rank-four factors for the frozen eight-expert panel | Complete: both ranks improved activation-weighted error on candidate-selection rows |
-| 2 | Measure bolt-on factors through complete-expert reconstruction and one-context model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached KLD 0.05825746 |
-| 3 | Freeze the exact rank-four expert-103 candidate | Complete in `experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json`; no candidate field may change before confirmation |
-| 4 | Evaluate once on at least 32 document-disjoint confirmation contexts | Incomplete: a 16-document, 512-token auxiliary run improved the point estimate by 0.1736% but its confidence interval crossed zero; advance only if the registered 32-document run beats EXL3 mean KLD, keeps CVaR1% non-inferior, and preserves the exact-byte advantage |
-| 5 | Implement deterministic factor serialization and a factor-aware inference path | Partly complete: load-time fusion reproduces every screened per-position KLD value and route bit; complete-container accounting and production serving remain |
-| 6 | Replicate the frozen construction across independently selected layers | Recovery and KLD per byte repeat before model-wide allocation |
-| 7 | Compare against coherent K3/K4 configurations at matched exact bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
-| 8 | Run frozen-scale re-encoding and one guarded alternation only if confirmation leaves material headroom | Retain alternation only when it improves over the bolt-on candidate on separate selection documents |
-| 9 | Test eight-bit factors, then conditionally four-bit factors | Retain a smaller dtype only when it passes functional, KLD, tail, and byte gates on separate selection documents |
-| 10 | Train factors only if the closed-form result leaves a material, plausibly recoverable deficit | Training must beat its serialized closed-form initialization on disjoint data |
+| 1 | Fit BF16 down-only rank-two and rank-four factors on an early-layer eight-expert panel | Complete: both ranks improved activation-weighted error on candidate-selection rows |
+| 2 | Measure the early-layer bolt-on factors through complete-expert reconstruction and model KLD | Complete: all-expert rank two failed; rank-four expert 103 reached one-context KLD 0.05825746 |
+| 3 | Freeze and measure the rank-four expert-103 candidate on document-disjoint data | Complete for the available 16-document auxiliary set: the point estimate improved by 0.1736%, and the confidence interval included zero |
+| 4 | Replicate the local low-rank selector across independently sampled high layers | Complete for layers 52, 60, 63, and 64: all four complete panels had worse mean KLD than resident EXL3; layer-60 and layer-64 regressions had confidence intervals above zero |
+| 5 | Screen every frozen down-recovery candidate expert by direct model KLD | Complete for the measured pool: layer-52 down-refit expert 36 and rank-four expert 186 were the only candidates that improved both ordered document groups |
+| 6 | Freeze and screen a model-KLD-selected composition | Complete and rejected: the layer-52 expert-36 plus expert-186 composition improved the overall mean but regressed in the first ordered document group, so the longer reference remained unopened |
+| 7 | Extend direct model-KLD selection into the reported late-middle damage band | In progress: error-blind panels for layers 55–58 are frozen, and the bounded 16-shard BF16 source window is downloading without the complete checkpoint |
+| 8 | Build uniform K3, reconstructed-activation down refits, and rank-four down corrections for layers 55–58 | Every dependent endpoint is rebuilt from its own upstream candidate; one resident-model load measures all eight singletons and the predeclared complete panel for each construction |
+| 9 | Freeze one candidate or coherent cross-layer composition | A downstream correction must be refitted against inputs produced with every selected upstream intervention active; copied endpoints cannot authorize a cross-layer composition |
+| 10 | Compare the frozen candidate with coherent K3/K4 configurations at matched bytes | The comparator is the best buildable rate allocation; uniform K3 alone is insufficient |
+| 11 | Evaluate the frozen candidate on at least 32 new document-disjoint contexts | Advance only if paired mean KLD beats EXL3, CVaR1% is non-inferior, and exact bytes remain lower |
+| 12 | Implement deterministic factor serialization or gradient training only after confirmation identifies a useful closed-form correction | Each escalation must beat its serialized closed-form input on separate documents |
 
 The small expert panel selects the factor rank, dtype, and bolt-on or
 alternating construction. It cannot establish a checkpoint win. Only the
@@ -526,10 +579,11 @@ establish that QSRT is smaller than EXL3 and has lower KLD.
 
 | Work | Result required before advancement |
 |---|---|
-| Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for the frozen rank-four expert-103 candidate |
-| Freeze the down-construction rule | Reconstructed-input covariance excluded; one identity-metric target, ridge, and fallback rule frozen by measured KLD on eight selection contexts |
-| Confirm the frozen low-rank candidate | The 16-document auxiliary result is inconclusive; the registered rank-four expert-103 correction must beat EXL3 mean KLD and satisfy CVaR1% non-inferiority on at least 32 document-disjoint 2,048-token contexts |
-| Serialize and execute low-rank factors | Load-time fusion already reproduces the screened endpoint bit for bit; the complete serialized byte ledger and production serving path remain |
+| Verify model identity and prepare reference logits | Weight identity is reconciled; at least 32 sealed confirmation contexts remain required for any selected composition |
+| Select down-recovery candidate experts | Reconstructed-input covariance and local-error selection are excluded; direct model KLD must improve in both frozen eight-document groups before an expert enters a composition |
+| Freeze one composition | The complete expert set, tensors, factor dtypes, and exact charged bytes are fixed before any new confirmation reference is opened |
+| Confirm the frozen composition | At least 32 document-disjoint 2,048-token contexts show lower paired mean KLD than EXL3 and CVaR1% non-inferiority |
+| Serialize and execute low-rank factors if the composition uses them | Load-time fusion reproduces screened endpoints bit for bit; the complete serialized byte ledger and production serving path remain |
 | Build coherent rate-conditioned candidates | Every upstream rate pair has its own down construction |
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and uses fewer charged panel bytes on confirmation documents |
 | Test transfer across layers | The selected construction repeats across error-blind panels from independently chosen layers |
@@ -567,9 +621,10 @@ A second public dataset contains 565 full-vocabulary teacher-logprob chunks
 with 512 tokens each. After the frozen candidate's fitting, selection, and
 screening documents were excluded, 16 eligible documents remained. Their
 auxiliary result is inconclusive and cannot supply the 32 sealed 2,048-token
-confirmation contexts. Producing the qualifying references on an authorized
-host that already holds the BF16 teacher remains an active dependency. The GLM
-program must not download the complete BF16 checkpoint to satisfy it.
+confirmation contexts. No available machine holds the complete BF16 teacher,
+and this program prohibits downloading that checkpoint. Qualification
+therefore requires an external model holder to generate the registered
+reference set or a later change to the checkpoint-access constraint.
 
 Before another GPU run, inventory the artifacts needed by each analysis:
 
@@ -912,12 +967,13 @@ specific unresolved cause and must retain the same data-separation and
 acceptance contract.
 
 The immediate blocking input for the registered rank-four expert-103 candidate
-is at least 32 sealed confirmation contexts. The complete BF16 checkpoint must
-not be downloaded to produce them. An authorized host that already holds the
-teacher must generate the references. While that work proceeds, kossel may
-use the completed bounded source windows to replicate the construction at
-independently chosen layers, finish the factor-container byte ledger, and
-construct unselected coherent rate-conditioned candidates.
+is at least 32 sealed confirmation contexts. No available host has the
+complete BF16 checkpoint, and downloading it remains prohibited. The existing
+16-document selection set and one 2,048-token reference support mechanism
+screens, but they cannot qualify a checkpoint. Kossel can still use the
+completed bounded source windows to replicate the construction at independently
+chosen layers, finish the factor-container byte ledger, and construct
+unselected coherent rate-conditioned candidates.
 
 Do not change the registered correction after opening a confirmation context.
 A different rank, expert, dtype, ridge, factor value, base representation, or

@@ -1,0 +1,24 @@
+{
+  "schema": "qsrt_glm52_model_kld_candidate_subset_selection",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_subset_kld_measurement",
+  "frozen_at_utc": "2026-08-19T00:10:20Z",
+  "objective": "Measure whether the two layer-63 candidate experts that independently improved model KLD in both frozen eight-document groups retain their gain when enabled together.",
+  "evidence_boundary": "Experts 149 and 164 were selected with all 16 public 512-token documents. Their composition is another candidate-selection measurement on those documents. It requires confirmation on a new document-disjoint reference tier even if it improves every reported selection statistic.",
+  "artifact_manifest_sha256": "0ced0fdc2898e5091ce5afe0c3c744dbea1b57240d76169a283293a4c18b6d2e",
+  "model_layer": 63,
+  "selection_protocol": {
+    "document_order_source": "selected_chunks in public-reference plan order",
+    "screening_document_count": 8,
+    "selection_check_document_count": 8,
+    "retention_rule": "Retain the composition only when candidate-minus-resident equal-document mean KLD is negative in both document groups.",
+    "composition_boundary": "A retained composition is frozen without further expert changes before a new document-disjoint confirmation tier is opened."
+  },
+  "candidate_arms": [
+    {
+      "name": "experts-149-and-164",
+      "selected_experts": [149, 164],
+      "reason": "Both singleton candidates improved equal-document mean KLD in the first eight and the remaining eight public documents. Measuring the pair tests non-additive model effects."
+    }
+  ]
+}

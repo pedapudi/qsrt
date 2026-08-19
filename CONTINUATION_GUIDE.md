@@ -136,9 +136,15 @@ The EXL3 comparison checkpoint is already present on the GPU host at:
 /home/sunil/usb-mnt/brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78
 ```
 
-A verified host-local copy exists below the experiment root. Use the exact path
-recorded in the journal. Never change the USB copy in place and never download
-the EXL3 files again.
+A verified copy on kossel's internal NVMe is the runtime input:
+
+```text
+/home/sunil/qsrt-glm52-experiments/model-cache/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78-nvme
+```
+
+Experiment containers mount that internal copy read-only. They do not mount
+`/home/sunil/usb-mnt`, which is the external `/dev/sda` disk. Never change the
+external copy in place and never download the EXL3 files again.
 
 The first official BF16 source window is the five-shard layer-3 window at:
 
@@ -307,7 +313,22 @@ improved, but the interval crossed zero. Record this as inconclusive auxiliary
 evidence. It does not establish a replicated gain. The compact receipt is
 [`experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json`](experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json).
 
-Three other findings constrain the next experiments:
+The same public documents tested error-blind panels from layers 52, 60, 63,
+and 64. Complete down-refit panels from layers 52, 60, and 64 had adverse mean
+KLD point estimates. The layer-64 regression had a confidence interval above
+zero. Layer 63 produced a favorable but inconclusive point estimate: uniform
+K3 measured `0.092774344239`, and down refitting measured `0.092735445026`,
+compared with resident EXL3 at `0.092796188456`.
+
+Adding locally selected rank-four corrections produced worse mean KLD than
+resident EXL3 at all four high layers. Layer-60 and layer-64 confidence
+intervals were above zero. Layer-63 expert 164 improved local expert-output
+error by 33.5 percent and worsened mean KLD. Layer-64 expert 253 had a small
+favorable KLD point estimate whose confidence interval included zero. The
+local activation-weighted objective can propose candidates, but it cannot
+authorize an expert correction.
+
+Additional findings constrain the next experiments:
 
 - Finite-E4M3 reconstruction-table fitting reduced pooled fixed-path squared
   error by 0.00175 percent. The measured headroom does not justify a production
@@ -350,15 +371,15 @@ factor-aware GLM container exists.
 
 ### Obtain document-disjoint BF16 reference logits
 
-The available references include one 2,048-token document and 16 untouched
-public documents with 512 tokens each. The 16-document auxiliary run estimated
-a small favorable paired effect, but its confidence interval crossed zero.
-An authorized host that can run the official BF16 teacher must still generate
-eight selection contexts and at least 32 sealed 2,048-token confirmation
-contexts. Record the documents, tokenizer, chat template, teacher revision,
-runtime configuration, and output hashes. Keep the documents disjoint from fit
-and candidate-construction data. Do not download the complete BF16 checkpoint
-to kossel or to a developer workstation.
+The available references include one 2,048-token document and 16 public
+documents with 512 tokens each. The 16-document set is now candidate-selection
+data. The single longer document supports one frozen development screen. No
+available machine holds the complete BF16 teacher, and the program prohibits
+downloading that checkpoint. At least 32 sealed 2,048-token confirmation
+contexts therefore remain unavailable. An external model holder must generate
+them before checkpoint qualification can proceed. The generation manifest must
+record the documents, tokenizer, chat template, teacher revision, runtime
+configuration, and output hashes.
 
 ### Confirm the frozen rank-four expert-103 correction
 
@@ -381,15 +402,63 @@ reference contexts are generated. The serialized panel and complete
 checkpoint must remain smaller than EXL3 after headers, scales, alignment, and
 directories are charged.
 
-### Select the down-refit rule with model KLD
+### Use model KLD to select individual recovery experts
 
-Retain the earlier fixed down-refit artifact as a candidate because it is the
-only tested QSRT intervention that improved mean KLD relative to uniform K3.
-Do not adopt it from the one-context result. Use complete-expert error only to
-prune candidates whose local error exceeds another candidate under every
-recorded local criterion. Choose ridge and source-fallback decisions
-with measured KLD on the eight selection contexts, then freeze the rule before
-opening the confirmation contexts.
+The complete high-layer panels reject blanket down refitting. Their local
+selection rule also failed to predict model KLD. The frozen plans under
+[`experiments/`](experiments/) cover all eight panel experts at each of layers
+52, 60, 63, and 64. They use the first eight public documents for screening
+and the remaining eight documents for a separate selection check.
+
+The selector reads documents in the top-level reference-plan execution order;
+the hash-sorted nested summary cannot define the two groups. A candidate is
+retained only when candidate-minus-resident mean KLD is negative in both
+groups. This rule retained layer-52 down-refit expert 36 and layer-52
+rank-four expert 186. Expert 186 reduced the all-document point estimate by
+0.3679%, although its document-bootstrap interval included zero. No measured
+rank-four singleton from layers 60 or 64 passed both groups. The separately
+registered 2,048-token screen then rejected expert 186: mean KLD rose from
+`0.06107434` to `0.06151378` under bitwise-stable controls. Down-refit expert
+36 improved the same context to `0.06090743`. The result is favorable
+development evidence but remains above the `0.059` target and lacks
+document-level replication.
+
+The registered same-layer composition copied the two retained endpoints and
+charged 65,536 logical adapter bytes. It improved the overall 16-document mean
+by `0.00006838`, but the first ordered group regressed by `0.00029425`. The
+second group improved by `0.00043102`. The composition failed its registered
+two-group rule, so the separate 2,048-token development reference remained
+unopened. Complete-expert error may reject a candidate that another candidate
+dominates under every recorded local criterion, but it cannot authorize a
+recovery expert.
+
+### Screen the late-middle GLM layers without downloading the complete source
+
+Four rate-pattern-stratified expert panels are frozen at model layers 55, 56,
+57, and 58. The expert lists use immutable EXL3 rate metadata and contain no
+QSRT error or KLD input. Sixteen official BF16 shards, totaling
+85,783,011,360 bytes, contain every routed-expert tensor required by those
+layers. The download manifest excludes the remaining 266 source shards.
+
+After the bounded download verifies every shard, one network-disabled EXL3
+load captures the same arm-invariant expert-input documents at all four
+layers. The queued candidate builder then performs these operations for each
+layer:
+
+1. build the eight-expert uniform QSRT K3 artifact;
+2. refit each down projection against that candidate's reconstructed gate and
+   up activations;
+3. fit a BF16 rank-four down correction against the refitted candidate's own
+   down inputs; and
+4. measure every singleton and the predeclared complete panel on the 16 public
+   candidate-selection documents.
+
+Each construction receives one resident-model load. The selector retains an
+arm only when candidate-minus-resident mean KLD is negative in both ordered
+groups of eight documents. Any cross-layer composition must recapture and
+refit downstream corrections with the selected upstream interventions active.
+Copying independently fitted endpoints would violate the candidate-native
+input contract.
 
 ### Build coherent rate-conditioned down candidates
 
@@ -449,11 +518,11 @@ and shrink noisy output factors toward an explicit fallback.
 
 ### Add document-level KLD evidence
 
-The repository contains one published BF16-logit context and must not obtain
-the full BF16 checkpoint. Obtain additional reference logits or arrange for an
-external owner of the official model to generate them from a frozen,
-document-disjoint corpus plan. Reference-logit files contain model outputs,
-not weights, and remain outside Git.
+The repository contains one published 2,048-token BF16-logit context and a
+16-document, 512-token selection set. It must not obtain the complete BF16
+checkpoint. Additional confirmation logits require an external owner of the
+official model to run the frozen, document-disjoint corpus plan. Reference-logit
+files contain model outputs and remain outside Git.
 
 Report paired per-document KLD differences, a clustered bootstrap interval,
 repeatability controls, exact artifact hashes, route equality, and tail

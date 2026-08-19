@@ -44,7 +44,7 @@ from qsrt.glm52_expert_intervention_runtime import (
     IDENTITY_CONTROL_MODE,
     MATERIALIZED_LOW_RANK_CANDIDATE_MODE,
     atomic_write_control,
-    validate_dense_intervention_artifact,
+    validate_intervention_artifact,
 )
 from qsrt.glm52_paired_kld import route_support_summary, target_layer_routes
 from qsrt.glm52_pilot import atomic_write_json
@@ -207,11 +207,31 @@ def main() -> None:
     args.dest.mkdir(parents=True, exist_ok=False)
     plan = json.loads(args.reference_plan.read_text())
     references = validate_public_reference_files(plan, args.reference_directory)
-    artifact = validate_dense_intervention_artifact(args.intervention_artifact)
+    artifact = validate_intervention_artifact(args.intervention_artifact)
     if args.confirmation_registration is not None:
+        if artifact["artifact_kind"] != "single_layer":
+            raise ValueError(
+                "a low-rank confirmation registration cannot select from a "
+                "multi-layer intervention"
+            )
         registration = json.loads(args.confirmation_registration.read_text())
         frozen = validate_frozen_low_rank_candidate(registration, artifact)
         selected_experts = [frozen["expert"]]
+    elif artifact["artifact_kind"] == "multi_layer":
+        frozen = {
+            "role": (
+                "complete multi-layer intervention frozen before "
+                "public-reference scoring"
+            ),
+            "model_layers": list(artifact["model_layers"]),
+            "expert_ids_by_layer": {
+                str(layer): list(experts)
+                for layer, experts in artifact["expert_ids_by_layer"].items()
+            },
+            "artifact_manifest_sha256": artifact["manifest_sha256"],
+            "candidate_runtime_mode": args.candidate_runtime_mode,
+        }
+        selected_experts = None
     else:
         frozen = {
             "role": "complete intervention artifact frozen before public-reference scoring",
@@ -344,21 +364,22 @@ def main() -> None:
             mode=args.candidate_runtime_mode,
             selected_experts=selected_experts,
         )
+        earliest_model_layer = artifact["model_layers"][0]
         layer_baseline_routes = target_layer_routes(
             baseline_routes,
-            model_layer=artifact["model_layer"],
+            model_layer=earliest_model_layer,
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         layer_candidate_routes = target_layer_routes(
             candidate_routes,
-            model_layer=artifact["model_layer"],
+            model_layer=earliest_model_layer,
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         if not np.array_equal(layer_baseline_routes, layer_candidate_routes):
             raise RuntimeError(
-                f"layer-{artifact['model_layer']} routes changed before the "
+                f"layer-{earliest_model_layer} routes changed before the "
                 "frozen intervention"
             )
         document_hash = row["document_sha256"]
@@ -386,8 +407,25 @@ def main() -> None:
                 ),
                 "resident_seconds": baseline_seconds,
                 "candidate_seconds": candidate_seconds,
-                "intervention_layer_route_support": route_support_summary(
-                    layer_baseline_routes, selected_experts=selected_experts
+                "intervention_layer_route_support": (
+                    route_support_summary(
+                        layer_baseline_routes, selected_experts=selected_experts
+                    )
+                    if artifact["artifact_kind"] == "single_layer"
+                    else {
+                        str(model_layer): route_support_summary(
+                            target_layer_routes(
+                                baseline_routes,
+                                model_layer=model_layer,
+                                total_decoder_layers=78,
+                                first_moe_layer=3,
+                            ),
+                            selected_experts=list(
+                                artifact["expert_ids_by_layer"][model_layer]
+                            ),
+                        )
+                        for model_layer in artifact["model_layers"]
+                    }
                 ),
                 "all_layer_routes": _changed_route_summary(
                     baseline_routes, candidate_routes
@@ -422,8 +460,20 @@ def main() -> None:
         "intervention_artifact": {
             "root": artifact["root"],
             "manifest_sha256": artifact["manifest_sha256"],
-            "expert_ids": list(artifact["expert_ids"]),
-            "model_layer": artifact["model_layer"],
+            "artifact_kind": artifact["artifact_kind"],
+            "model_layers": list(artifact["model_layers"]),
+            "expert_ids_by_layer": {
+                str(layer): list(experts)
+                for layer, experts in artifact["expert_ids_by_layer"].items()
+            },
+            **(
+                {
+                    "model_layer": artifact["model_layer"],
+                    "expert_ids": list(artifact["expert_ids"]),
+                }
+                if artifact["artifact_kind"] == "single_layer"
+                else {}
+            ),
         },
         "confirmation_registration": (
             {

@@ -1,0 +1,54 @@
+{
+  "schema": "qsrt_glm52_model_kld_candidate_subset_selection",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_subset_kld_measurement",
+  "frozen_at_utc": "2026-08-19T01:36:46Z",
+  "objective": "Measure each locally accepted layer-52 rank-four down correction separately so interactions in the adverse complete-panel result cannot hide an individual model-KLD improvement.",
+  "evidence_boundary": "The 16 public 512-token documents are candidate-selection data. A retained singleton or composition requires evaluation on a new document-disjoint BF16-reference tier.",
+  "artifact_manifest_sha256": "095b8975c67dd3fa9c4d0364d8c0babd62be3ecddb21187266c044c3d30ea7b6",
+  "model_layer": 52,
+  "selection_protocol": {
+    "document_order_source": "selected_chunks in public-reference plan order",
+    "screening_document_count": 8,
+    "selection_check_document_count": 8,
+    "retention_rule": "Retain a singleton only when candidate-minus-resident equal-document mean KLD is negative on both document groups. Rank retained singletons by the mean over all 16 documents.",
+    "composition_boundary": "A composition chosen from singleton results is another selection candidate and requires a new document-disjoint confirmation tier."
+  },
+  "candidate_arms": [
+    {
+      "name": "expert-29-alone",
+      "selected_experts": [29],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-36-alone",
+      "selected_experts": [36],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-68-alone",
+      "selected_experts": [68],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-96-alone",
+      "selected_experts": [96],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-116-alone",
+      "selected_experts": [116],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-186-alone",
+      "selected_experts": [186],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    },
+    {
+      "name": "expert-235-alone",
+      "selected_experts": [235],
+      "reason": "Measure one locally accepted correction without assuming that expert effects combine additively."
+    }
+  ]
+}

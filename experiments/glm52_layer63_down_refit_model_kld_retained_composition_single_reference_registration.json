@@ -1,0 +1,35 @@
+{
+  "schema": "qsrt_glm52_single_reference_candidate_registration",
+  "schema_version": 1,
+  "status": "frozen_before_single_reference_measurement",
+  "frozen_at_utc": "2026-08-19T00:18:00Z",
+  "objective": "Measure the frozen layer-63 experts-149-and-164 down-refit composition on the published 2,048-token BF16 reference that did not participate in the high-layer candidate fit or model-KLD selection.",
+  "evidence_boundary": "This is one independent 2,048-token context. It can test direction and the absolute KLD target on the original reporting protocol, but it cannot estimate document-level uncertainty or qualify a checkpoint.",
+  "candidate": {
+    "artifact_name": "glm52-layer63-frozen8-reconstructed-activation-down-refit-merged",
+    "artifact_manifest_file_sha256": "e8f2c93632ca0318fd87771d80aa9658afe0dca71c62825ba51fd4e8442996b4",
+    "artifact_report_file_sha256": "7014ae080eaaa5e9fa0520fae68e1b784527c36980e76625f6731c5c640dfe52",
+    "artifact_manifest_identity": "0ced0fdc2898e5091ce5afe0c3c744dbea1b57240d76169a283293a4c18b6d2e",
+    "candidate_subset_plan": "glm52_layer63_down_refit_model_kld_retained_composition_plan.json",
+    "candidate_subset_plan_sha256": "c4e5787501d1f6a2caa92031f50e61cfd1605abd58bb94d45f8e19f8edaccebe",
+    "model_layer": 63,
+    "selected_experts": [
+      149,
+      164
+    ],
+    "arm_name": "experts-149-and-164"
+  },
+  "reference": {
+    "repository": "festr2/GLM-5.2-BF16-KLD-Reference-Logits-20260708",
+    "model_revision": "4d67f66cc64d3219133b767c253b2ad1425c6c88",
+    "context_length": 2048,
+    "manifest_sha256": "985120136741037918bcd4dc8da9813c1f6268b35a730302f99cf6b3eebb7606",
+    "logits_sha256": "87f992a689c054a0548a4b3863da6c809f9239beacd5786d0401e45904fec063",
+    "logits_bytes": 1268157528,
+    "corpus_separation_plan": "glm52_wikitext_document_disjoint_corpus_plan.json",
+    "corpus_separation_plan_sha256": "b694ac0a1aeb09f7c61a20b5f72289f3e791d616ff7471b5894d857f8c363b55",
+    "reference_fit_document_overlap": 0,
+    "reference_selection_document_overlap": 0
+  },
+  "result_name": "glm52-layer63-down-refit-experts149-164-single-reference-absolute-target-screen"
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "qsrt_glm52_multi_layer_intervention_registration",
+  "schema_version": 1,
+  "frozen_at_utc": "2026-08-19T01:03:30Z",
+  "selection_rule": {
+    "description": "Within each measured layer and recovery construction, retain only experts whose endpoint reduced mean forward KLD in both predeclared eight-document groups. Keep the single retained expert with the largest sixteen-document mean reduction when a same-layer composition regresses either group.",
+    "document_role": "candidate selection; these documents cannot qualify the registered composition",
+    "document_count": 16,
+    "context_tokens_per_document": 512,
+    "layer_60_down_refit_singleton_report_sha256": "0c95f53c00fd9ad2cae31c1a6f8d290f2e745c845c166d02f9ffdac8b8d004b9",
+    "layer_63_down_refit_singleton_report_sha256": "e4721400a9d1309bf84be60dec18415fbb6114a54fdd2dfc22e066bc418eacf7",
+    "layer_64_rank_four_singleton_report_sha256": "3ab1279367f9eb3572375c955c9fe6929c4f8b30c031d0009a2bef65107126d7",
+    "rejected_layer_63_experts_149_164_composition_report_sha256": "74e690c46862dde5b91b523a2560e031cc1c0a222d6b7bc8afc25a82d4eced46"
+  },
+  "components": [
+    {
+      "model_layer": 60,
+      "source_artifact_name": "glm52-layer60-frozen8-reconstructed-activation-down-refit-merged",
+      "expert_ids": [
+        136
+      ],
+      "construction": "reconstructed-activation down refit encoded at K3",
+      "selection_mean_forward_kld_change": -0.00015243528255997696,
+      "first_eight_document_mean_forward_kld_change": -0.00000922363899968047,
+      "second_eight_document_mean_forward_kld_change": -0.00029564692612027346
+    },
+    {
+      "model_layer": 63,
+      "source_artifact_name": "glm52-layer63-frozen8-reconstructed-activation-down-refit-merged",
+      "expert_ids": [
+        164
+      ],
+      "construction": "reconstructed-activation down refit encoded at K3",
+      "selection_mean_forward_kld_change": -0.0001437525871842999,
+      "first_eight_document_mean_forward_kld_change": -0.00012102774822304006,
+      "second_eight_document_mean_forward_kld_change": -0.00016647742614555976
+    },
+    {
+      "model_layer": 64,
+      "source_artifact_name": "glm52-layer64-frozen8-low-rank-down-reconstructed-activation-refit-derived-input-identity-checked-selection-fallback-bf16-rank-4-merged",
+      "expert_ids": [
+        253
+      ],
+      "construction": "K3 down refit plus a BF16 rank-four activation-weighted down correction",
+      "logical_adapter_bytes": 65536,
+      "selection_mean_forward_kld_change": -0.00004954687223431703,
+      "first_eight_document_mean_forward_kld_change": -0.000028028878975287774,
+      "second_eight_document_mean_forward_kld_change": -0.00007106486549334629
+    }
+  ],
+  "evidence_boundary": "The registration freezes a three-layer candidate before its combined model-KLD measurement. The selected endpoints are dense experiment representations. The rank-four correction charges 65,536 logical BF16 factor bytes, but the complete GLM QSRT storage format and checkpoint byte ledger remain unimplemented."
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "qsrt_glm52_real_weight_panel",
+  "schema_version": 1,
+  "created_at_utc": "2026-08-19T02:35:00Z",
+  "selection_status": "frozen_before_candidate_measurement",
+  "selection_method": "deterministic coverage of GLM-5.2 EXL3 gate, up, and down rate patterns",
+  "selection_seed": "glm52-r7-rate-pattern-stratified-real-weight-v1",
+  "source": {
+    "model_id": "zai-org/GLM-5.2",
+    "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "config_sha256": "185f93ee6d12548e16a847e279dc0c3c90b1524c970b0866b42fb545747d859a",
+    "index_sha256": "5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e"
+  },
+  "comparison_checkpoint": {
+    "model_id": "brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78",
+    "revision": "9ab9579774cc432df91567a36f6e9e863e0d4c9f",
+    "manifest_sha256": "c81f3129e418683b6e37c17b8198681c11324f3918fdbd844c1be346114c387b",
+    "layer_sidecar_sha256": "a90e97c91c7a5362c006a80ef4e35e0df43ebee4daa25d5be8687e257fd61fb8"
+  },
+  "layer": 55,
+  "experts": [
+    {"expert": 130, "exl3_rates": [4, 3, 4]},
+    {"expert": 74, "exl3_rates": [3, 3, 4]},
+    {"expert": 172, "exl3_rates": [3, 3, 3]},
+    {"expert": 83, "exl3_rates": [4, 4, 4]},
+    {"expert": 249, "exl3_rates": [4, 3, 4]},
+    {"expert": 84, "exl3_rates": [3, 3, 4]},
+    {"expert": 214, "exl3_rates": [3, 3, 3]},
+    {"expert": 232, "exl3_rates": [4, 4, 4]}
+  ],
+  "evidence_role": "error-blind panel for testing whether a reported late-middle GLM-5.2 damage band supports down-projection recovery; not a population quality estimate"
+}

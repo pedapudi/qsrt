@@ -1,0 +1,24 @@
+{
+  "schema": "qsrt_glm52_model_kld_candidate_subset_selection",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_subset_kld_measurement",
+  "frozen_at_utc": "2026-08-19T01:26:27Z",
+  "objective": "Measure layer-63 expert 164 with its accepted down-refit target encoded at K4 while every other expert remains resident EXL3.",
+  "evidence_boundary": "Expert 164 was retained because its K3 down refit improved both pre-registered eight-document groups. K4 reduced its activation-weighted candidate-selection error by 50.3736%. No K4 model-KLD result was opened before this singleton plan was frozen. The same 16 public documents remain selection data, so a favorable result requires a separate reference tier.",
+  "artifact_manifest_sha256": "1eb787c941032a461c4554ddc6f3ae5ea57d5970b42133b90d96f5effed84c1c",
+  "model_layer": 63,
+  "selection_protocol": {
+    "document_order_source": "selected_chunks in public-reference plan order",
+    "screening_document_count": 8,
+    "selection_check_document_count": 8,
+    "retention_rule": "Retain expert 164 only when candidate-minus-resident equal-document mean KLD is negative in both document groups.",
+    "confirmation_boundary": "A retained singleton is frozen without further tensor or rate changes before the separate 2048-token reference is opened."
+  },
+  "candidate_arms": [
+    {
+      "name": "expert-164-k4-down-alone",
+      "selected_experts": [164],
+      "reason": "K4 reduced expert 164's activation-weighted selection error from 63.8195554 to 31.6713201 while preserving its separately fitted down target."
+    }
+  ]
+}

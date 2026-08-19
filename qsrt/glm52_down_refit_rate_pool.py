@@ -72,6 +72,9 @@ RATE_PRESERVING_PRE_REGISTRATION_SHA256 = (
 )
 RATE_TUPLES = tuple(itertools.product((3, 4), repeat=3))
 PROJECTION_NAMES = tuple(spec.name for spec in PROJECTIONS)
+REGISTERED_PARTIAL_RATE_MAP_SCHEMA = (
+    "qsrt_glm52_registered_partial_down_refit_k3_k4_intervention"
+)
 
 
 def _canonical_json_sha256(value: object) -> str:
@@ -83,6 +86,22 @@ def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text())
     if not isinstance(value, dict):
         raise TypeError(f"{path} must contain one JSON object")
+    return value
+
+
+def _sha256_identity(value: object, *, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{name} must be a lowercase SHA-256 identity")
+    return value
+
+
+def _model_layer(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 3 <= value <= 77:
+        raise ValueError("GLM mixture-of-experts layer must be an integer from 3 through 77")
     return value
 
 
@@ -228,11 +247,12 @@ def validate_down_refit_rate_pool(root: Path) -> dict[str, Any]:
     if manifest.get("kind") != f"{DOWN_REFIT_RATE_POOL_KIND}_manifest":
         raise ValueError("down-refit rate-pool manifest identity mismatch")
     manifest_sha256 = _canonical_json_sha256(manifest)
+    layer = _model_layer(report.get("layer"))
     expected = {
         "kind": DOWN_REFIT_RATE_POOL_KIND,
         "status": "complete",
         "manifest_sha256": manifest_sha256,
-        "layer": 3,
+        "layer": layer,
     }
     if any(report.get(field) != value for field, value in expected.items()):
         raise ValueError("down-refit rate-pool report identity mismatch")
@@ -256,7 +276,7 @@ def validate_down_refit_rate_pool(root: Path) -> dict[str, Any]:
         ):
             raise ValueError("down-refit rate-pool expert IDs must be unique")
         seen.add(expert)
-        path = _pool_tensor_path(root, 3, expert)
+        path = _pool_tensor_path(root, layer, expert)
         if (
             path.stat().st_size != int(record["tensor_file_bytes"])
             or sha256_file(path) != record["tensor_file_sha256"]
@@ -335,20 +355,23 @@ def validate_down_refit_rate_pool(root: Path) -> dict[str, Any]:
                 )
         if seen_rates != set(RATE_TUPLES):
             raise ValueError(f"rate-pool expert {expert} candidate coverage mismatch")
-        receipt = _expert_path(root, 3, expert)
+        receipt = _expert_path(root, layer, expert)
         if sha256_file(receipt) != record["receipt_sha256"]:
             raise ValueError(f"rate-pool receipt for expert {expert} failed closure")
         total_bytes += path.stat().st_size
     if (
         report.get("expert_count") != len(records)
         or report.get("tensor_file_bytes") != total_bytes
-        or report.get("panel") != {"3": [int(record["expert"]) for record in records]}
+        or report.get("panel")
+        != {str(layer): [int(record["expert"]) for record in records]}
+        or manifest.get("panel") != report.get("panel")
     ):
         raise ValueError("down-refit rate-pool aggregate counts differ")
     return {
         "root": str(root),
         "manifest": manifest,
         "manifest_sha256": manifest_sha256,
+        "model_layer": layer,
         "report": report,
         "expert_ids": tuple(sorted(seen)),
         "expert_count": len(seen),
@@ -376,8 +399,7 @@ def build_down_refit_rate_pool_slice(
 ) -> dict[str, Any]:
     """Build one disjoint slice of K3/K4 candidates and selection metrics."""
 
-    if layer != 3:
-        raise ValueError("the bounded GLM down-refit rate pool supports layer 3")
+    layer = _model_layer(layer)
     frozen = load_frozen_real_weight_panel(panel_manifest_path, layer=layer)
     experts = select_frozen_panel_slice(
         frozen, offset=panel_offset, expert_count=expert_count
@@ -405,7 +427,7 @@ def build_down_refit_rate_pool_slice(
     )
     capture_manifest_path = capture_root / "manifest.json"
     capture_manifest_sha256 = sha256_file(capture_manifest_path)
-    routed = _read_capture_rows(capture_root, experts=experts)
+    routed = _read_capture_rows(capture_root, experts=experts, model_layer=layer)
     common = {
         "profile": "qsrt_sqg_e4m3",
         "codebook": CODEBOOK_SQG_XOR_CHEB_T12,
@@ -696,6 +718,14 @@ def merge_down_refit_rate_pool_slices(
     common = slices[0]["manifest"]["common"]
     if any(item["manifest"]["common"] != common for item in slices):
         raise ValueError("rate-pool slices disagree on the common experiment contract")
+    input_artifacts = slices[0]["manifest"].get("input_artifacts")
+    if not isinstance(input_artifacts, dict):
+        raise TypeError("rate-pool slice lacks its input-artifact identities")
+    if any(
+        item["manifest"].get("input_artifacts") != input_artifacts
+        for item in slices
+    ):
+        raise ValueError("rate-pool slices disagree on their input artifacts")
     frozen = load_frozen_real_weight_panel(panel_manifest_path, layer=layer)
     records: dict[int, dict[str, Any]] = {}
     for item in slices:
@@ -711,6 +741,7 @@ def merge_down_refit_rate_pool_slices(
         "kind": f"{DOWN_REFIT_RATE_POOL_KIND}_manifest",
         "composition": "verified_disjoint_rate_pool_slices",
         "common": common,
+        "input_artifacts": input_artifacts,
         "input_slices": [
             {
                 "root": item["root"],
@@ -852,6 +883,10 @@ def materialize_down_refit_rate_pool_allocation(
     if allocation_kind not in ("fixed_rate_stratified", "selection_data_complete_expert"):
         raise ValueError("allocation kind must name the fixed or selection-data rule")
     pool = validate_down_refit_rate_pool(rate_pool_root)
+    if pool["model_layer"] != 3:
+        raise ValueError(
+            "the frozen layer-3 allocation contract cannot materialize another layer"
+        )
     pre_registration = _read_json(pre_registration_path)
     if sha256_file(pre_registration_path) != RATE_PRESERVING_PRE_REGISTRATION_SHA256:
         raise ValueError("rate-preserving down-refit pre-registration SHA-256 mismatch")
@@ -1005,11 +1040,273 @@ def materialize_down_refit_rate_pool_allocation(
     return report
 
 
+def materialize_registered_partial_rate_map(
+    *,
+    rate_pool_root: Path,
+    registration_path: Path,
+    dest: Path,
+) -> dict[str, Any]:
+    """Materialize a pre-registered partial replacement inside an EXL3 panel.
+
+    Experts absent from the registration remain resident EXL3 experts. The
+    logical-byte ledger therefore starts from the complete comparison panel,
+    removes the selected experts' EXL3 rates, and inserts their registered
+    QSRT rates. This differs from an all-panel uniform-K3 accounting shortcut.
+    """
+
+    pool = validate_down_refit_rate_pool(rate_pool_root)
+    registration_path = registration_path.resolve(strict=True)
+    registration = _read_json(registration_path)
+    if registration.get("schema") != REGISTERED_PARTIAL_RATE_MAP_SCHEMA:
+        raise ValueError("registered partial rate-map schema mismatch")
+    if registration.get("schema_version") != 1:
+        raise ValueError("registered partial rate-map version mismatch")
+    if registration.get("status") != "frozen_before_candidate_k4_measurement":
+        raise ValueError("partial rate map was not frozen before K4 measurement")
+    layer = _model_layer(registration.get("model_layer"))
+    if pool["model_layer"] != layer:
+        raise ValueError("rate pool and registered partial rate map use different layers")
+
+    common = pool["manifest"].get("common")
+    if not isinstance(common, dict):
+        raise TypeError("rate-pool manifest lacks its common experiment contract")
+    panel = registration.get("comparison_panel")
+    if not isinstance(panel, dict):
+        raise TypeError("registration comparison_panel must be an object")
+    expert_order = panel.get("expert_order")
+    if (
+        not isinstance(expert_order, list)
+        or any(type(expert) is not int for expert in expert_order)
+        or len(expert_order) != len(set(expert_order))
+        or set(expert_order) != set(pool["expert_ids"])
+    ):
+        raise ValueError("registration must cover the complete rate-pool panel")
+    if (
+        _sha256_identity(panel.get("manifest_sha256"), name="panel manifest")
+        != common.get("frozen_panel_sha256")
+    ):
+        raise ValueError("registration and rate pool use different frozen panels")
+
+    base = registration.get("down_refit_base")
+    if not isinstance(base, dict):
+        raise TypeError("registration down_refit_base must be an object")
+    base_manifest_sha256 = _sha256_identity(
+        base.get("manifest_file_sha256"), name="down-refit manifest file"
+    )
+    base_report_sha256 = _sha256_identity(
+        base.get("report_file_sha256"), name="down-refit report file"
+    )
+    if (
+        base_manifest_sha256 != common.get("down_refit_manifest_file_sha256")
+        or base_report_sha256 != common.get("down_refit_report_file_sha256")
+    ):
+        raise ValueError("rate pool was not derived from the registered down-refit base")
+
+    comparison_rates = registration.get("comparison_exl3_rates")
+    if not isinstance(comparison_rates, dict) or set(comparison_rates) != {
+        str(expert) for expert in expert_order
+    }:
+        raise ValueError("registration must provide EXL3 rates for every panel expert")
+
+    replacements = registration.get("registered_replacements")
+    if not isinstance(replacements, list) or not replacements:
+        raise ValueError("registration has no partial replacements")
+    rates_by_expert: dict[int, dict[str, int]] = {}
+    for replacement in replacements:
+        if not isinstance(replacement, dict):
+            raise TypeError("registered replacement must be an object")
+        expert = replacement.get("expert")
+        if type(expert) is not int or expert not in pool["expert_ids"]:
+            raise ValueError("registered replacement expert is outside the rate pool")
+        if expert in rates_by_expert:
+            raise ValueError("registered replacement repeats an expert")
+        rates = replacement.get("candidate_rates")
+        if not isinstance(rates, dict) or set(rates) != set(PROJECTION_NAMES):
+            raise ValueError("registered replacement must assign every projection rate")
+        normalized_rates = {name: int(rates[name]) for name in PROJECTION_NAMES}
+        if tuple(normalized_rates[name] for name in PROJECTION_NAMES) not in RATE_TUPLES:
+            raise ValueError("registered replacement rates must be K3 or K4")
+        rates_by_expert[expert] = normalized_rates
+
+    def normalized_comparison_rates(expert: int) -> dict[str, int]:
+        value = comparison_rates[str(expert)]
+        if not isinstance(value, dict) or set(value) != set(PROJECTION_NAMES):
+            raise ValueError("comparison EXL3 rate entry has an invalid schema")
+        normalized = {name: int(value[name]) for name in PROJECTION_NAMES}
+        if any(rate not in (3, 4, 5) for rate in normalized.values()):
+            raise ValueError("comparison EXL3 rates must be K3, K4, or K5")
+        return normalized
+
+    comparison_rate_sum = sum(
+        sum(normalized_comparison_rates(expert).values()) for expert in expert_order
+    )
+    candidate_rate_sum = comparison_rate_sum
+    for expert, rates in rates_by_expert.items():
+        candidate_rate_sum -= sum(normalized_comparison_rates(expert).values())
+        candidate_rate_sum += sum(rates.values())
+
+    byte_contract = registration.get("logical_byte_contract")
+    if not isinstance(byte_contract, dict):
+        raise TypeError("registration logical_byte_contract must be an object")
+    uniform_k3_bytes = int(byte_contract["uniform_k3_panel_bytes"])
+    rate_increment_bytes = int(byte_contract["one_projection_bit_increment_bytes"])
+    projection_count = len(expert_order) * len(PROJECTION_NAMES)
+    comparison_bytes = uniform_k3_bytes + (
+        comparison_rate_sum - 3 * projection_count
+    ) * rate_increment_bytes
+    candidate_bytes = uniform_k3_bytes + (
+        candidate_rate_sum - 3 * projection_count
+    ) * rate_increment_bytes
+    if (
+        comparison_bytes != int(byte_contract["comparison_exl3_panel_bytes"])
+        or candidate_bytes != int(byte_contract["registered_candidate_panel_bytes"])
+    ):
+        raise ValueError("registered logical-byte ledger does not close")
+    if candidate_bytes >= comparison_bytes:
+        raise ValueError("registered partial candidate is not smaller than EXL3")
+
+    pool_records = {
+        int(record["expert"]): record for record in pool["report"]["experts"]
+    }
+    selected_experts = tuple(
+        expert for expert in expert_order if expert in rates_by_expert
+    )
+    for expert in selected_experts:
+        if not bool(pool_records[expert]["down_refit_accepted"]):
+            raise ValueError(
+                f"registered expert {expert} did not retain its down-refit target"
+            )
+
+    input_artifacts = pool["manifest"].get("input_artifacts")
+    down_refit_input = (
+        input_artifacts.get("down_refit")
+        if isinstance(input_artifacts, dict)
+        else None
+    )
+    if not isinstance(down_refit_input, dict):
+        raise TypeError("rate-pool manifest lacks its down-refit input artifact")
+    manifest = {
+        "kind": f"{INTERVENTION_ARTIFACT_KIND}_manifest",
+        "candidate": {
+            "profile": "qsrt_sqg_e4m3",
+            "tensor_prefix": "candidate",
+            "variant": "registered_partial_k3_k4_reconstructed_activation_down_refit",
+            "candidate_k4_measurements_used": False,
+        },
+        "input_intervention_artifact": {
+            "root": down_refit_input.get("root"),
+            "manifest_sha256": base_manifest_sha256,
+            "report_sha256": base_report_sha256,
+        },
+        "rate_pool": {
+            "root": pool["root"],
+            "manifest_sha256": pool["manifest_sha256"],
+        },
+        "registration": {
+            "path": str(registration_path),
+            "sha256": sha256_file(registration_path),
+        },
+        "panel": {str(layer): list(selected_experts)},
+        "rates_by_expert": {
+            str(expert): rates_by_expert[expert] for expert in selected_experts
+        },
+        "logical_byte_accounting": {
+            "scope": "complete registered comparison panel",
+            "comparison_exl3_rate_sum": comparison_rate_sum,
+            "registered_candidate_rate_sum": candidate_rate_sum,
+            "uniform_k3_panel_bytes": uniform_k3_bytes,
+            "one_projection_bit_increment_bytes": rate_increment_bytes,
+            "comparison_exl3_panel_bytes": comparison_bytes,
+            "registered_candidate_panel_bytes": candidate_bytes,
+            "logical_margin_bytes": comparison_bytes - candidate_bytes,
+            "serialized_container_gate_passed": False,
+        },
+        "resident_endpoint_dtype": "FP16",
+        "coordinate_bases": {
+            "exl3": "sealed_R7_permuted_middle_coordinates",
+            "candidate": "official_source_middle_coordinates",
+        },
+        "model_downloads_required": False,
+        "complete_bf16_checkpoint_required": False,
+        "evidence_boundary": (
+            "the rate map was frozen before K4 candidate measurement; only "
+            "document-disjoint model KLD can screen it, and complete serialized "
+            "container bytes remain unmeasured"
+        ),
+    }
+    manifest_sha256 = prepare_destination(dest, manifest, resume=False)
+    records: list[dict[str, Any]] = []
+    for expert in selected_experts:
+        pool_record = pool_records[expert]
+        pool_path = _pool_tensor_path(Path(pool["root"]), layer, expert)
+        rates = rates_by_expert[expert]
+        with safe_open(pool_path, framework="pt", device="cpu") as handle:
+            output = {
+                f"exl3.{projection}": handle.get_tensor(f"exl3.{projection}")
+                for projection in PROJECTION_NAMES
+            }
+            output.update(
+                {
+                    f"candidate.{projection}": handle.get_tensor(
+                        f"qsrt_k{rates[projection]}.{projection}"
+                    )
+                    for projection in PROJECTION_NAMES
+                }
+            )
+        output_path = _dense_expert_path(dest, layer, expert)
+        _atomic_save_tensors(output_path, output)
+        selected_candidate = next(
+            candidate
+            for candidate in pool_record["rate_candidates"]
+            if candidate["key"]
+            == _rate_key(tuple(rates[name] for name in PROJECTION_NAMES))
+        )
+        record = {
+            "kind": f"{INTERVENTION_ARTIFACT_KIND}_expert",
+            "complete": True,
+            "manifest_sha256": manifest_sha256,
+            "layer": layer,
+            "expert": expert,
+            "dense_endpoint_file": output_path.name,
+            "dense_endpoint_file_bytes": output_path.stat().st_size,
+            "dense_endpoint_file_sha256": sha256_file(output_path),
+            "rates": rates,
+            "down_target_kind": pool_record["down_target"]["kind"],
+            "rate_pool_tensor_sha256": pool_record["tensor_file_sha256"],
+            "candidate_selection_metric": selected_candidate,
+            "candidate_tensor_sha256": {
+                projection: tensor_sha256(output[f"candidate.{projection}"])
+                for projection in PROJECTION_NAMES
+            },
+        }
+        atomic_write_json(_expert_path(dest, layer, expert), record)
+        records.append(record)
+    report = {
+        "kind": INTERVENTION_ARTIFACT_KIND,
+        "experiment": "qsrt_glm52_registered_partial_k3_k4_down_refit_v1",
+        "status": "complete",
+        "manifest_sha256": manifest_sha256,
+        "layer": layer,
+        "expert_count": len(records),
+        "panel": manifest["panel"],
+        "logical_byte_accounting": manifest["logical_byte_accounting"],
+        "dense_endpoint_bytes": sum(
+            record["dense_endpoint_file_bytes"] for record in records
+        ),
+        "experts": records,
+        "evidence_boundary": manifest["evidence_boundary"],
+    }
+    atomic_write_json(dest / "report.json", report)
+    validate_dense_intervention_artifact(dest)
+    return report
+
+
 __all__ = [
     "DOWN_REFIT_RATE_POOL_KIND",
     "RATE_PRESERVING_PRE_REGISTRATION_SHA256",
     "RATE_TUPLES",
     "build_down_refit_rate_pool_slice",
+    "materialize_registered_partial_rate_map",
     "materialize_down_refit_rate_pool_allocation",
     "merge_down_refit_rate_pool_slices",
     "select_pooled_rate_allocation",

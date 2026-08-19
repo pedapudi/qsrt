@@ -35,6 +35,9 @@ from qsrt.glm52_pilot import HIDDEN_SIZE, INTERMEDIATE_SIZE, TP_RANKS
 
 
 CONTROL_SCHEMA = "qsrt_glm52_expert_intervention_control_v2"
+MULTI_LAYER_INTERVENTION_ARTIFACT_KIND = (
+    "qsrt_glm52_multi_layer_dense_expert_intervention_v1"
+)
 FIRST_MOE_LAYER = 3
 LAST_MOE_LAYER = 77
 CANDIDATE_MODE = "candidate"
@@ -204,6 +207,7 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
     if endpoint is None:
         endpoint = manifest.get("exl3_endpoint_identity")
     input_artifact = manifest.get("input_intervention_artifact")
+    input_artifact_experts: set[int] | None = None
     if endpoint is not None:
         if not isinstance(endpoint, dict) or endpoint.get("layer") != model_layer:
             raise ValueError("dense intervention manifest and report layer mismatch")
@@ -223,11 +227,40 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
                 and all(character in "0123456789abcdef" for character in value)
             )
 
+        input_artifacts = manifest.get("input_artifacts")
+        complete_slice_ancestry = False
+        if isinstance(input_artifacts, list) and input_artifacts:
+            slice_experts: set[int] = set()
+            complete_slice_ancestry = True
+            for record in input_artifacts:
+                if not isinstance(record, dict):
+                    complete_slice_ancestry = False
+                    break
+                record_experts = record.get("experts")
+                record_root = record.get("root")
+                if (
+                    not is_sha256(record.get("manifest_sha256"))
+                    or not is_sha256(record.get("report_sha256"))
+                    or not isinstance(record_root, str)
+                    or not record_root
+                    or not isinstance(record_experts, list)
+                    or not record_experts
+                    or any(type(expert) is not int for expert in record_experts)
+                    or any(not 0 <= expert < 256 for expert in record_experts)
+                    or len(record_experts) != len(set(record_experts))
+                    or bool(slice_experts.intersection(record_experts))
+                ):
+                    complete_slice_ancestry = False
+                    break
+                slice_experts.update(record_experts)
+            if complete_slice_ancestry:
+                input_artifact_experts = slice_experts
+
         if (
             not isinstance(input_artifact, dict)
             or not is_sha256(input_manifest_sha256)
-            or not is_sha256(input_report_sha256)
             or (input_root is not None and not isinstance(input_root, str))
+            or not (is_sha256(input_report_sha256) or complete_slice_ancestry)
         ):
             raise ValueError("dense intervention input-artifact identity is invalid")
     else:
@@ -287,6 +320,10 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
             raise ValueError("dense intervention manifest panel disagrees with report")
     if report.get("expert_count") != len(experts):
         raise ValueError("dense intervention expert count mismatch")
+    if input_artifact_experts is not None and input_artifact_experts != seen:
+        raise ValueError(
+            "dense intervention slice ancestry does not cover the merged experts"
+        )
     if report.get("dense_endpoint_bytes") != total_bytes:
         raise ValueError("dense intervention byte total mismatch")
     return {
@@ -298,6 +335,119 @@ def validate_dense_intervention_artifact(root: Path) -> dict[str, Any]:
         "candidate_tensor_prefix": tensor_prefix,
         "model_layer": model_layer,
         "report": report,
+    }
+
+
+def validate_multi_layer_intervention_artifact(root: Path) -> dict[str, Any]:
+    """Validate a self-contained set of dense interventions at distinct layers."""
+
+    root = root.resolve(strict=True)
+    manifest_path = root / "manifest.json"
+    report_path = root / "report.json"
+    manifest = json.loads(manifest_path.read_text())
+    report = json.loads(report_path.read_text())
+    expected_manifest_kind = f"{MULTI_LAYER_INTERVENTION_ARTIFACT_KIND}_manifest"
+    if manifest.get("kind") != expected_manifest_kind:
+        raise ValueError("multi-layer intervention manifest kind mismatch")
+    manifest_sha256 = _canonical_json_sha256(manifest)
+    if report.get("kind") != MULTI_LAYER_INTERVENTION_ARTIFACT_KIND:
+        raise ValueError("multi-layer intervention report kind mismatch")
+    if report.get("status") != "complete":
+        raise ValueError("multi-layer intervention report is incomplete")
+    if report.get("manifest_sha256") != manifest_sha256:
+        raise ValueError("multi-layer intervention manifest identity mismatch")
+
+    raw_components = manifest.get("components")
+    if not isinstance(raw_components, list) or len(raw_components) < 2:
+        raise ValueError("multi-layer intervention requires at least two components")
+    components_by_layer: dict[int, dict[str, Any]] = {}
+    total_dense_endpoint_bytes = 0
+    total_experts = 0
+    for record in raw_components:
+        if not isinstance(record, dict):
+            raise TypeError("multi-layer intervention component must be an object")
+        model_layer = _validate_model_layer(record.get("model_layer"))
+        if model_layer in components_by_layer:
+            raise ValueError("multi-layer intervention repeats a model layer")
+        relative_root = record.get("relative_root")
+        if not isinstance(relative_root, str) or not relative_root:
+            raise ValueError("multi-layer intervention component root is missing")
+        relative_path = Path(relative_root)
+        if (
+            relative_path.is_absolute()
+            or ".." in relative_path.parts
+            or relative_path.as_posix() != relative_root
+        ):
+            raise ValueError("multi-layer intervention component root is unsafe")
+        component_root = (root / relative_path).resolve(strict=True)
+        if component_root.parent != (root / "components").resolve(strict=True):
+            raise ValueError(
+                "multi-layer intervention components must be direct children of "
+                "the components directory"
+            )
+        component = validate_dense_intervention_artifact(component_root)
+        expected_experts = record.get("expert_ids")
+        if (
+            component["model_layer"] != model_layer
+            or component["manifest_sha256"] != record.get("manifest_sha256")
+            or list(component["expert_ids"]) != expected_experts
+        ):
+            raise ValueError("multi-layer intervention component identity mismatch")
+        components_by_layer[model_layer] = component
+        total_dense_endpoint_bytes += component["dense_endpoint_bytes"]
+        total_experts += component["expert_count"]
+
+    model_layers = tuple(sorted(components_by_layer))
+    if list(model_layers) != report.get("model_layers"):
+        raise ValueError("multi-layer intervention report layer list mismatch")
+    expert_ids_by_layer = {
+        str(layer): list(components_by_layer[layer]["expert_ids"])
+        for layer in model_layers
+    }
+    if expert_ids_by_layer != report.get("expert_ids_by_layer"):
+        raise ValueError("multi-layer intervention report expert map mismatch")
+    if report.get("expert_count") != total_experts:
+        raise ValueError("multi-layer intervention expert count mismatch")
+    if report.get("dense_endpoint_bytes") != total_dense_endpoint_bytes:
+        raise ValueError("multi-layer intervention byte total mismatch")
+    logical_additional_bytes = manifest.get("logical_additional_bytes")
+    if (
+        isinstance(logical_additional_bytes, bool)
+        or not isinstance(logical_additional_bytes, int)
+        or logical_additional_bytes < 0
+        or report.get("logical_additional_bytes") != logical_additional_bytes
+    ):
+        raise ValueError("multi-layer intervention logical-byte total mismatch")
+    return {
+        "artifact_kind": "multi_layer",
+        "root": str(root),
+        "manifest_sha256": manifest_sha256,
+        "model_layers": model_layers,
+        "expert_ids_by_layer": {
+            layer: components_by_layer[layer]["expert_ids"] for layer in model_layers
+        },
+        "expert_count": total_experts,
+        "dense_endpoint_bytes": total_dense_endpoint_bytes,
+        "logical_additional_bytes": logical_additional_bytes,
+        "components_by_layer": components_by_layer,
+        "report": report,
+    }
+
+
+def validate_intervention_artifact(root: Path) -> dict[str, Any]:
+    """Validate one dense intervention or a self-contained multi-layer set."""
+
+    manifest = json.loads((root.resolve(strict=True) / "manifest.json").read_text())
+    if manifest.get("kind") == f"{MULTI_LAYER_INTERVENTION_ARTIFACT_KIND}_manifest":
+        return validate_multi_layer_intervention_artifact(root)
+    artifact = validate_dense_intervention_artifact(root)
+    model_layer = artifact["model_layer"]
+    return {
+        **artifact,
+        "artifact_kind": "single_layer",
+        "model_layers": (model_layer,),
+        "expert_ids_by_layer": {model_layer: artifact["expert_ids"]},
+        "components_by_layer": {model_layer: artifact},
     }
 
 
@@ -755,12 +905,14 @@ def install_vllm_patch() -> None:
         install_vllm_engine_kld_patch()
         root = Path(root_text)
         control_path = Path(control_text)
-        manifest = json.loads((root / "manifest.json").read_text())
-        if _canonical_json_sha256(manifest) != manifest_sha256:
+        artifact = validate_intervention_artifact(root)
+        if artifact["manifest_sha256"] != manifest_sha256:
             raise RuntimeError("intervention manifest identity mismatch")
-        artifact_report = json.loads((root / "report.json").read_text())
-        target_model_layer = _validate_model_layer(artifact_report.get("layer"))
-        target_layer_name = _layer_name(target_model_layer)
+        target_components_by_name = {
+            _layer_name(model_layer): component
+            for model_layer, component in artifact["components_by_layer"].items()
+        }
+        default_capture_layer = artifact["model_layers"][0]
         capture_root_text = os.environ.get("QSRT_GLM52_ACTIVATION_CAPTURE_DIR")
         capture_plan_sha256 = os.environ.get(
             "QSRT_GLM52_ACTIVATION_CAPTURE_PLAN_SHA256"
@@ -773,7 +925,7 @@ def install_vllm_patch() -> None:
         capture_model_layers = (
             _parse_capture_layers(
                 os.environ.get(ACTIVATION_CAPTURE_LAYERS_ENV),
-                default_layer=target_model_layer,
+                default_layer=default_capture_layer,
             )
             if capture_root_text
             else ()
@@ -841,7 +993,8 @@ def install_vllm_patch() -> None:
                 )
             layer_name = layer.layer_name
             capture_model_layer = capture_layer_names.get(layer_name)
-            if capture_model_layer is None and layer_name != target_layer_name:
+            target_component = target_components_by_name.get(layer_name)
+            if capture_model_layer is None and target_component is None:
                 return output
             control = read_control(
                 control_path, expected_manifest_sha256=manifest_sha256
@@ -868,7 +1021,7 @@ def install_vllm_patch() -> None:
                     generation=control["generation"],
                     plan_sha256=str(capture_plan_sha256),
                 )
-            if layer_name != target_layer_name:
+            if target_component is None:
                 return output
             if control["mode"] == "off":
                 return output
@@ -877,14 +1030,22 @@ def install_vllm_patch() -> None:
                     f"dense intervention requires tensor parallelism {TP_RANKS}, "
                     f"got {world_size}"
                 )
-            key = (str(x.device), rank, manifest_sha256)
+            if artifact["artifact_kind"] == "multi_layer" and control[
+                "selected_experts"
+            ] is not None:
+                raise RuntimeError(
+                    "multi-layer intervention controls must select the complete "
+                    "registered expert set"
+                )
+            component_manifest_sha256 = target_component["manifest_sha256"]
+            key = (str(x.device), rank, component_manifest_sha256)
             store = _STORES.get(key)
             if store is None:
                 store = DenseEndpointStore(
-                    root,
+                    Path(target_component["root"]),
                     device=x.device,
                     tensor_parallel_rank=rank,
-                    expected_manifest_sha256=manifest_sha256,
+                    expected_manifest_sha256=component_manifest_sha256,
                 )
                 _STORES[key] = store
             if control["mode"] == IDENTITY_CONTROL_MODE:
@@ -926,6 +1087,7 @@ def install_vllm_patch() -> None:
 
 __all__ = [
     "CONTROL_SCHEMA",
+    "MULTI_LAYER_INTERVENTION_ARTIFACT_KIND",
     "ACTIVATION_CAPTURE_LAYERS_ENV",
     "FORCE_PER_EXPERT_EXL3_MOE_ENV",
     "DenseEndpointStore",
@@ -946,4 +1108,6 @@ __all__ = [
     "read_control",
     "routed_candidate_delta",
     "validate_dense_intervention_artifact",
+    "validate_intervention_artifact",
+    "validate_multi_layer_intervention_artifact",
 ]

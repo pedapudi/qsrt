@@ -1,0 +1,42 @@
+{
+  "schema": "qsrt_glm52_model_kld_candidate_subset_selection",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_subset_kld_measurement",
+  "frozen_at_utc": "2026-08-18T22:52:32Z",
+  "objective": "Determine whether the five locally accepted layer-63 corrections other than expert 164 contain a model-KLD improvement that the complete panel and expert-164 singleton obscured.",
+  "evidence_boundary": "The 16 public 512-token documents were already used to measure the complete layer-63 panel and the pre-registered expert-164 singleton. They are candidate-selection data for this plan. A winning subset requires confirmation on a new document-disjoint reference tier.",
+  "artifact_manifest_sha256": "4ec4929edf16e3795a1ee9d20a26dcb9235401dba8c3b6e6de9cea89c572c437",
+  "model_layer": 63,
+  "candidate_arms": [
+    {
+      "name": "accepted-experts-without-164",
+      "selected_experts": [29, 118, 123, 199, 215],
+      "reason": "The complete accepted panel regressed less than expert 164 alone, so the remaining accepted corrections may contain an offsetting model-KLD gain."
+    },
+    {
+      "name": "expert-29-alone",
+      "selected_experts": [29],
+      "reason": "Measure the individual model effect without assuming that expert corrections combine additively."
+    },
+    {
+      "name": "expert-118-alone",
+      "selected_experts": [118],
+      "reason": "Measure the individual model effect without assuming that expert corrections combine additively."
+    },
+    {
+      "name": "expert-123-alone",
+      "selected_experts": [123],
+      "reason": "Measure the individual model effect without assuming that expert corrections combine additively."
+    },
+    {
+      "name": "expert-199-alone",
+      "selected_experts": [199],
+      "reason": "Measure the individual model effect without assuming that expert corrections combine additively."
+    },
+    {
+      "name": "expert-215-alone",
+      "selected_experts": [215],
+      "reason": "Measure the individual model effect without assuming that expert corrections combine additively."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "qsrt_glm52_selection_pass_single_reference_registration",
+  "schema_version": 1,
+  "status": "frozen_before_single_reference_measurement",
+  "frozen_at_utc": "2026-08-19T01:43:10Z",
+  "objective": "Test whether the layer-52 expert-36 reconstructed-activation down refit improves the frozen 2,048-token BF16-reference KLD after improving both ordered halves of the public selection set.",
+  "evidence_boundary": "The independent reference contains one document. It can test an absolute KLD target and reject a candidate, but it cannot qualify a checkpoint or estimate document-level uncertainty.",
+  "candidate": {
+    "artifact_directory_name": "glm52-layer52-frozen8-reconstructed-activation-down-refit-merged",
+    "artifact_manifest_identity": "dddf3a9b238201b7718792a00f6c43e52bdd623796b0ef9a79be1381978e217d",
+    "artifact_manifest_file_sha256": "99d9a02c21a7d12c8513bdd8de046b9306fc5568fefb9b5d6844d7dd490b5ce3",
+    "artifact_report_file_sha256": "a706069e01a2bee4a0159c48bf30e45b269cf946dc569189100b63ab15e5a10d",
+    "model_layer": 52,
+    "selected_experts": [36],
+    "construction": "K3 gate and up with a K3 reconstructed-activation down refit"
+  },
+  "selection_evidence": {
+    "selection_plan_sha256": "8619914cd16a2c9b68916590afa8a52015eb9f6d3c08b0dfdecb1c384cd9c1ec",
+    "selection_report_sha256": "e1030cd2cb90489dd1dad3fec2b197bdcddf0ac7fba749f17641f40444666be5",
+    "candidate_arm": "expert-36-alone",
+    "document_count": 16,
+    "first_eight_mean_candidate_minus_resident_kld": -0.000029271721869650635,
+    "second_eight_mean_candidate_minus_resident_kld": -0.000028689793514532605,
+    "all_document_mean_candidate_minus_resident_kld": -0.00002898075769209162,
+    "retention_rule": "Both ordered eight-document means must be negative."
+  },
+  "independent_screen": {
+    "reference_context_count": 1,
+    "reference_context_length": 2048,
+    "absolute_target_mean_kld": 0.059,
+    "runtime_cache_policy": "Reuse the canonical resident EXL3 correctness cache."
+  }
+}

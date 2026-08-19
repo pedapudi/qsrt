@@ -1,0 +1,42 @@
+{
+  "schema": "qsrt_glm52_single_layer_dense_intervention_composition_registration",
+  "schema_version": 1,
+  "frozen_at_utc": "2026-08-19T02:10:00Z",
+  "model_layer": 52,
+  "selection_rule": {
+    "document_count": 16,
+    "ordered_group_sizes": [8, 8],
+    "requirement": "Each component expert must have negative candidate-minus-resident mean forward KLD in both ordered document groups.",
+    "composition_measurement": "Measure the composed artifact on the same selection documents. Open the separate 2,048-token development reference only if both ordered composition group means are negative."
+  },
+  "components": [
+    {
+      "source_artifact_name": "glm52-layer52-frozen8-reconstructed-activation-down-refit-merged",
+      "expert_ids": [36],
+      "construction": "Re-encode the down projection after fitting its target to reconstructed gate and up activations.",
+      "selection_evidence": {
+        "candidate_arm": "expert-36-alone",
+        "selection_result_name": "glm52-layer52-frozen8-reconstructed-activation-down-refit-merged-singleton-model-kld-selection-public-reference-v2-complete-slice-ancestry",
+        "selection_report_sha256": "e1030cd2cb90489dd1dad3fec2b197bdcddf0ac7fba749f17641f40444666be5",
+        "first_eight_mean_candidate_minus_resident_kld": -0.000029271721869650635,
+        "second_eight_mean_candidate_minus_resident_kld": -0.000028689793514532605,
+        "all_document_mean_candidate_minus_resident_kld": -0.00002898075769209162
+      }
+    },
+    {
+      "source_artifact_name": "glm52-layer52-frozen8-low-rank-down-reconstructed-activation-refit-derived-input-identity-checked-selection-fallback-bf16-rank-4-merged",
+      "expert_ids": [186],
+      "logical_adapter_bytes": 65536,
+      "construction": "Add a BF16 rank-four activation-weighted correction to the reconstructed-activation down-refit endpoint.",
+      "selection_evidence": {
+        "candidate_arm": "expert-186-alone",
+        "selection_result_name": "glm52-layer52-rank4-low-rank-down-singleton-model-kld-selection-public-reference",
+        "selection_report_sha256": "ca9cd809400931eafa136d01fa3dd37fa571584e2bfd84e0eda10940883359f2",
+        "first_eight_mean_candidate_minus_resident_kld": -0.00012071282263501132,
+        "second_eight_mean_candidate_minus_resident_kld": -0.0005621669076383826,
+        "all_document_mean_candidate_minus_resident_kld": -0.00034143986513669695
+      }
+    }
+  ],
+  "evidence_boundary": "The sixteen public documents select this composition and cannot qualify it. The separate 2,048-token BF16 reference supplies one development screen, not document-replicated qualification."
+}

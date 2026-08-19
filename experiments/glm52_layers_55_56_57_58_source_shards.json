@@ -1,0 +1,24 @@
+{
+  "source_model": "zai-org/GLM-5.2",
+  "source_revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+  "layers": [55, 56, 57, 58],
+  "shards": [
+    {"file": "model-00178-of-00282.safetensors", "size": 5359985304, "sha256": "7d7fd51a5b5c0411ee0d898b54554163d3284f6f1c2fd27dda8ec3718bfcb064"},
+    {"file": "model-00179-of-00282.safetensors", "size": 5360347320, "sha256": "12c90af990645cbd5d4e4be403f4df29cb2e83326c1875ad9395ae43619c5c82"},
+    {"file": "model-00180-of-00282.safetensors", "size": 5360347312, "sha256": "77badf458cbf36dbd02d68ae533339f1d0564f9b79e1ce7e2fda867f049f96c6"},
+    {"file": "model-00181-of-00282.safetensors", "size": 5360347192, "sha256": "f215765ef8e3ad227fa7ba8a34229f17caded6fd0d5f2a7e427979947aa202fd"},
+    {"file": "model-00182-of-00282.safetensors", "size": 5366406896, "sha256": "12b750c6c459e7a667d02b3cea7a2c38658965fdbfd65e060351e5acb283111f"},
+    {"file": "model-00183-of-00282.safetensors", "size": 5360347320, "sha256": "b211cd2b83eb4062b46d492aafa4fbd4551b8c152f3420f35ee46fb1d2284b02"},
+    {"file": "model-00184-of-00282.safetensors", "size": 5360347312, "sha256": "b01a39fe49e5891b6e963fcdc138ff1b23f6005011ef273925267d8bc5d28694"},
+    {"file": "model-00185-of-00282.safetensors", "size": 5360347128, "sha256": "7e104ff6d10312439304ce3dcc494c96ee2737816c22ba44c9f1a6cfdb3cf4ad"},
+    {"file": "model-00186-of-00282.safetensors", "size": 5366406968, "sha256": "1160edbf812ec16d3d305f56184f589f53357f7a967675cd06e07972ef861cb1"},
+    {"file": "model-00187-of-00282.safetensors", "size": 5360347320, "sha256": "3610bb9a09f999269db2d53b887fa5874924fb46941cf31114de80e448baed90"},
+    {"file": "model-00188-of-00282.safetensors", "size": 5360347264, "sha256": "1c9d3c8faae45378ee9bff586f1fbfa484a5dcc81e67af1ee3f3d03f1b429b43"},
+    {"file": "model-00189-of-00282.safetensors", "size": 5366406824, "sha256": "a2934500e16e156322b89661ebdde4c4f5e6413625157afeb2c7e6543e22bb56"},
+    {"file": "model-00190-of-00282.safetensors", "size": 5360347320, "sha256": "81b358521c9d2ee79055d05413458e1eb94cb55d4ce616a9f2e392a7ff2e0c2e"},
+    {"file": "model-00191-of-00282.safetensors", "size": 5360347320, "sha256": "e075f0a674253f0641ab7f26c92299b57a3ba1367328dec2d8cb0c9a541995a7"},
+    {"file": "model-00192-of-00282.safetensors", "size": 5360347200, "sha256": "f9832a19ff304d13384333189f7563b9076485e3d3eb9784de268c902d2a1951"},
+    {"file": "model-00193-of-00282.safetensors", "size": 5359985360, "sha256": "b98fee8842b6558bf18b2a8b0945223fef6498bbfeb16448b77c9fa32756038f"}
+  ],
+  "total_bytes": 85783011360
+}

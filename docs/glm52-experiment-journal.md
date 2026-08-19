@@ -36,6 +36,8 @@ covariance.
 ## Governing constraints
 
 - The complete official BF16 GLM-5.2 checkpoint must not be downloaded.
+- No available machine holds the complete BF16 checkpoint. Fresh teacher
+  references therefore require an external model holder.
 - Existing EXL3 checkpoint files must not be downloaded again.
 - Any container that mounts a model directory must disable network access and
   mount the model directory read-only. A result-only container may omit model
@@ -638,3 +640,250 @@ Paths below are relative to `/home/sunil/qsrt-glm52-experiments/` on kossel.
 | `results/glm52-layer3-frozen8-matched-mcg-sqg-k3-slice-06-07/experts/layer-003-expert-103.json` | `9ba14d4bfab9240d8ddd59d831346fb73186cd67132de608f87011612f272e55` |
 | `results/glm52-layer3-frozen8-matched-mcg-sqg-k3-slice-06-07/report.json` | `b72c4ec3f506bb67ecf11d634a19bfd363eb3e2a643efc2fba9a243803b564f7` |
 | `results/glm52-layer3-frozen8-matched-mcg-sqg-k3-merged/report.json` | `0b8522502464a01621e622cd3baec13fb1ea7797756797616135f90b46d64e73` |
+
+## High-layer down-recovery and low-rank model-KLD screens on 2026-08-18
+
+Four error-blind panels sampled eight experts from each of layers 52, 60, 63,
+and 64. Bounded BF16 source slices supplied only the 24 matrices required by
+each panel. The resident model remained the immutable 3.5-bpw EXL3 checkpoint.
+No complete BF16 model or replacement EXL3 checkpoint was downloaded.
+
+Each candidate used a uniform SQG K3 gate and up reconstruction. The down
+matrix either retained uniform K3 or encoded a continuous target fitted to
+reproduce the source expert output from the candidate's reconstructed upstream
+activations. A second candidate added locally accepted BF16 rank-four down
+corrections. All KLD measurements used the same 16 public documents with 512
+tokens each. These documents provide candidate-selection evidence and cannot
+qualify a selected checkpoint.
+
+| Layer and candidate | Mean KLD | Candidate minus EXL3 | Documents | 95% paired interval | Report SHA-256 |
+|---|---:|---:|---|---|---|
+| Layer 52, down refit | 0.09305502 | +0.00025883 | 7 better, 9 worse | [-0.00037826, +0.00088783] | `1b776fefae290c4582b4f70f08b203d928e894132548dbbcaa8eb04dd3b17528` |
+| Layer 52, down refit plus rank-four corrections | 0.09299236 | +0.00019618 | 8 better, 8 worse | [-0.00029264, +0.00070142] | `94ab910410d432a4271cb1dd93f0b6198c8a0e068be191efa267d6cc66f3c1d1` |
+| Layer 60, down refit | 0.09295164 | +0.00015545 | 6 better, 10 worse | [-0.00028785, +0.00061493] | `45a9459be048473f9ec9bbf3cbcaa1e98d47ad26cef66103d137fc822f2e36c8` |
+| Layer 60, down refit plus rank-four corrections | 0.09329399 | +0.00049780 | 3 better, 13 worse | [+0.00021016, +0.00083257] | `4d218a1c0a451d9b5540c5b20631bd8e0e5075149654be9638c60157ce9e51cb` |
+| Layer 63, uniform K3 | 0.09277434 | -0.00002184 | 8 better, 8 worse | [-0.00032288, +0.00026261] | `8e807bb578714103a11550e0f54ca788eb5016d236102c4a8011175bf48f70b4` |
+| Layer 63, down refit | 0.09273545 | -0.00006074 | 9 better, 7 worse | [-0.00029071, +0.00017891] | `e6951b435bd3f5c83a0dc73b687f92c3294194ea7d76746efd4213f1eafd0fcf` |
+| Layer 63, down refit plus rank-four corrections | 0.09287780 | +0.00008161 | 9 better, 7 worse | [-0.00025256, +0.00045111] | `9280a02275de2e542f558c1531bbc224ccce11ac520ae1cf4059f3ab37145957` |
+| Layer 64, down refit | 0.09328136 | +0.00048517 | 4 better, 12 worse | [+0.00015330, +0.00081810] | `33970d24118a7132ad245cb17e48f0c108667d0a33bd03eecd141a06ad6243dd` |
+| Layer 64, down refit plus rank-four corrections | 0.09321172 | +0.00041553 | 5 better, 11 worse | [+0.00004587, +0.00081100] | `07eaf69f2e8984239e6b648a762ef21fd03b5f083b96f416fcc7b2e4dcbf45e3` |
+
+Every unchanged resident repeat, identity intervention, and final resident
+bracket reproduced KLD values and routes bit for bit. The layer-64 refit and
+the layer-60 and layer-64 low-rank panels have confidence intervals above
+zero. The blanket constructions are therefore rejected. Layer 63 supplies a
+favorable refit point estimate whose interval includes zero. It remains useful
+for model-KLD subset selection.
+
+Two pre-registered low-rank singleton screens did not validate the local
+objective. Layer-63 expert 164 improved local complete-expert error by 33.5%
+and worsened mean KLD by 0.00026485. Layer-64 expert 253 improved local error
+by 15.4% and improved the mean-KLD point estimate by 0.00004955, but its
+confidence interval included zero. A later six-arm layer-63 selection run gave
+adverse mean point estimates for every tested subset.
+
+| Frozen singleton or subset report | SHA-256 |
+|---|---|
+| Layer-63 rank-four expert 164 | `c71bce91e9a683160a0a8c937e4f05732e3a432225165ec0ca699fa48232add6` |
+| Layer-64 rank-four expert 253 | `3ab1279367f9eb3572375c955c9fe6929c4f8b30c031d0009a2bef65107126d7` |
+| Six layer-63 low-rank subsets | `a467b7b539aa004db79182b8efff2d712e447f43c458ba0eda8ec2f4ac004e27` |
+
+The first down-refit singleton launch failed before model loading because its
+source snapshot contained the strict merged-artifact ancestry validator. The
+preserved run log reports `dense intervention input-artifact identity is
+invalid`. The refit artifacts use an older merged manifest that omits one
+redundant parent report hash while retaining four complete slice manifest and
+report hashes. The tested compatibility validator accepts that manifest only
+when the slice expert sets are disjoint and their union equals the merged
+expert set. A fresh source snapshot and a fresh result name were used for the
+retry; the failed container, log, and launch record remain unchanged.
+
+## Corrected model-KLD singleton selection on 2026-08-19
+
+Each down-refit singleton was measured on two pre-registered groups of eight
+public documents. The reference plan defines the group order. The report keeps
+that order in its top-level `documents` array, while the nested summary sorts
+documents by their SHA-256 identities.
+
+The first selection calculation split the sorted summary. It therefore did not
+implement the registered grouping rule. The corrected calculation reads the
+top-level array. It retains an expert only when candidate-minus-resident mean
+KLD is negative in both registered groups. Layer 52 expert 36 is the only
+down-refit singleton that passes this rule. The previously measured layer-64
+expert-253 rank-four correction improves the first group and regresses on the
+second group.
+
+| Selection report | Retained experts | Report SHA-256 |
+|---|---|---|
+| Layer 52 down refits | 36 | `e1030cd2cb90489dd1dad3fec2b197bdcddf0ac7fba749f17641f40444666be5` |
+| Layer 60 down refits | None | `0c95f53c00fd9ad2cae31c1a6f8d290f2e745c845c166d02f9ffdac8b8d004b9` |
+| Layer 63 down refits | None | `e4721400a9d1309bf84be60dec18415fbb6114a54fdd2dfc22e066bc418eacf7` |
+| Layer 64 down refits | None | `3611cd6d55a191e7e1613840cea07a27d2baa162f9f2ecc90d6806fa5c5b538a` |
+| Layer 64 rank-four correction | None | `3ab1279367f9eb3572375c955c9fe6929c4f8b30c031d0009a2bef65107126d7` |
+
+Layer-52 expert 36 improved the first group by `0.00002927` mean KLD and the
+second group by `0.00002869`. Its all-document mean improvement was
+`0.00002898`. This small selection pass is frozen for one 2,048-token
+development screen.
+
+The incorrect group calculation selected layer-60 expert 136 and layer-63
+experts 149 and 164. Their derived compositions remain valid measurements of
+those exact interventions, but they do not represent the registered selection
+rule. The layer-63 composition regressed by `0.00046650` on the first group,
+improved by `0.00024980` on the second group, and regressed by `0.00010835`
+over all 16 documents. Its report SHA-256 is
+`74e690c46862dde5b91b523a2560e031cc1c0a222d6b7bc8afc25a82d4eced46`.
+
+A second invalidated selection contained layer-60 expert 136, layer-63 expert
+164, and layer-64 expert 253. It regressed by `0.00012669` on the first group,
+improved by `0.00018005` on the second group, and improved by only `0.00002668`
+over all 16 documents. Its p99 rose from `1.12971` to `1.16144`, and its
+CVaR1% rose from `1.97600` to `1.97678`. The candidate failed the frozen
+two-group rule and was not opened against the separate 2,048-token reference.
+Its report SHA-256 is
+`5464cc6e04e2e189ad447d954df09776e0076c361e2cbba59a380bbfd5f600a1`.
+
+The invalidated layer-60 expert-136 singleton reached the 2,048-token screen
+before the ordering defect was found. That run used a fresh JIT and autotuning
+cache.
+Its unchanged resident EXL3 arm measured KLD `0.06319607`, while the established
+cache had measured `0.06107434` with the same model, reference, container image,
+and explicit runtime options. The resident route arrays differed in 311,963
+entries. Within the fresh-cache process, layer-60 expert 136 worsened KLD by
+`0.00024334`; repeat and identity controls were bitwise stable. Report SHA-256
+is `d1b1679ed5a599264593e2c21db2d4b6942c86171847b95bdb34564138af367b`.
+The baseline drift prevents an absolute-target comparison across the two
+runtime states. All subsequent 2,048-token screens reuse the established
+per-expert EXL3 cache that defines the recorded numerical runtime.
+
+The corrected selector is implemented in
+`qsrt/glm52_model_kld_candidate_selection.py`. A regression test gives the
+nested summary and top-level document array opposite group orderings and
+requires the selector to follow the top-level execution order.
+
+### K4 encoding of the layer-63 down-refit target
+
+The rate-pool merge initially omitted its three input-artifact identities.
+The materializer rejected the resulting ancestry. The corrected merge requires
+all slices to name identical input artifacts and copies those identities into
+the merged manifest. Reusing the completed candidate tensors then produced a
+hash-closed pool and a partial intervention for layer-63 experts 149 and 164.
+The intervention uses K3 gate and up matrices and K4 encodes of the fitted down
+targets. It occupies 127,799,296 logical panel bytes, which is 1,572,864 bytes
+smaller than the resident EXL3 panel.
+
+The two-expert intervention improved the first registered group by
+`0.00003535` mean KLD and regressed on the second group by `0.00015047`. Its
+all-document regression was `0.00005756`. Report SHA-256 is
+`93a9f4276946b3917666f324a82f419655544b4631faa387a36def26c5d43ba0`.
+
+Expert 164 alone had reduced candidate-selection complete-expert error by
+50.37 percent when its down target moved from K3 to K4. The model-KLD screen
+regressed by `0.00031984` on the first registered group and by `0.00037820` on
+the second group. Twelve of 16 documents regressed. The paired document
+interval was entirely above zero, and the independent 2,048-token reference
+remained unopened. Report SHA-256 is
+`3a38fda6c3189d123a8551b6c48d4516ef10f28c742ebd2ad533125f67ee4097`.
+This result rejects the expert-164 K4-down candidate and supplies another
+measured inversion between local complete-expert error and model KLD.
+
+### Rank-four down-correction singleton selection
+
+The rank-four candidate pool excluded experts whose local correction had
+already fallen back to its unchanged down endpoint. The remaining candidates
+comprised seven experts at layer 52, six at layer 60, and six at layer 64.
+Every singleton was frozen before model-KLD measurement. The corrected
+selector retained a singleton only when candidate-minus-resident mean KLD was
+negative in both ordered groups of eight public documents.
+
+Layer-52 expert 186 was the only retained rank-four singleton. Its first-group
+mean difference was `-0.00012071`; its second-group difference was
+`-0.00056217`. Across all 16 documents, the correction reduced equal-document
+mean KLD from `0.09279619` to `0.09245475`, a 0.3679 percent reduction. Nine
+documents improved and seven regressed. The paired 95 percent document
+interval was `[-0.00090602, 0.00013884]`, so the selection set does not by
+itself establish a replicated improvement. CVaR1% improved from `1.97600` to
+`1.95798`; p99 rose from `1.12971` to `1.14819`, and the maximum rose from
+`5.98803` to `6.02175`.
+
+No layer-60 or layer-64 rank-four singleton improved both ordered document
+groups. The best layer-60 point estimate improved the first group and had zero
+change in the second because the selected expert was absent from most
+documents. The best layer-64 all-document point estimate regressed on the
+first group and improved on the second. Neither candidate entered an
+independent screen.
+
+| Evidence file | SHA-256 |
+|---|---|
+| Layer-52 rank-four singleton report | `ca9cd809400931eafa136d01fa3dd37fa571584e2bfd84e0eda10940883359f2` |
+| Layer-60 rank-four singleton report | `43b03f1229e5c8303099ab2b87299f4a35fd97cda25aab3f0752d12f5f9a4d4b` |
+| Layer-64 rank-four singleton report | `879fc626103380e48f7c3ba8e451dbd558c98ff53206d2b7d3d672822fd12e52` |
+| Frozen selection outcome | `d70ad6ef67e2e5a9d93f7d43df79e18807d286c31099dfeeb696ecca45851976` |
+
+The retained expert-186 correction was frozen before the separate 2,048-token
+BF16 reference was opened. A registered same-layer composition also combines
+expert 186 with the separately retained expert-36 down refit. The composition
+copies both selected endpoints without changing them. It must improve both
+ordered public-document groups before it may use the longer development
+reference.
+
+The independent 2,048-token screen rejected expert 186. Resident EXL3
+reproduced mean KLD `0.06107434` with bitwise-equal repeat and identity
+controls. The frozen singleton measured `0.06151378`, a regression of
+`0.00043944` or 0.7195 percent. It improved 1,002 token positions and worsened
+1,045. The expert was routed ten times in the context. Report SHA-256 is
+`730d9c1fad30f6ee35588e6d7a2f84cda69088df1f2e1ab095f6d72eabc0cc5a`.
+This result is a clean selection-to-development inversion: the public-document
+point estimate selected the expert without the long context, and the long
+context then regressed under an unchanged numerical baseline.
+
+The independently selected expert-36 down refit improved the same long
+context. Resident EXL3 again reproduced `0.06107434`; the singleton measured
+`0.06090743`, a reduction of `0.00016691` or 0.2733 percent. The expert was
+routed six times. The intervention improved 996 positions, left one equal,
+and worsened 1,050. Report SHA-256 is
+`5013b52448d1538147bfa5dcdf0263826f45c1b6d87800352e633ffed4863821`.
+This is favorable development evidence for reconstructed-activation down
+refitting. One context cannot establish a document-replicated gain, and the
+candidate remains above the `0.059` development target.
+
+## Layer-52 composition result and late-middle layer expansion on 2026-08-19
+
+The same-layer composition combined the only two layer-52 recovery experts
+that had improved both ordered selection-document groups: down-refit expert 36
+and rank-four expert 186. The registration froze both endpoint hashes before
+either singleton used the separate 2,048-token development reference.
+
+The composition reduced equal-document mean KLD from `0.09279619` to
+`0.09272780` across all 16 selection documents. Its candidate-minus-resident
+mean was `+0.00029425` in the first eight documents and `-0.00043102` in the
+second eight documents. The registered rule required both values to be
+negative. The composition was rejected, and its longer development screen did
+not run. CVaR1% improved from `1.97600` to `1.96422`, while p99 rose from
+`1.12971` to `1.13762` and the maximum rose from `5.98803` to `6.02175`.
+Report SHA-256 is
+`c5c3fcb3dc2294959e003fc6ae1a41ca1af7048b714ae82474f28b9daa768117`.
+
+The bounded source window for model layers 55, 56, 57, and 58 covers four
+error-blind panels. The layers lie inside a late-middle band reported by an
+external GLM quantization
+effort as carrying disproportionate KLD damage. Four eight-expert panels were
+selected deterministically from immutable EXL3 gate, up, and down rate
+patterns before any candidate error was available. The panel files are
+`experiments/glm52_layer55_rate_pattern_panel.json` through
+`experiments/glm52_layer58_rate_pattern_panel.json`.
+
+The source manifest names 16 of the official checkpoint's 282 BF16 shards.
+They total 85,783,011,360 bytes and contain the selected layers' routed-expert
+tensors. Sixteen resumable transfers are active. The remaining source shards
+are excluded. A network-disabled, four-layer input capture is queued after the
+download so its model load does not compete with source writes on the internal
+NVMe device.
+
+Candidate construction is also queued. Each layer will build uniform K3,
+reconstructed-activation down-refit, and BF16 rank-four down-correction
+artifacts. Down refits use that layer's QSRT gate and up reconstructions.
+Rank-four factors use the refitted candidate's own down inputs. One model load
+per artifact will measure eight singleton arms and one predeclared complete
+panel on the 16 public selection documents. The two-group retention decision
+uses the reference plan's execution order.

@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Measure one complete frozen-panel intervention against the unchanged resident
-# EXL3 model on sixteen public, document-disjoint BF16 reference chunks. The
-# model is loaded once, and resident controls bracket the candidate run.
+# Measure one frozen intervention against the unchanged resident EXL3 model on
+# sixteen public, document-disjoint BF16 reference chunks. With no plan file,
+# all experts in the artifact are active. A low-rank confirmation registration
+# selects one frozen expert. A candidate-subset selection plan measures several
+# frozen expert subsets in one model load. Resident controls bracket every run.
 
-if test "$#" != 2; then
-  echo "usage: $0 <artifact-directory-name> <result-directory-name>" >&2
+if test "$#" -lt 2 || test "$#" -gt 3; then
+  echo "usage: $0 <artifact-directory-name> <result-directory-name> [registration-or-selection-plan-file-name]" >&2
   exit 2
 fi
 
 artifact_name="$1"
 result_name="$2"
+candidate_input_name="${3:-}"
 for value in "${artifact_name}" "${result_name}"; do
   if [[ ! "${value}" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    echo "artifact and result names must be path-safe basenames" >&2
+    echo "artifact, result, and registration names must be path-safe basenames" >&2
     exit 2
   fi
 done
+if test -n "${candidate_input_name}" && [[ ! "${candidate_input_name}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "artifact, result, and registration names must be path-safe basenames" >&2
+  exit 2
+fi
 
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 results_root="${experiment_root}/results"
@@ -29,7 +36,7 @@ reference_plan="${reference_root}/selection-plan.json"
 reference_receipt="${reference_root}/receipt.json"
 control_root="${experiment_root}/runtime-control/${result_name}"
 record_root="${experiment_root}/launch-records/${result_name}"
-source_snapshot="${experiment_root}/source/qsrt-derived-artifact-ancestry-hash-closure-kld-20260818"
+registration_root="${experiment_root}/registrations"
 model="${experiment_root}/model-cache/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78-nvme"
 runtime_cache="${experiment_root}/runtime-cache/glm52-per-expert-exl3-without-fused-staging-dense-triton-bf16-reference-kld"
 container_name="qsrt-${result_name}"
@@ -39,12 +46,38 @@ test -f "${artifact_root}/manifest.json"
 test -f "${artifact_root}/report.json"
 test -f "${reference_plan}"
 test -f "${reference_receipt}"
-test -f "${source_snapshot}/scripts/run_glm52_document_disjoint_reference_confirmation.py"
 test -d "${model}"
 test ! -e "${result_root}"
 test ! -e "${control_root}"
 test -z "$(docker ps -a --filter "name=^/${container_name}$" -q)"
 docker image inspect "${image}" >/dev/null
+
+candidate_input_mount=()
+candidate_input_arguments=()
+selected_expert_policy="complete-artifact"
+runner_relative="scripts/run_glm52_document_disjoint_reference_confirmation.py"
+source_snapshot="${experiment_root}/source/qsrt-multi-layer-intervention-runtime-20260819"
+candidate_input_path=""
+candidate_input_schema=""
+if test -n "${candidate_input_name}"; then
+  candidate_input_path="${registration_root}/${candidate_input_name}"
+  test -f "${candidate_input_path}"
+  candidate_input_schema="$(jq -r .schema "${candidate_input_path}")"
+  if test "${candidate_input_schema}" = "qsrt_glm52_low_rank_down_confirmation_registration"; then
+    candidate_input_mount=(-v "${candidate_input_path}:/confirmation-registration.json:ro")
+    candidate_input_arguments=(--confirmation-registration /confirmation-registration.json)
+    selected_expert_policy="registered-singleton"
+  elif test "${candidate_input_schema}" = "qsrt_glm52_model_kld_candidate_subset_selection"; then
+    candidate_input_mount=(-v "${candidate_input_path}:/candidate-selection-plan.json:ro")
+    candidate_input_arguments=(--candidate-selection-plan /candidate-selection-plan.json)
+    selected_expert_policy="frozen-candidate-subsets"
+    runner_relative="scripts/run_glm52_document_disjoint_candidate_selection.py"
+  else
+    echo "candidate input has an unsupported schema: ${candidate_input_schema}" >&2
+    exit 2
+  fi
+fi
+test -f "${source_snapshot}/${runner_relative}"
 
 python3 - "${reference_plan}" "${reference_receipt}" <<'PY'
 import hashlib
@@ -63,16 +96,21 @@ assert receipt["model_weights_downloaded"] is False
 assert receipt["selection_plan_sha256"] == hashlib.sha256(plan_path.read_bytes()).hexdigest()
 PY
 
-read -r artifact_manifest_sha256 model_layer expert_count < <(
+read -r artifact_manifest_sha256 model_layers expert_count < <(
   python3 - "${artifact_root}/report.json" <<'PY'
 import json
 import sys
 
 report = json.load(open(sys.argv[1]))
 assert report["status"] == "complete"
-assert report["expert_count"] == 8
-assert 3 <= report["layer"] <= 77
-print(report["manifest_sha256"], report["layer"], report["expert_count"])
+assert 1 <= report["expert_count"] <= 8
+if "layer" in report:
+    layers = [report["layer"]]
+else:
+    layers = report["model_layers"]
+assert layers and all(3 <= layer <= 77 for layer in layers)
+assert len(layers) == len(set(layers))
+print(report["manifest_sha256"], ",".join(map(str, layers)), report["expert_count"])
 PY
 )
 test "${#artifact_manifest_sha256}" -eq 64
@@ -81,23 +119,34 @@ first_reference="$(jq -r '.selected_chunks[0].reference_file' "${reference_plan}
 test -f "${reference_directory}/${first_reference}"
 mkdir -p "${control_root}" "${record_root}" "${runtime_cache}"
 ln -s "/reference/${first_reference}" "${control_root}/current-reference.safetensors"
-sha256sum \
-  "${source_snapshot}/qsrt/glm52_document_disjoint_confirmation.py" \
-  "${source_snapshot}/qsrt/glm52_engine_kld.py" \
-  "${source_snapshot}/qsrt/glm52_expert_intervention_runtime.py" \
-  "${source_snapshot}/qsrt/glm52_paired_kld.py" \
-  "${source_snapshot}/scripts/run_glm52_document_disjoint_reference_confirmation.py" \
-  > "${record_root}/executable-source.sha256"
+source_files=(
+  "${source_snapshot}/qsrt/glm52_document_disjoint_confirmation.py"
+  "${source_snapshot}/qsrt/glm52_engine_kld.py"
+  "${source_snapshot}/qsrt/glm52_expert_intervention_runtime.py"
+  "${source_snapshot}/qsrt/glm52_paired_kld.py"
+  "${source_snapshot}/scripts/run_glm52_document_disjoint_reference_confirmation.py"
+)
+if test "${candidate_input_schema}" = "qsrt_glm52_model_kld_candidate_subset_selection"; then
+  source_files+=(
+    "${source_snapshot}/qsrt/glm52_model_kld_candidate_selection.py"
+    "${source_snapshot}/scripts/run_glm52_document_disjoint_candidate_selection.py"
+  )
+fi
+sha256sum "${source_files[@]}" > "${record_root}/executable-source.sha256"
 cp "${reference_receipt}" "${record_root}/reference-download-receipt.json"
+if test -n "${candidate_input_path}"; then
+  sha256sum "${candidate_input_path}" > "${record_root}/candidate-input.sha256"
+fi
 
 docker create \
   --name "${container_name}" \
-  --label qsrt.experiment="glm52-complete-panel-document-disjoint-public-reference-screen" \
+  --label qsrt.experiment="glm52-frozen-intervention-document-disjoint-public-reference-screen" \
   --label qsrt.model-downloads-performed=false \
   --label qsrt.reference-document-count=16 \
   --label qsrt.reference-context-tokens=512 \
-  --label qsrt.model-layer="${model_layer}" \
-  --label qsrt.expert-count="${expert_count}" \
+  --label qsrt.model-layers="${model_layers}" \
+  --label qsrt.artifact-expert-count="${expert_count}" \
+  --label qsrt.selected-expert-policy="${selected_expert_policy}" \
   --label qsrt.exl3-moe-execution=three-gemm-per-expert-correctness \
   --label qsrt.candidate-runtime=stored-dense-endpoint \
   --network none \
@@ -149,13 +198,15 @@ docker create \
   -v "${experiment_root}/corpus-cache/huggingface:/hf-corpus:rw" \
   -v "${experiment_root}/dependencies/kld-datasets-pydeps:/kld-pydeps:ro" \
   -v "${runtime_cache}:/cache:rw" \
+  "${candidate_input_mount[@]}" \
   "${image}" \
-  /workspace/qsrt/scripts/run_glm52_document_disjoint_reference_confirmation.py \
+  "/workspace/qsrt/${runner_relative}" \
   --model /model \
   --reference-directory /reference \
   --reference-plan /reference-plan.json \
   --reference-link /control/current-reference.safetensors \
   --intervention-artifact /artifact \
+  "${candidate_input_arguments[@]}" \
   --candidate-runtime-mode candidate \
   --control /control/control.json \
   --dest "/results/${result_name}" \
@@ -193,17 +244,28 @@ report = json.loads(report_path.read_text())
 assert report["status"] == "complete"
 assert report["measurement_controls"]["passed"] is True
 assert report["model_downloads_performed"] is False
-summary = report["summary"]
-completion = {
-    "schema": "qsrt_glm52_complete_panel_public_reference_screen",
-    "schema_version": 1,
-    "status": "complete",
-    "report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
-    "document_count": summary["document_count"],
-    "equal_document_weight": summary["equal_document_weight"],
-    "paired_document_bootstrap": summary["paired_document_bootstrap"],
-    "tail_metrics": summary["tail_metrics"],
-}
+if report["schema"] == "qsrt_glm52_document_disjoint_model_kld_candidate_selection":
+    completion = {
+        "schema": "qsrt_glm52_model_kld_candidate_subset_selection_completion",
+        "schema_version": 1,
+        "status": "complete",
+        "report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+        "candidate_arms": {
+            name: value["summary"] for name, value in report["candidate_arms"].items()
+        },
+    }
+else:
+    summary = report["summary"]
+    completion = {
+        "schema": "qsrt_glm52_complete_panel_public_reference_screen",
+        "schema_version": 1,
+        "status": "complete",
+        "report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+        "document_count": summary["document_count"],
+        "equal_document_weight": summary["equal_document_weight"],
+        "paired_document_bootstrap": summary["paired_document_bootstrap"],
+        "tail_metrics": summary["tail_metrics"],
+    }
 temporary = Path(sys.argv[2] + ".partial")
 temporary.write_text(json.dumps(completion, indent=2, sort_keys=True) + "\n")
 os.replace(temporary, sys.argv[2])

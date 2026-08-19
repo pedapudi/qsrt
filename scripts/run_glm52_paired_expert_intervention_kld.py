@@ -37,7 +37,7 @@ from qsrt.glm52_expert_intervention_runtime import (
     FORCE_PER_EXPERT_EXL3_MOE_ENV,
     _parse_capture_layers,
     atomic_write_control,
-    validate_dense_intervention_artifact,
+    validate_intervention_artifact,
 )
 from qsrt.glm52_real_weight_benchmark import load_frozen_real_weight_panel
 from qsrt.glm52_paired_kld import (
@@ -794,7 +794,7 @@ def main() -> None:
                 "sparse-attention contract"
             )
     args.dest.mkdir(parents=True, exist_ok=False)
-    artifact = validate_dense_intervention_artifact(args.intervention_artifact)
+    artifact = validate_intervention_artifact(args.intervention_artifact)
     capture_panels_by_layer: dict[int, tuple[int, ...]] = {}
     for path in args.activation_capture_panel_manifest:
         raw_panel = json.loads(path.read_text())
@@ -805,10 +805,27 @@ def main() -> None:
         if model_layer in capture_panels_by_layer:
             raise ValueError(f"capture panels repeat model layer {model_layer}")
         capture_panels_by_layer[model_layer] = panel["experts"]
-    candidate_expert_subsets = parse_candidate_expert_subsets(
-        args.candidate_expert_subsets_json,
-        artifact_expert_ids=artifact["expert_ids"],
-    )
+    if artifact["artifact_kind"] == "multi_layer":
+        if json.loads(args.candidate_expert_subsets_json) != {}:
+            raise ValueError(
+                "multi-layer intervention sets do not support runtime expert "
+                "subsets"
+            )
+        if not args.omit_individual_expert_arms:
+            raise ValueError(
+                "multi-layer intervention sets require "
+                "--omit-individual-expert-arms"
+            )
+        if args.corpus_plan is not None or args.activation_capture_panel_manifest:
+            raise ValueError(
+                "multi-layer KLD measurement cannot capture fitting activations"
+            )
+        candidate_expert_subsets = {}
+    else:
+        candidate_expert_subsets = parse_candidate_expert_subsets(
+            args.candidate_expert_subsets_json,
+            artifact_expert_ids=artifact["expert_ids"],
+        )
     manifest_path = args.reference_logits / "manifest.json"
     reference_manifest = json.loads(manifest_path.read_text())
     if args.context_length != int(reference_manifest["context_length"]):
@@ -965,13 +982,24 @@ def main() -> None:
     arm_results: dict[str, Any] = {}
     klds: dict[str, torch.Tensor] = {}
     routes: dict[str, np.ndarray] = {}
-    arm_definitions = intervention_arm_definitions(
-        artifact["expert_ids"],
-        omit_individual_expert_arms=args.omit_individual_expert_arms,
-        measurement_controls_only=args.measurement_controls_only,
-        candidate_expert_subsets=candidate_expert_subsets,
-        candidate_runtime_mode=args.candidate_runtime_mode,
-    )
+    if artifact["artifact_kind"] == "multi_layer":
+        arm_definitions = [
+            ("resident_exl3", "off", None),
+            ("resident_exl3_repeat", "off", None),
+            ("dense_resident_identity", "dense_resident_identity", None),
+        ]
+        if not args.measurement_controls_only:
+            arm_definitions.append(
+                ("selected_candidate", args.candidate_runtime_mode, None)
+            )
+    else:
+        arm_definitions = intervention_arm_definitions(
+            artifact["expert_ids"],
+            omit_individual_expert_arms=args.omit_individual_expert_arms,
+            measurement_controls_only=args.measurement_controls_only,
+            candidate_expert_subsets=candidate_expert_subsets,
+            candidate_runtime_mode=args.candidate_runtime_mode,
+        )
     for generation, (arm, mode, selected_experts) in enumerate(
         arm_definitions, start=1
     ):
@@ -1028,22 +1056,23 @@ def main() -> None:
                     "not evaluated"
                 )
 
+    earliest_model_layer = artifact["model_layers"][0]
     baseline_layer_routes = target_layer_routes(
         routes["resident_exl3"],
-        model_layer=artifact["model_layer"],
+        model_layer=earliest_model_layer,
         total_decoder_layers=78,
         first_moe_layer=3,
     )
     for arm, _, _ in arm_definitions[1:]:
         arm_layer_routes = target_layer_routes(
             routes[arm],
-            model_layer=artifact["model_layer"],
+            model_layer=earliest_model_layer,
             total_decoder_layers=78,
             first_moe_layer=3,
         )
         if not np.array_equal(baseline_layer_routes, arm_layer_routes):
             raise RuntimeError(
-                f"layer-{artifact['model_layer']} routing changed before the "
+                f"layer-{earliest_model_layer} routing changed before the "
                 f"{arm!r} intervention"
             )
     controls = measurement_control_summary(klds, routes)
@@ -1056,15 +1085,24 @@ def main() -> None:
         "reference_logits": str(args.reference_logits.resolve()),
         "reference_manifest": reference_manifest,
         "intervention_artifact": {
-            key: artifact[key]
-            for key in (
-                "root",
-                "manifest_sha256",
-                "expert_ids",
-                "expert_count",
-                "dense_endpoint_bytes",
-                "model_layer",
-            )
+            "root": artifact["root"],
+            "manifest_sha256": artifact["manifest_sha256"],
+            "artifact_kind": artifact["artifact_kind"],
+            "expert_count": artifact["expert_count"],
+            "dense_endpoint_bytes": artifact["dense_endpoint_bytes"],
+            "model_layers": list(artifact["model_layers"]),
+            "expert_ids_by_layer": {
+                str(layer): list(experts)
+                for layer, experts in artifact["expert_ids_by_layer"].items()
+            },
+            **(
+                {
+                    "model_layer": artifact["model_layer"],
+                    "expert_ids": list(artifact["expert_ids"]),
+                }
+                if artifact["artifact_kind"] == "single_layer"
+                else {}
+            ),
         },
         "runtime": {
             "tensor_parallel_size": args.tensor_parallel_size,
@@ -1152,7 +1190,7 @@ def main() -> None:
                     baseline_layer_routes, selected_experts=[expert]
                 ),
             }
-            for expert in artifact["expert_ids"]
+            for expert in artifact.get("expert_ids", ())
         }
         if candidate_measured and not args.omit_individual_expert_arms
         else None,
@@ -1172,9 +1210,31 @@ def main() -> None:
         }
         if candidate_measured and candidate_expert_subsets
         else None,
-        "intervention_model_layer": artifact["model_layer"],
-        "intervention_layer_route_support": route_support_summary(
-            baseline_layer_routes, selected_experts=artifact["expert_ids"]
+        "intervention_model_layers": list(artifact["model_layers"]),
+        **(
+            {"intervention_model_layer": artifact["model_layer"]}
+            if artifact["artifact_kind"] == "single_layer"
+            else {}
+        ),
+        "intervention_layer_route_support": (
+            route_support_summary(
+                baseline_layer_routes, selected_experts=artifact["expert_ids"]
+            )
+            if artifact["artifact_kind"] == "single_layer"
+            else {
+                str(model_layer): route_support_summary(
+                    target_layer_routes(
+                        routes["resident_exl3"],
+                        model_layer=model_layer,
+                        total_decoder_layers=78,
+                        first_moe_layer=3,
+                    ),
+                    selected_experts=list(
+                        artifact["expert_ids_by_layer"][model_layer]
+                    ),
+                )
+                for model_layer in artifact["model_layers"]
+            }
         ),
         "all_layer_route_array_equal": {
             arm: bool(np.array_equal(routes["resident_exl3"], routes[arm]))

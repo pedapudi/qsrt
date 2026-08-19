@@ -1,0 +1,91 @@
+{
+  "schema": "qsrt_glm52_registered_partial_down_refit_k3_k4_intervention",
+  "schema_version": 1,
+  "status": "frozen_before_candidate_k4_measurement",
+  "objective": "Test whether adding one K4 down projection to each of the two layer-63 down refits that generalized across both document halves reduces model KLD while keeping the complete eight-expert comparison panel smaller than resident EXL3.",
+  "model_layer": 63,
+  "source_weights": {
+    "model_id": "zai-org/GLM-5.2",
+    "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "configuration_sha256": "185f93ee6d12548e16a847e279dc0c3c90b1524c970b0866b42fb545747d859a",
+    "tensor_index_sha256": "5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e",
+    "complete_checkpoint_required": false
+  },
+  "comparison_checkpoint": {
+    "model_id": "brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78",
+    "revision": "9ab9579774cc432df91567a36f6e9e863e0d4c9f",
+    "root_manifest_sha256": "c81f3129e418683b6e37c17b8198681c11324f3918fdbd844c1be346114c387b"
+  },
+  "comparison_panel": {
+    "path": "experiments/glm52_layer63_rate_pattern_panel.json",
+    "manifest_sha256": "16a465e72ef23e65c95f378472501ff415e7c651bd6bc457bba91573589e322d",
+    "expert_order": [215, 32, 123, 164, 199, 118, 149, 29]
+  },
+  "down_refit_base": {
+    "artifact_relative_path": "results/glm52-layer63-frozen8-reconstructed-activation-down-refit-merged",
+    "manifest_file_sha256": "e8f2c93632ca0318fd87771d80aa9658afe0dca71c62825ba51fd4e8442996b4",
+    "report_file_sha256": "7014ae080eaaa5e9fa0520fae68e1b784527c36980e76625f6731c5c640dfe52"
+  },
+  "selection_evidence": {
+    "singleton_plan_path": "experiments/glm52_layer63_down_refit_singleton_model_kld_selection_plan.json",
+    "singleton_plan_sha256": "4cca8659ed96be507ae999bf073d70c339afc4b7dd2ce67f344049b4e2b57dec",
+    "singleton_report_relative_path": "results/glm52-layer63-frozen8-reconstructed-activation-down-refit-merged-singleton-model-kld-selection-public-reference-v2-complete-slice-ancestry/report.json",
+    "singleton_report_sha256": "e4721400a9d1309bf84be60dec18415fbb6114a54fdd2dfc22e066bc418eacf7",
+    "retention_rule": "retain an expert only when candidate-minus-resident mean forward KLD is negative on both pre-registered halves of the sixteen-document public selection set",
+    "retained_experts": {
+      "149": {
+        "first_half_mean_kld_delta": -0.0000974237,
+        "second_half_mean_kld_delta": -0.0001142003,
+        "all_document_mean_kld_delta": -0.0001058120
+      },
+      "164": {
+        "first_half_mean_kld_delta": -0.0001210277,
+        "second_half_mean_kld_delta": -0.0001664774,
+        "all_document_mean_kld_delta": -0.0001437526
+      }
+    },
+    "k4_candidate_measurements_used": false
+  },
+  "comparison_exl3_rates": {
+    "215": {"gate_proj": 4, "up_proj": 3, "down_proj": 4},
+    "32": {"gate_proj": 3, "up_proj": 3, "down_proj": 3},
+    "123": {"gate_proj": 3, "up_proj": 3, "down_proj": 4},
+    "164": {"gate_proj": 4, "up_proj": 4, "down_proj": 4},
+    "199": {"gate_proj": 4, "up_proj": 3, "down_proj": 3},
+    "118": {"gate_proj": 4, "up_proj": 3, "down_proj": 4},
+    "149": {"gate_proj": 3, "up_proj": 3, "down_proj": 3},
+    "29": {"gate_proj": 3, "up_proj": 3, "down_proj": 4}
+  },
+  "registered_replacements": [
+    {
+      "expert": 164,
+      "candidate_rates": {"gate_proj": 3, "up_proj": 3, "down_proj": 4},
+      "reason": "the K3 down refit generalized across both document halves; K4 is added only to its fitted down target"
+    },
+    {
+      "expert": 149,
+      "candidate_rates": {"gate_proj": 3, "up_proj": 3, "down_proj": 4},
+      "reason": "the K3 down refit generalized across both document halves; K4 is added only to its fitted down target"
+    }
+  ],
+  "logical_byte_contract": {
+    "uniform_k3_panel_bytes": 113643520,
+    "one_projection_bit_increment_bytes": 1572864,
+    "comparison_exl3_rate_sum": 82,
+    "comparison_exl3_panel_bytes": 129372160,
+    "registered_candidate_rate_sum": 81,
+    "registered_candidate_panel_bytes": 127799296,
+    "logical_margin_bytes": 1572864,
+    "boundary": "This ledger covers trellis payloads and the already-counted scale storage for the complete eight-expert panel. It is not a complete serialized GLM QSRT container ledger."
+  },
+  "measurement_order": {
+    "selection": "measure the frozen two-expert K4-down intervention on the same sixteen public documents used for mechanism selection",
+    "absolute_target_screen": "measure the already-published independent 2048-token BF16 reference without changing the registered rate map",
+    "qualification": "requires new sealed document-disjoint 2048-token BF16 reference logits after the construction is frozen"
+  },
+  "acceptance": {
+    "selection_screen": "candidate mean KLD must improve on each pre-registered eight-document half",
+    "absolute_target": "candidate mean KLD must be below 0.059 on the published 2048-token BF16 reference",
+    "claim_boundary": "Neither the sixteen selection documents nor one independent context can establish checkpoint-level generalization."
+  }
+}
