@@ -20,7 +20,7 @@ esac
 experiment_root="/home/sunil/qsrt-glm52-experiments"
 source_root="${experiment_root}/source-windows/glm52-b4734de-layers-55-56-57-58"
 endpoint_root="${experiment_root}/model-cache/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78-nvme"
-source_snapshot="${experiment_root}/source/qsrt-layers55-58-capture-artifact-layer-compatible-20260819"
+source_snapshot="${experiment_root}/source/qsrt-glm52-hot-layer-recovery-k4-down-20260819"
 dependency_root="${experiment_root}/dependencies/exllamav3-v0.0.43-source"
 capture_parent="${experiment_root}/captures/glm52-layers55-56-57-58-wikitext-document-disjoint-routed-inputs"
 capture_root="${capture_parent}/layer-$(printf '%03d' "${layer}")"
