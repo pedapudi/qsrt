@@ -17,7 +17,8 @@ def test_hot_layer_single_reference_queue_is_frozen_before_measurement() -> None
     assert freeze < measurement
     assert "all_document_mean_delta" in source
     assert "absolute_development_target_mean_kld" in source
-    assert "One 2,048-token reference is a development screen" in source
+    assert "One 2,048-token reference supplies an interaction and absolute-target " in source
+    assert "screen. Document-replicated checkpoint qualification requires" in source
 
 
 def test_hot_layer_single_reference_queue_uses_only_retained_arms() -> None:

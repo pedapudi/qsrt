@@ -74,6 +74,26 @@ def _validate_registration(value: Any) -> list[dict[str, Any]]:
             or len(expert_ids) != len(set(expert_ids))
         ):
             raise ValueError("component expert_ids must be distinct IDs from 0 through 255")
+        legacy_adapter_bytes = component.get("logical_adapter_bytes")
+        general_additional_bytes = component.get("logical_additional_bytes")
+        if legacy_adapter_bytes is not None and general_additional_bytes is not None:
+            raise ValueError(
+                "component cannot declare both logical_adapter_bytes and "
+                "logical_additional_bytes"
+            )
+        logical_additional_bytes = (
+            general_additional_bytes
+            if general_additional_bytes is not None
+            else legacy_adapter_bytes
+        )
+        if logical_additional_bytes is None:
+            logical_additional_bytes = 0
+        if (
+            isinstance(logical_additional_bytes, bool)
+            or not isinstance(logical_additional_bytes, int)
+            or logical_additional_bytes < 0
+        ):
+            raise ValueError("component logical additional bytes must be nonnegative")
         seen_layers.add(model_layer)
         normalized.append(
             {
@@ -81,6 +101,7 @@ def _validate_registration(value: Any) -> list[dict[str, Any]]:
                 "model_layer": model_layer,
                 "source_artifact_name": source_name,
                 "expert_ids": sorted(expert_ids),
+                "logical_additional_bytes": logical_additional_bytes,
             }
         )
     if [record["model_layer"] for record in normalized] != sorted(seen_layers):
@@ -163,7 +184,8 @@ def materialize_multi_layer_intervention(
                 "evidence_boundary": (
                     "This component copies only the experts frozen by the "
                     "multi-layer model-KLD selection. Its dense endpoints are "
-                    "an experiment representation, not serialized QSRT payloads."
+                    "an experiment representation. They are not serialized QSRT "
+                    "payloads."
                 ),
             }
             atomic_write_json(component_root / "manifest.json", component_manifest)
@@ -185,9 +207,9 @@ def materialize_multi_layer_intervention(
                 }
             )
             total_dense_endpoint_bytes += component_bytes
-            total_logical_additional_bytes += int(
-                registered.get("logical_adapter_bytes", 0)
-            )
+            total_logical_additional_bytes += registered[
+                "logical_additional_bytes"
+            ]
             total_experts += len(selected)
 
         manifest = {

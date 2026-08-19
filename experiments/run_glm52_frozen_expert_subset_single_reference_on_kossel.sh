@@ -101,7 +101,11 @@ else:
         experts = available_experts
     model_layers = [report["layer"]]
     experts_by_layer = {str(report["layer"]): experts}
-assert 1 <= len(available_experts) <= 8
+if is_multi_layer:
+    assert 2 <= len(model_layers) <= 75
+    assert 1 <= len(available_experts) <= 8 * len(model_layers)
+else:
+    assert 1 <= len(available_experts) <= 8
 assert experts
 if not is_multi_layer:
     assert len(experts) == len(set(experts))
@@ -133,7 +137,10 @@ registration = {
     },
     "acceptance": {
         "absolute_target_mean_kld": 0.059,
-        "evidence_boundary": "one independent context is an absolute-target screen, not qualification"
+        "evidence_boundary": (
+            "One independent context supplies an absolute-target screen. "
+            "Document-replicated evidence is required for qualification."
+        ),
     },
 }
 temporary = output_path.with_suffix(".partial")

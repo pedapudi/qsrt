@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _first_quoted_python_heredoc(path: Path) -> str:
+    lines = path.read_text().splitlines()
+    start = next(
+        index + 1 for index, line in enumerate(lines) if "<<'PY'" in line
+    )
+    end = next(
+        index for index in range(start, len(lines)) if lines[index] == "PY"
+    )
+    return "\n".join(lines[start:end]) + "\n"
 
 
 def test_bounded_hot_layer_download_names_only_registered_shards() -> None:
@@ -78,6 +92,151 @@ def test_hot_layer_recovery_waits_for_a_complete_capture() -> None:
     assert "test -f \"${capture_index}\"" in launcher
     assert "for layer in 55 56 57 58" in launcher
     assert "bash \"${pipeline}\" \"${layer}\"" in launcher
+
+
+def test_hot_layer_long_screen_freezes_a_cross_layer_candidate_first() -> None:
+    launcher = (
+        ROOT
+        / "experiments/continue_glm52_hot_layer_retained_arms_to_single_reference_on_kossel.sh"
+    ).read_text()
+
+    assert "best_direct_record_by_layer" in launcher
+    assert "selected_cross_layer_records" in launcher
+    assert "logical_additional_bytes" in launcher
+    assert "1_572_864 * expert_count" in launcher
+    assert "65_536 * expert_count" in launcher
+    assert (
+        "glm52_layers55_56_57_58_public_document_selected_cross_layer_composition.json"
+        in launcher
+    )
+    assert "materialize_glm52_multi_layer_dense_intervention.py" in launcher
+    assert 'if test "${artifact_kind}" = "multi_layer"' in launcher
+    queue_write = launcher.index("os.replace(temporary, queue_path)")
+    long_screen_loop = launcher.index("while IFS=$'\\t' read -r artifact_kind")
+    assert queue_write < long_screen_loop
+
+    single_reference_launcher = (
+        ROOT
+        / "experiments/run_glm52_frozen_expert_subset_single_reference_on_kossel.sh"
+    ).read_text()
+    assert "8 * len(model_layers)" in single_reference_launcher
+
+
+def test_hot_layer_queue_selects_one_public_document_arm_per_layer(
+    tmp_path: Path,
+) -> None:
+    launcher_path = (
+        ROOT
+        / "experiments/continue_glm52_hot_layer_retained_arms_to_single_reference_on_kossel.sh"
+    )
+    experiment_root = tmp_path / "experiment"
+    constructions = {
+        "down-refit": "hot-band-frozen8-reconstructed-activation-down-refit-merged",
+        "k4-down-refit": "hot-band-frozen8-k3-gate-k3-up-k4-down-refit-merged",
+        "rank4-down-recovery": (
+            "hot-band-frozen8-low-rank-down-refit-bf16-rank4-merged"
+        ),
+        "uniform-k3": "hot-band-frozen8-uniform-k3-merged",
+    }
+    priorities = {
+        "down-refit": -0.001,
+        "k4-down-refit": -0.002,
+        "rank4-down-recovery": -0.003,
+        "uniform-k3": -0.0005,
+    }
+    for layer in (55, 56, 57, 58):
+        for construction, artifact_suffix in constructions.items():
+            selection_result = (
+                f"glm52-layer{layer}-{construction}-candidate-subset-"
+                "public-reference-selection"
+            )
+            report_path = experiment_root / "results" / selection_result / "report.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps({"status": "complete"}))
+            decision_path = (
+                experiment_root
+                / "launch-records"
+                / selection_result
+                / "selection-decision.json"
+            )
+            decision_path.parent.mkdir(parents=True)
+            priority = priorities[construction]
+            decision_path.write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "report_sha256": hashlib.sha256(
+                            report_path.read_bytes()
+                        ).hexdigest(),
+                        "arms": [
+                            {
+                                "retained": True,
+                                "selected_experts": [layer - 50],
+                                "name": "expert-alone",
+                                "screening_document_mean_delta": priority,
+                                "selection_check_document_mean_delta": priority,
+                                "all_document_mean_delta": priority,
+                            }
+                        ],
+                    }
+                )
+            )
+            artifact_report_path = (
+                experiment_root
+                / "results"
+                / f"glm52-layer{layer}-{artifact_suffix}"
+                / "report.json"
+            )
+            artifact_report_path.parent.mkdir(parents=True)
+            artifact_report_path.write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "manifest_sha256": f"{layer:02x}" * 32,
+                    }
+                )
+            )
+
+    queue_path = experiment_root / "launch-records/queue.json"
+    registration_path = experiment_root / "registrations/cross-layer.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-",
+            str(experiment_root),
+            str(queue_path),
+            str(registration_path),
+            "cross-layer-artifact",
+        ],
+        input=_first_quoted_python_heredoc(launcher_path),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "retained_arm_count" in completed.stdout
+    registration = json.loads(registration_path.read_text())
+    queue = json.loads(queue_path.read_text())
+
+    assert [record["model_layer"] for record in registration["components"]] == [
+        55,
+        56,
+        57,
+        58,
+    ]
+    assert all(
+        record["construction"] == "rank4-down-recovery"
+        for record in registration["components"]
+    )
+    assert all(
+        record["logical_additional_bytes"] == 65_536
+        for record in registration["components"]
+    )
+    cross_layer = next(
+        record for record in queue["records"] if record["artifact_kind"] == "multi_layer"
+    )
+    assert cross_layer["model_layers"] == [55, 56, 57, 58]
+    assert cross_layer["logical_additional_bytes"] == 4 * 65_536
+    assert queue["status"] == "frozen_before_single_reference_measurement"
 
 
 def test_hot_layer_panels_are_frozen_before_candidate_measurement() -> None:

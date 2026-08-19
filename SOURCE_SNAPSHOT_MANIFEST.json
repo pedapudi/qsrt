@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-19T03:35:44Z",
+  "snapshot_timestamp_utc": "2026-08-19T03:49:39Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -295,7 +295,7 @@
   ],
   "maximum_file_bytes": 10485760,
   "file_count": 518,
-  "total_file_bytes": 8894100,
+  "total_file_bytes": 8912205,
   "files": [
     {
       "path": ".gitignore",
@@ -439,8 +439,8 @@
     },
     {
       "path": "experiments/continue_glm52_hot_layer_retained_arms_to_single_reference_on_kossel.sh",
-      "bytes": 11592,
-      "sha256": "758798b7dbbb7a2a2294424716e3a84604d5005a01f613af27a1fd80e63f8dc7"
+      "bytes": 20863,
+      "sha256": "d68e7b3f0b97c7a94b13fc58dfbdd38a656961d0cd34d2a3ee8eec3b66a56691"
     },
     {
       "path": "experiments/continue_glm52_layer60_rank4_public_reference_screen_on_kossel.sh",
@@ -774,8 +774,8 @@
     },
     {
       "path": "experiments/run_glm52_frozen_expert_subset_single_reference_on_kossel.sh",
-      "bytes": 9366,
-      "sha256": "65b45df525a10bb437da58225819b09f457b5cf590485fdb9005043e37303801"
+      "bytes": 9587,
+      "sha256": "57b3835422ec8a8146eb88c11d3ce7be07280366daff1dfe1666e38253ded19a"
     },
     {
       "path": "experiments/run_glm52_layer52_expert36_down_refit_single_reference_after_selection_queue_on_kossel.sh",
@@ -1844,8 +1844,8 @@
     },
     {
       "path": "scripts/materialize_glm52_multi_layer_dense_intervention.py",
-      "bytes": 11089,
-      "sha256": "43019b9f9499eec6dc1b0d52a1679e9ca18d2d0b2226b7e189899de3be2510d3"
+      "bytes": 12108,
+      "sha256": "78a40e58b5822d0656661e5ab6c00d3453f8683af7191e17748bd2e564aeb0c1"
     },
     {
       "path": "scripts/materialize_glm52_registered_partial_rate_map.py",
@@ -2369,18 +2369,18 @@
     },
     {
       "path": "tests/test_glm52_expert_intervention_runtime.py",
-      "bytes": 29199,
-      "sha256": "2a738b98f906376809d986a5919a9dbaa72f66153ca2055eb9d7568c2965cfb4"
+      "bytes": 30822,
+      "sha256": "48399d1d8b281c930e4a66ef2e09c824a2152a02ded247370fb7624b8bea63ed"
     },
     {
       "path": "tests/test_glm52_hot_layer_pipeline_contract.py",
-      "bytes": 4045,
-      "sha256": "2f0f3f1ec6ba60cd58c8546e80945fdadefc78827ab327cedb973d7e0e290177"
+      "bytes": 9910,
+      "sha256": "3d748f00287df4ba8d4473d019573cc638954ab24c00193fe66b5882369f18d2"
     },
     {
       "path": "tests/test_glm52_hot_layer_single_reference_continuation.py",
-      "bytes": 2224,
-      "sha256": "6aa23304dabd2396b685445b93b1b0c494a16e336514a0afa78b5023a741edfa"
+      "bytes": 2330,
+      "sha256": "786dbdfb9b2ed4730fd51c53961f49f70ef6874ac0718ecf6ba50a934a97c9a8"
     },
     {
       "path": "tests/test_glm52_k3_k4_allocation.py",

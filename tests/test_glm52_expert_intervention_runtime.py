@@ -236,11 +236,13 @@ def test_multi_layer_intervention_materializes_only_registered_experts(
                 "model_layer": 60,
                 "source_artifact_name": layer_60.name,
                 "expert_ids": [7],
+                "logical_additional_bytes": 1024,
             },
             {
                 "model_layer": 63,
                 "source_artifact_name": layer_63.name,
                 "expert_ids": [8, 2],
+                "logical_additional_bytes": 2048,
             },
         ],
     }
@@ -258,7 +260,7 @@ def test_multi_layer_intervention_materializes_only_registered_experts(
 
     assert report["model_layers"] == [60, 63]
     assert report["expert_ids_by_layer"] == {"60": [7], "63": [2, 8]}
-    assert report["logical_additional_bytes"] == 0
+    assert report["logical_additional_bytes"] == 3072
     assert validated["model_layers"] == (60, 63)
     assert validated["expert_ids_by_layer"] == {60: (7,), 63: (2, 8)}
     assert dispatched["artifact_kind"] == "multi_layer"
@@ -309,6 +311,50 @@ def test_multi_layer_intervention_rejects_component_identity_drift(
 
     with pytest.raises(ValueError, match="size mismatch|SHA-256 mismatch"):
         validate_multi_layer_intervention_artifact(destination)
+
+
+def test_multi_layer_registration_rejects_ambiguous_additional_bytes(
+    tmp_path: Path,
+) -> None:
+    results_root = tmp_path / "results"
+    results_root.mkdir()
+    for layer in (60, 63):
+        _write_bounded_dense_artifact(
+            results_root / f"layer-{layer}", model_layer=layer, experts=[layer]
+        )
+    registration_path = tmp_path / "registration.json"
+    registration_path.write_text(
+        json.dumps(
+            {
+                "schema": "qsrt_glm52_multi_layer_intervention_registration",
+                "schema_version": 1,
+                "frozen_at_utc": "2026-08-19T00:00:00Z",
+                "components": [
+                    {
+                        "model_layer": layer,
+                        "source_artifact_name": f"layer-{layer}",
+                        "expert_ids": [layer],
+                        **(
+                            {
+                                "logical_adapter_bytes": 1,
+                                "logical_additional_bytes": 1,
+                            }
+                            if layer == 60
+                            else {}
+                        ),
+                    }
+                    for layer in (60, 63)
+                ],
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="cannot declare both"):
+        materialize_multi_layer_intervention(
+            registration_path=registration_path,
+            results_root=results_root,
+            destination=tmp_path / "candidate",
+        )
 
 
 def test_single_layer_composition_copies_disjoint_registered_experts(
