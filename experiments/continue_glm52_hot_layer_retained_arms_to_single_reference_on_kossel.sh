@@ -65,6 +65,8 @@ for layer in (55, 56, 57, 58):
             raise ValueError(f"candidate artifact is incomplete: {artifact_report_path}")
         if decision.get("report_sha256") != hashlib.sha256(report_path.read_bytes()).hexdigest():
             raise ValueError(f"selection report identity changed: {report_path}")
+        retained_singletons = []
+        retained_subsets = set()
         for arm in decision.get("arms", []):
             if not arm.get("retained"):
                 continue
@@ -78,6 +80,10 @@ for layer in (55, 56, 57, 58):
             arm_name = arm.get("name")
             if not isinstance(arm_name, str) or not arm_name:
                 raise ValueError(f"retained arm has no name: {decision_path}")
+            expert_subset = tuple(sorted(experts))
+            retained_subsets.add(expert_subset)
+            if len(expert_subset) == 1:
+                retained_singletons.append(arm)
             result_name = (
                 f"glm52-layer{layer}-{construction}-{arm_name}-"
                 "single-reference-absolute-target-screen"
@@ -100,12 +106,58 @@ for layer in (55, 56, 57, 58):
                         "selection_check_document_mean_delta"
                     ],
                     "all_document_mean_delta": arm["all_document_mean_delta"],
+                    "selection_priority_score": arm["all_document_mean_delta"],
+                    "selection_basis": "direct KLD for this predeclared arm",
                     "result_directory_name": result_name,
                 }
             )
+        if len(retained_singletons) >= 2:
+            union_experts = tuple(
+                sorted(
+                    arm["selected_experts"][0]
+                    for arm in retained_singletons
+                )
+            )
+            if union_experts not in retained_subsets:
+                arm_name = "union-of-retained-singletons"
+                result_name = (
+                    f"glm52-layer{layer}-{construction}-{arm_name}-"
+                    "single-reference-absolute-target-screen"
+                )
+                records.append(
+                    {
+                        "model_layer": layer,
+                        "construction": construction,
+                        "arm_name": arm_name,
+                        "selected_experts": list(union_experts),
+                        "component_singleton_arm_names": sorted(
+                            arm["name"] for arm in retained_singletons
+                        ),
+                        "artifact_directory_name": artifact_name,
+                        "artifact_manifest_identity": artifact_report[
+                            "manifest_sha256"
+                        ],
+                        "selection_decision_sha256": hashlib.sha256(
+                            decision_path.read_bytes()
+                        ).hexdigest(),
+                        "screening_document_mean_delta": None,
+                        "selection_check_document_mean_delta": None,
+                        "all_document_mean_delta": None,
+                        "selection_priority_score": sum(
+                            arm["all_document_mean_delta"]
+                            for arm in retained_singletons
+                        ),
+                        "selection_basis": (
+                            "deterministic union of every singleton that passed both "
+                            "ordered document groups; the union had no direct KLD "
+                            "measurement before this long-reference screen"
+                        ),
+                        "result_directory_name": result_name,
+                    }
+                )
 records.sort(
     key=lambda item: (
-        item["all_document_mean_delta"],
+        item["selection_priority_score"],
         item["model_layer"],
         item["construction"],
         item["arm_name"],
@@ -119,8 +171,10 @@ queue = {
         "two ordered groups of eight public 512-token BF16-reference documents"
     ),
     "ordering_rule": (
-        "ascending all-document candidate-minus-resident mean KLD; the separate "
-        "2,048-token reference does not affect selection or ordering"
+        "ascending selection priority score; a directly measured arm uses its "
+        "all-document candidate-minus-resident mean KLD, while a deterministic "
+        "singleton union uses the sum of its component singleton values. The "
+        "separate 2,048-token reference does not affect selection or ordering"
     ),
     "absolute_development_target_mean_kld": 0.059,
     "evidence_boundary": (

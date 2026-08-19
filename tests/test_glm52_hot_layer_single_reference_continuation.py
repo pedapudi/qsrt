@@ -29,6 +29,18 @@ def test_hot_layer_single_reference_queue_uses_only_retained_arms() -> None:
     assert '"frozen_expert_subset"' in source
 
 
+def test_hot_layer_single_reference_queue_freezes_singleton_unions() -> None:
+    source = SCRIPT.read_text()
+    assert 'if len(retained_singletons) >= 2:' in source
+    assert 'arm_name = "union-of-retained-singletons"' in source
+    assert '"component_singleton_arm_names"' in source
+    assert '"selection_priority_score": sum(' in source
+    assert (
+        "deterministic union of every singleton that passed both "
+        in source
+    )
+
+
 def test_hot_layer_single_reference_script_has_valid_shell_syntax() -> None:
     result = subprocess.run(
         ["bash", "-n", str(SCRIPT)],
