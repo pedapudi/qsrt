@@ -1,261 +1,17 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-18T22:09:30Z",
+  "snapshot_timestamp_utc": "2026-08-19T03:22:06Z",
   "source_git": {
-    "origin": "git@github.com:local-inference-lab/qsrt.git",
-    "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
-    "branch": "master",
-    "upstream": "origin/master",
-    "ahead_behind": "0\t0",
-    "status_porcelain_v1": [
-      "M README.md",
-      " M docs/qsrt-2bpw-codec.md",
-      " M docs/qsrt-technical-brief.md",
-      " M docs/viterbi-trellis-explainer.html",
-      " M qsrt/exl3_encoder_backend.py",
-      " M qsrt/glm52_pilot.py",
-      " M qsrt/qsrt_codec_pilot.py",
-      " M qsrt/sqg_quantizer.py",
-      " M tests/test_glm52_pilot.py",
-      " M tests/test_qsrt_codec_pilot.py",
-      " M tests/test_sqg_quantizer.py",
-      "?? docs/glm52-experiment-journal.md",
-      "?? docs/glm52-layer3-kld-results.md",
-      "?? docs/qsrt-blockldlq-no-feedback-audit.md",
-      "?? docs/qsrt-exl3-comparative-assessment.md",
-      "?? docs/qsrt-improvement-strategy.md",
-      "?? docs/qsrt-three-improvements-infographic.html",
-      "?? docs/qsrt-two-bit-research-corpus.md",
-      "?? experiments/",
-      "?? qsrt/glm52_blockldlq_feedback.py",
-      "?? qsrt/glm52_document_disjoint_confirmation.py",
-      "?? qsrt/glm52_down_construction.py",
-      "?? qsrt/glm52_down_refit.py",
-      "?? qsrt/glm52_down_refit_rate_pool.py",
-      "?? qsrt/glm52_downstream_curvature.py",
-      "?? qsrt/glm52_engine_kld.py",
-      "?? qsrt/glm52_expert_intervention.py",
-      "?? qsrt/glm52_expert_intervention_runtime.py",
-      "?? qsrt/glm52_k3_k4_allocation.py",
-      "?? qsrt/glm52_low_rank_down_adapter.py",
-      "?? qsrt/glm52_paired_kld.py",
-      "?? qsrt/glm52_real_weight_benchmark.py",
-      "?? qsrt/glm52_reporting_output.py",
-      "?? qsrt/glm52_routed_input_curvature.py",
-      "?? qsrt/glm52_tiny_benchmark.py",
-      "?? qsrt/glm52_two_sided_curvature.py",
-      "?? qsrt/synthetic_source_distortion.py",
-      "?? qsrt/tiny_improvement_benchmark.py",
-      "?? qsrt/two_sided_ldlq.py",
-      "?? runtime/",
-      "?? scripts/benchmark_glm52_production_codec.py",
-      "?? scripts/benchmark_glm52_tiny_quantization.py",
-      "?? scripts/benchmark_qsrt_tiny_improvements.py",
-      "?? scripts/build_glm52_dense_expert_interventions.py",
-      "?? scripts/build_glm52_down_construction_comparison.py",
-      "?? scripts/build_glm52_down_refit_rate_pool.py",
-      "?? scripts/build_glm52_downstream_curvature_factors.py",
-      "?? scripts/build_glm52_low_rank_down_adapter.py",
-      "?? scripts/build_glm52_wikitext_corpus_plan.py",
-      "?? scripts/compare_glm52_dense_intervention_identity.py",
-      "?? scripts/embed_glm52_tiny_benchmark_in_infographic.py",
-      "?? scripts/index_glm52_experiment_artifacts.py",
-      "?? scripts/materialize_glm52_down_refit_rate_pool_allocation.py",
-      "?? scripts/materialize_glm52_fixed_mixed_k3_k4.py",
-      "?? scripts/measure_synthetic_source_distortion.py",
-      "?? scripts/merge_glm52_dense_expert_interventions.py",
-      "?? scripts/merge_glm52_down_refit_rate_pool.py",
-      "?? scripts/merge_glm52_production_codec_results.py",
-      "?? scripts/refit_glm52_reconstructed_activation_down.py",
-      "?? scripts/run_glm52_blockldlq_feedback_ablation.py",
-      "?? scripts/run_glm52_document_disjoint_reference_confirmation.py",
-      "?? scripts/run_glm52_paired_expert_intervention_kld.py",
-      "?? scripts/run_glm52_routed_input_curvature.py",
-      "?? scripts/run_glm52_two_sided_curvature.py",
-      "?? scripts/score_glm52_reporting_expert_outputs.py",
-      "?? scripts/validate_glm52_dense_intervention_cuda.py",
-      "?? scripts/validate_glm52_engine_kld_v39.py",
-      "?? scripts/validate_glm52_exl3_host_local_copy.py",
-      "?? scripts/validate_glm52_two_sided_real_weight_cuda.py",
-      "?? scripts/validate_two_sided_curvature_cuda.py",
-      "?? tests/test_glm52_blockldlq_feedback.py",
-      "?? tests/test_glm52_document_disjoint_confirmation.py",
-      "?? tests/test_glm52_down_construction.py",
-      "?? tests/test_glm52_down_refit.py",
-      "?? tests/test_glm52_down_refit_rate_pool.py",
-      "?? tests/test_glm52_downstream_curvature.py",
-      "?? tests/test_glm52_engine_kld.py",
-      "?? tests/test_glm52_expert_intervention.py",
-      "?? tests/test_glm52_expert_intervention_runtime.py",
-      "?? tests/test_glm52_k3_k4_allocation.py",
-      "?? tests/test_glm52_k3_k4_allocation_pre_registration.py",
-      "?? tests/test_glm52_low_rank_down_adapter.py",
-      "?? tests/test_glm52_paired_kld.py",
-      "?? tests/test_glm52_real_weight_benchmark.py",
-      "?? tests/test_glm52_reporting_output.py",
-      "?? tests/test_glm52_routed_input_curvature.py",
-      "?? tests/test_glm52_source_shard_manifest.py",
-      "?? tests/test_glm52_tiny_benchmark.py",
-      "?? tests/test_glm52_two_sided_curvature.py",
-      "?? tests/test_glm52_wikitext_corpus_plan.py",
-      "?? tests/test_index_glm52_experiment_artifacts.py",
-      "?? tests/test_qsrt_improvements_infographic.py",
-      "?? tests/test_synthetic_source_distortion.py",
-      "?? tests/test_tiny_improvement_benchmark.py",
-      "?? tests/test_two_sided_ldlq.py",
-      "?? tests/test_validate_glm52_exl3_host_local_copy.py"
-    ],
-    "modified_tracked_files": [
-      "README.md",
-      "docs/qsrt-2bpw-codec.md",
-      "docs/qsrt-technical-brief.md",
-      "docs/viterbi-trellis-explainer.html",
-      "qsrt/exl3_encoder_backend.py",
-      "qsrt/glm52_pilot.py",
-      "qsrt/qsrt_codec_pilot.py",
-      "qsrt/sqg_quantizer.py",
-      "tests/test_glm52_pilot.py",
-      "tests/test_qsrt_codec_pilot.py",
-      "tests/test_sqg_quantizer.py"
-    ],
-    "untracked_files": [
-      "docs/glm52-experiment-journal.md",
-      "docs/glm52-layer3-kld-results.md",
-      "docs/qsrt-blockldlq-no-feedback-audit.md",
-      "docs/qsrt-exl3-comparative-assessment.md",
-      "docs/qsrt-improvement-strategy.md",
-      "docs/qsrt-three-improvements-infographic.html",
-      "docs/qsrt-two-bit-research-corpus.md",
-      "experiments/continue_glm52_down_refit_and_rank4_after_uniform_k3_on_kossel.sh",
-      "experiments/continue_glm52_layer60_rank4_public_reference_screen_on_kossel.sh",
-      "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
-      "experiments/create_glm52_per_expert_correctness_kld_control_container.sh",
-      "experiments/create_glm52_uniform_k3_kld_chunked_full_vocabulary_container.sh",
-      "experiments/create_glm52_uniform_k3_kld_only_lower_memory_container.sh",
-      "experiments/create_glm52_uniform_k3_model_runner_v1_container.sh",
-      "experiments/download_glm52_layers_52_60_63_64_source_shards_on_kossel.sh",
-      "experiments/download_glm52_public_reference_auxiliary_on_kossel.sh",
-      "experiments/glm52_layer3_k3_k4_allocation_pre_registration.json",
-      "experiments/glm52_layer3_rank4_expert103_low_rank_down_confirmation_registration.json",
-      "experiments/glm52_layer3_rank4_expert103_low_rank_down_runtime_qualification.json",
-      "experiments/glm52_layer3_rank4_expert103_public_reference_auxiliary_result.json",
-      "experiments/glm52_layer3_rate_pattern_panel.json",
-      "experiments/glm52_layer3_rate_preserving_down_refit_k3_k4_pre_registration.json",
-      "experiments/glm52_layer52_rate_pattern_panel.json",
-      "experiments/glm52_layer60_rate_pattern_panel.json",
-      "experiments/glm52_layer63_rate_pattern_panel.json",
-      "experiments/glm52_layer64_rate_pattern_panel.json",
-      "experiments/glm52_layers_52_60_63_64_source_shards.json",
-      "experiments/glm52_public_reference_auxiliary_plan.json",
-      "experiments/glm52_source_teacher_weight_identity.json",
-      "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
-      "experiments/materialize_glm52_fixed_mixed_k3_k4_on_kossel.sh",
-      "experiments/merge_and_materialize_glm52_down_refit_rate_pool_on_kossel.sh",
-      "experiments/merge_glm52_candidate_slices_on_kossel.sh",
-      "experiments/merge_glm52_down_construction_slices_on_kossel.sh",
-      "experiments/merge_glm52_low_rank_down_slices_on_kossel.sh",
-      "experiments/run_glm52_blockldlq_feedback_slices_on_kossel.sh",
-      "experiments/run_glm52_candidate_kld_chunked_full_vocabulary_on_kossel.sh",
-      "experiments/run_glm52_complete_panel_public_reference_screen_on_kossel.sh",
-      "experiments/run_glm52_document_disjoint_reference_confirmation_on_kossel.sh",
-      "experiments/run_glm52_down_construction_slice_on_kossel.sh",
-      "experiments/run_glm52_down_refit_rate_pool_slices_on_kossel.sh",
-      "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
-      "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
-      "experiments/run_glm52_layers60_64_52_63_rank4_down_adapter_and_merge_on_kossel.sh",
-      "experiments/run_glm52_layers60_64_52_63_uniform_k3_and_merge_on_kossel.sh",
-      "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
-      "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
-      "experiments/run_glm52_reporting_expert_output_comparison_on_kossel.sh",
-      "experiments/run_glm52_reporting_input_capture_on_kossel.sh",
-      "experiments/run_glm52_routed_input_curvature_slices_on_kossel.sh",
-      "experiments/run_glm52_two_sided_real_weight_cuda_closure_on_kossel.sh",
-      "experiments/run_glm52_uniform_k4_slices_on_kossel.sh",
-      "experiments/start_glm52_per_expert_correctness_kld_control_container.sh",
-      "experiments/start_glm52_uniform_k3_kld_chunked_full_vocabulary_container.sh",
-      "experiments/start_glm52_uniform_k3_kld_only_lower_memory_container.sh",
-      "experiments/start_glm52_uniform_k3_model_runner_v1_container.sh",
-      "experiments/sync_glm52_rate_preserving_down_refit_source_to_kossel.sh",
-      "qsrt/glm52_blockldlq_feedback.py",
-      "qsrt/glm52_document_disjoint_confirmation.py",
-      "qsrt/glm52_down_construction.py",
-      "qsrt/glm52_down_refit.py",
-      "qsrt/glm52_down_refit_rate_pool.py",
-      "qsrt/glm52_downstream_curvature.py",
-      "qsrt/glm52_engine_kld.py",
-      "qsrt/glm52_expert_intervention.py",
-      "qsrt/glm52_expert_intervention_runtime.py",
-      "qsrt/glm52_k3_k4_allocation.py",
-      "qsrt/glm52_low_rank_down_adapter.py",
-      "qsrt/glm52_paired_kld.py",
-      "qsrt/glm52_real_weight_benchmark.py",
-      "qsrt/glm52_reporting_output.py",
-      "qsrt/glm52_routed_input_curvature.py",
-      "qsrt/glm52_tiny_benchmark.py",
-      "qsrt/glm52_two_sided_curvature.py",
-      "qsrt/synthetic_source_distortion.py",
-      "qsrt/tiny_improvement_benchmark.py",
-      "qsrt/two_sided_ldlq.py",
-      "runtime/glm52_expert_intervention/sitecustomize.py",
-      "scripts/benchmark_glm52_production_codec.py",
-      "scripts/benchmark_glm52_tiny_quantization.py",
-      "scripts/benchmark_qsrt_tiny_improvements.py",
-      "scripts/build_glm52_dense_expert_interventions.py",
-      "scripts/build_glm52_down_construction_comparison.py",
-      "scripts/build_glm52_down_refit_rate_pool.py",
-      "scripts/build_glm52_downstream_curvature_factors.py",
-      "scripts/build_glm52_low_rank_down_adapter.py",
-      "scripts/build_glm52_wikitext_corpus_plan.py",
-      "scripts/compare_glm52_dense_intervention_identity.py",
-      "scripts/embed_glm52_tiny_benchmark_in_infographic.py",
-      "scripts/index_glm52_experiment_artifacts.py",
-      "scripts/materialize_glm52_down_refit_rate_pool_allocation.py",
-      "scripts/materialize_glm52_fixed_mixed_k3_k4.py",
-      "scripts/measure_synthetic_source_distortion.py",
-      "scripts/merge_glm52_dense_expert_interventions.py",
-      "scripts/merge_glm52_down_refit_rate_pool.py",
-      "scripts/merge_glm52_production_codec_results.py",
-      "scripts/refit_glm52_reconstructed_activation_down.py",
-      "scripts/run_glm52_blockldlq_feedback_ablation.py",
-      "scripts/run_glm52_document_disjoint_reference_confirmation.py",
-      "scripts/run_glm52_paired_expert_intervention_kld.py",
-      "scripts/run_glm52_routed_input_curvature.py",
-      "scripts/run_glm52_two_sided_curvature.py",
-      "scripts/score_glm52_reporting_expert_outputs.py",
-      "scripts/validate_glm52_dense_intervention_cuda.py",
-      "scripts/validate_glm52_engine_kld_v39.py",
-      "scripts/validate_glm52_exl3_host_local_copy.py",
-      "scripts/validate_glm52_two_sided_real_weight_cuda.py",
-      "scripts/validate_two_sided_curvature_cuda.py",
-      "tests/test_glm52_blockldlq_feedback.py",
-      "tests/test_glm52_document_disjoint_confirmation.py",
-      "tests/test_glm52_down_construction.py",
-      "tests/test_glm52_down_refit.py",
-      "tests/test_glm52_down_refit_rate_pool.py",
-      "tests/test_glm52_downstream_curvature.py",
-      "tests/test_glm52_engine_kld.py",
-      "tests/test_glm52_expert_intervention.py",
-      "tests/test_glm52_expert_intervention_runtime.py",
-      "tests/test_glm52_k3_k4_allocation.py",
-      "tests/test_glm52_k3_k4_allocation_pre_registration.py",
-      "tests/test_glm52_low_rank_down_adapter.py",
-      "tests/test_glm52_paired_kld.py",
-      "tests/test_glm52_real_weight_benchmark.py",
-      "tests/test_glm52_reporting_output.py",
-      "tests/test_glm52_routed_input_curvature.py",
-      "tests/test_glm52_source_shard_manifest.py",
-      "tests/test_glm52_tiny_benchmark.py",
-      "tests/test_glm52_two_sided_curvature.py",
-      "tests/test_glm52_wikitext_corpus_plan.py",
-      "tests/test_index_glm52_experiment_artifacts.py",
-      "tests/test_qsrt_improvements_infographic.py",
-      "tests/test_synthetic_source_distortion.py",
-      "tests/test_tiny_improvement_benchmark.py",
-      "tests/test_two_sided_ldlq.py",
-      "tests/test_validate_glm52_exl3_host_local_copy.py"
-    ],
-    "modified_tracked_count": 11,
-    "untracked_file_count": 134
+    "origin": "git@github.com:pedapudi/qsrt.git",
+    "base_commit": "a4bd00e21ee44791dbc90eb0fa04209d583f770e",
+    "branch": "main",
+    "upstream": "origin/main",
+    "ahead_behind": "0\t1",
+    "status_porcelain_v1": [],
+    "modified_tracked_files": [],
+    "untracked_files": [],
+    "modified_tracked_count": 0,
+    "untracked_file_count": 0
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -280,8 +36,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 453,
-  "total_file_bytes": 8543186,
+  "file_count": 515,
+  "total_file_bytes": 8885251,
   "files": [
     {
       "path": ".gitignore",
@@ -295,8 +51,8 @@
     },
     {
       "path": "CONTINUATION_GUIDE.md",
-      "bytes": 26214,
-      "sha256": "ac554c88279405fa2f1c00301730c251c44545d6239480cef81d6c41d321b0b5"
+      "bytes": 30057,
+      "sha256": "49d64a2922ef661b4839e3186834d9d6a6ec8a189b4d4a8d95446babd4eb21d1"
     },
     {
       "path": "README.md",
@@ -320,8 +76,8 @@
     },
     {
       "path": "docs/glm52-experiment-journal.md",
-      "bytes": 157435,
-      "sha256": "7cd83590e90de2fa140dcc5f075aae4eb8c1780bfc780d77f3c07809b4fdd052"
+      "bytes": 173425,
+      "sha256": "b78cbc1d6c622e61f08c74f906b9994782b2daa55ff8345caef059c925d6752e"
     },
     {
       "path": "docs/glm52-layer3-kld-results.md",
@@ -360,8 +116,8 @@
     },
     {
       "path": "docs/qsrt-improvement-strategy.md",
-      "bytes": 54600,
-      "sha256": "fe198b11955ecc9b323d3065d2ce668f48ce5b2be7ce83d14ce0417ba0dd0254"
+      "bytes": 59400,
+      "sha256": "f1b05e31a12b4fddff64ccbe252f8b432e88bd21d28f3fb356031028d3796a20"
     },
     {
       "path": "docs/qsrt-technical-brief.md",
@@ -384,14 +140,89 @@
       "sha256": "fbe628f1f84e9c6d0c96a9111fb0a6cb16754be767a955f88d8410240eba79a0"
     },
     {
+      "path": "experiments/build_and_screen_glm52_hot_layer_down_recovery_on_kossel.sh",
+      "bytes": 23611,
+      "sha256": "d2bee2b37b32336ef2c48ddb8eb96bbc568bc8f60f4a3a4c0d85928396a3e857"
+    },
+    {
+      "path": "experiments/build_and_screen_glm52_layer52_model_kld_selected_down_recovery_composition_on_kossel.sh",
+      "bytes": 5381,
+      "sha256": "88aeff03b7dd1366e8fcf7615dad739771ff560b51ddea487ba4c0c905a591ad"
+    },
+    {
+      "path": "experiments/build_and_screen_glm52_layers60_63_64_model_kld_selected_recovery_composition_on_kossel.sh",
+      "bytes": 3066,
+      "sha256": "da7030441b05fbee189c012c0af747ce0137490d66eb0c10dba4d1b5491a8f20"
+    },
+    {
+      "path": "experiments/build_glm52_layer63_registered_partial_k3_k4_down_refit_on_kossel.sh",
+      "bytes": 10183,
+      "sha256": "617fb00ca79c3da5b13d74d564c371e76542be27a6a6090b954d34803723aa97"
+    },
+    {
       "path": "experiments/continue_glm52_down_refit_and_rank4_after_uniform_k3_on_kossel.sh",
       "bytes": 1153,
       "sha256": "5b0c7a646795067a0cbc6e0762e8935205294b7a00c5873dbf8451903d166d7d"
     },
     {
+      "path": "experiments/continue_glm52_down_refit_singleton_model_kld_selection_on_kossel.sh",
+      "bytes": 1612,
+      "sha256": "b95ed37dc36453250cbd87da63aeb15f30119564c27c63c8ff4431f93a8e21d0"
+    },
+    {
+      "path": "experiments/continue_glm52_hot_layer_recovery_after_input_capture_on_kossel.sh",
+      "bytes": 1234,
+      "sha256": "0b0ae8db02f6f881b91d90977fca159d32ad904e696daf2016500f9e8507aad8"
+    },
+    {
+      "path": "experiments/continue_glm52_hot_layer_retained_arms_to_single_reference_on_kossel.sh",
+      "bytes": 11592,
+      "sha256": "758798b7dbbb7a2a2294424716e3a84604d5005a01f613af27a1fd80e63f8dc7"
+    },
+    {
       "path": "experiments/continue_glm52_layer60_rank4_public_reference_screen_on_kossel.sh",
       "bytes": 1104,
       "sha256": "b811b08295003e60769071f4a3f0122b13c458c8455b5a4b03c9a5361a7b54ac"
+    },
+    {
+      "path": "experiments/continue_glm52_layer63_candidate_subset_selection_after_singletons_on_kossel.sh",
+      "bytes": 1558,
+      "sha256": "3c396f4f1af41cf59243b92e5f07676e304c02768dc6383554a289855152dcea"
+    },
+    {
+      "path": "experiments/continue_glm52_layer63_registered_partial_k3_k4_after_current_queue_on_kossel.sh",
+      "bytes": 1295,
+      "sha256": "ec091aab44988754c8d015921aeae12ef6cf19b643fb03ba1d3a72575dcc387c"
+    },
+    {
+      "path": "experiments/continue_glm52_layer63_retained_down_refit_composition_on_kossel.sh",
+      "bytes": 1319,
+      "sha256": "aea526ec10241cec4d9e1d7d40f35726b010526290aab007270ebf7f695ce955"
+    },
+    {
+      "path": "experiments/continue_glm52_layer63_single_reference_after_selection_on_kossel.sh",
+      "bytes": 484,
+      "sha256": "24a736ca1211deba993d273481e865d12cd8c500143356d37bd0ff249fb32dff"
+    },
+    {
+      "path": "experiments/continue_glm52_layer63_uniform_k3_and_down_refit_public_reference_screens_on_kossel.sh",
+      "bytes": 1085,
+      "sha256": "9487ade3e7587bb5451c1d9b4269a9d17ab7a8a0ef0c2183cb3e924756be1d6c"
+    },
+    {
+      "path": "experiments/continue_glm52_layers52_60_64_down_refit_public_reference_screens_on_kossel.sh",
+      "bytes": 824,
+      "sha256": "ae321e5de6226b65b49fd5ca59d43dc4136fd848e8ece018f6f4c83248e842c8"
+    },
+    {
+      "path": "experiments/continue_glm52_layers64_52_63_public_reference_screens_after_layer60_on_kossel.sh",
+      "bytes": 1637,
+      "sha256": "5bd75cb50ea6d1daea771a0a70e56974fb22040c2cd0a05ad165e336d794c872"
+    },
+    {
+      "path": "experiments/continue_glm52_registered_singleton_public_reference_screens_after_panel_sequence_on_kossel.sh",
+      "bytes": 1352,
+      "sha256": "d046b8f7e9729e6c741fde6e503a641436f352c95b5572fddb557e443a7eca3a"
     },
     {
       "path": "experiments/continue_glm52_uniform_k3_after_input_capture_on_kossel.sh",
@@ -422,6 +253,11 @@
       "path": "experiments/download_glm52_layers_52_60_63_64_source_shards_on_kossel.sh",
       "bytes": 4217,
       "sha256": "76d7732686827be75f94d16a6fe71e73b5516f8829bd6736a8611d408137f2fa"
+    },
+    {
+      "path": "experiments/download_glm52_layers_55_56_57_58_source_shards_after_gpu_queue_on_kossel.sh",
+      "bytes": 4541,
+      "sha256": "22949f4f7604e24bd1c298c5e64eddc5121d15dce005193daaeaf75016a6ce01"
     },
     {
       "path": "experiments/download_glm52_public_reference_auxiliary_on_kossel.sh",
@@ -459,9 +295,59 @@
       "sha256": "d9f34c83e1d152018ae9305cc6f9835c3efd0e380ed43e99d81a7c6490d0aa3b"
     },
     {
+      "path": "experiments/glm52_layer52_down_refit_singleton_model_kld_selection_plan.json",
+      "bytes": 2643,
+      "sha256": "8619914cd16a2c9b68916590afa8a52015eb9f6d3c08b0dfdecb1c384cd9c1ec"
+    },
+    {
+      "path": "experiments/glm52_layer52_expert36_down_refit_single_reference_registration.json",
+      "bytes": 2012,
+      "sha256": "1b8290f2cddc4a44ceb6da3cece40c55efe948e49302e714958f6bb91cc73274"
+    },
+    {
+      "path": "experiments/glm52_layer52_model_kld_selected_down_recovery_composition.json",
+      "bytes": 2636,
+      "sha256": "2e998ba83b1bad40704284aafdb7cf499f595459f0e3299e2ed3a4912d088207"
+    },
+    {
+      "path": "experiments/glm52_layer52_rank4_low_rank_down_singleton_model_kld_selection_plan.json",
+      "bytes": 2633,
+      "sha256": "cfef476b62d9f81af53ab3ed697f2f0ea0a15f10ba098a6f1161311bde732aaf"
+    },
+    {
       "path": "experiments/glm52_layer52_rate_pattern_panel.json",
       "bytes": 1510,
       "sha256": "59230d23c5ad02e2bb6f1c6fd876803ac8d5e2a8c5b9769639e6e031ae206b41"
+    },
+    {
+      "path": "experiments/glm52_layer55_rate_pattern_panel.json",
+      "bytes": 1548,
+      "sha256": "3884c57d309b80ef826c8fd5af169f050e7b6b606d6d439da32e08c540d39d7b"
+    },
+    {
+      "path": "experiments/glm52_layer56_rate_pattern_panel.json",
+      "bytes": 1549,
+      "sha256": "473c549b8813a9f1ff1112fbe550c679825b65db5bb14a195c27c63c59fd1c98"
+    },
+    {
+      "path": "experiments/glm52_layer57_rate_pattern_panel.json",
+      "bytes": 1547,
+      "sha256": "cce30ddc35eb67454bcdc03c6e3159d58361527a4ab79146e5a526ce843f4218"
+    },
+    {
+      "path": "experiments/glm52_layer58_rate_pattern_panel.json",
+      "bytes": 1546,
+      "sha256": "875b39d69731cb3dae0a16b76348436fd2bbbfcf24a6bedc68719bd80a93e9d6"
+    },
+    {
+      "path": "experiments/glm52_layer60_down_refit_singleton_model_kld_selection_plan.json",
+      "bytes": 2827,
+      "sha256": "a3d76bce3b17a697effdc1376cd5413f731bda9f98a5359c46b8c81592db798b"
+    },
+    {
+      "path": "experiments/glm52_layer60_rank4_low_rank_down_singleton_model_kld_selection_plan.json",
+      "bytes": 2442,
+      "sha256": "2e0b06c8e6674088add66a4c218887927c63bb9ca8586aacb86221810da079c3"
     },
     {
       "path": "experiments/glm52_layer60_rate_pattern_panel.json",
@@ -469,9 +355,59 @@
       "sha256": "01d8c587a2d97f66528e49f04402950fec000f6e038f2eb424f961b21f0e7500"
     },
     {
+      "path": "experiments/glm52_layer63_down_refit_model_kld_retained_composition_plan.json",
+      "bytes": 1591,
+      "sha256": "c4e5787501d1f6a2caa92031f50e61cfd1605abd58bb94d45f8e19f8edaccebe"
+    },
+    {
+      "path": "experiments/glm52_layer63_down_refit_model_kld_retained_composition_single_reference_registration.json",
+      "bytes": 2151,
+      "sha256": "7323c269866df3581e1128df9aca142056ad658928c2dd3d2495b5e2eeaec318"
+    },
+    {
+      "path": "experiments/glm52_layer63_down_refit_singleton_model_kld_selection_plan.json",
+      "bytes": 2717,
+      "sha256": "4cca8659ed96be507ae999bf073d70c339afc4b7dd2ce67f344049b4e2b57dec"
+    },
+    {
+      "path": "experiments/glm52_layer63_k4_down_expert164_model_kld_selection_plan.json",
+      "bytes": 1594,
+      "sha256": "610f7dce54378aedc0dcd8326c19742a0c259725b98957be95a93dccd55ad2ed"
+    },
+    {
+      "path": "experiments/glm52_layer63_low_rank_down_candidate_subset_selection_plan.json",
+      "bytes": 2076,
+      "sha256": "9205e45feb090db648ae1c59ee61657dc5db628cdc74775b51e254c0c3ba4967"
+    },
+    {
+      "path": "experiments/glm52_layer63_rank4_expert164_low_rank_down_public_reference_registration.json",
+      "bytes": 3229,
+      "sha256": "e2218d662501f52f3db338c0676fed82cf5dec27d3c0bcbba91173c2608fb93c"
+    },
+    {
       "path": "experiments/glm52_layer63_rate_pattern_panel.json",
       "bytes": 1512,
       "sha256": "16a465e72ef23e65c95f378472501ff415e7c651bd6bc457bba91573589e322d"
+    },
+    {
+      "path": "experiments/glm52_layer63_registered_partial_k3_k4_down_refit.json",
+      "bytes": 5080,
+      "sha256": "6cc4f1953ba9bbe8899dfeb519de332f9123b07b768606f2f37b84c5631d9b95"
+    },
+    {
+      "path": "experiments/glm52_layer64_down_refit_singleton_model_kld_selection_plan.json",
+      "bytes": 2645,
+      "sha256": "3db06b8753db2989fb696e6e1682dc5241755330ff268ff467e098195564befb"
+    },
+    {
+      "path": "experiments/glm52_layer64_rank4_expert253_low_rank_down_public_reference_registration.json",
+      "bytes": 3275,
+      "sha256": "38758d8b52a6fefa3530bde6e24b5266e06f0e81b6e50f89ef9d2baba3d3ae48"
+    },
+    {
+      "path": "experiments/glm52_layer64_rank4_low_rank_down_singleton_model_kld_selection_plan.json",
+      "bytes": 2551,
+      "sha256": "bf0f49f23952d4f7298fff12964995beddfab91878560c9627f34f9b28365d1e"
     },
     {
       "path": "experiments/glm52_layer64_rate_pattern_panel.json",
@@ -479,9 +415,19 @@
       "sha256": "38f52f0a0b3ab152b4c7ea47c5cdfc05b3d104014eba7c2a1f64c05dd4b62928"
     },
     {
+      "path": "experiments/glm52_layers60_63_64_model_kld_selected_recovery_composition.json",
+      "bytes": 3062,
+      "sha256": "c24719383ab9882cd07c969fa1a605e1d617c196808021592de868aaa2368dab"
+    },
+    {
       "path": "experiments/glm52_layers_52_60_63_64_source_shards.json",
       "bytes": 2699,
       "sha256": "844ada3b89341bb86bb0dad9772a49eb429969865e53d4b78e5efdfedec00382"
+    },
+    {
+      "path": "experiments/glm52_layers_55_56_57_58_source_shards.json",
+      "bytes": 2551,
+      "sha256": "b2f4c1611503a2738c6bfb71242839d6fbc512cf7380b538705b20a43a16b0f7"
     },
     {
       "path": "experiments/glm52_public_reference_auxiliary_plan.json",
@@ -497,6 +443,11 @@
       "path": "experiments/glm52_wikitext_document_disjoint_corpus_plan.json",
       "bytes": 1255078,
       "sha256": "b694ac0a1aeb09f7c61a20b5f72289f3e791d616ff7471b5894d857f8c363b55"
+    },
+    {
+      "path": "experiments/mark_glm52_layers55_58_capture_stopping_point_on_kossel.sh",
+      "bytes": 4886,
+      "sha256": "605fdc31194191daa9f09688809bc0670ee34f97f71169e5485d65bc1962a774"
     },
     {
       "path": "experiments/materialize_glm52_fixed_mixed_k3_k4_on_kossel.sh",
@@ -535,8 +486,8 @@
     },
     {
       "path": "experiments/run_glm52_complete_panel_public_reference_screen_on_kossel.sh",
-      "bytes": 8288,
-      "sha256": "3fe5624a5979e0a61d088e8173c9dd9b3f3dc9ffb774015f20a16715994008f6"
+      "bytes": 11279,
+      "sha256": "01176f811e1490635211c4899ca086b4384f123f6fa6c07c5344e2984d02375f"
     },
     {
       "path": "experiments/run_glm52_document_disjoint_reference_confirmation_on_kossel.sh",
@@ -554,9 +505,34 @@
       "sha256": "de4f13d737ebd4ff2b76d992f3742795add2666921241ce801bb094e284cb568"
     },
     {
+      "path": "experiments/run_glm52_frozen_expert_subset_single_reference_on_kossel.sh",
+      "bytes": 9366,
+      "sha256": "65b45df525a10bb437da58225819b09f457b5cf590485fdb9005043e37303801"
+    },
+    {
+      "path": "experiments/run_glm52_layer52_expert36_down_refit_single_reference_after_selection_queue_on_kossel.sh",
+      "bytes": 3392,
+      "sha256": "87c312407dca01a4f9775d9d72f997c613898685344d6ffdf34249b70273dd74"
+    },
+    {
+      "path": "experiments/run_glm52_layer63_k4_down_expert164_independent_screen_after_selection_gate_on_kossel.sh",
+      "bytes": 2611,
+      "sha256": "c762df8aa377ec2fde037a7fab3a6922a2b564559424f3735cdce1780784b7a8"
+    },
+    {
+      "path": "experiments/run_glm52_layer63_retained_down_refit_single_reference_on_kossel.sh",
+      "bytes": 9540,
+      "sha256": "3e4aa873cbf1f242808c728e8c501a3b222de55a5be1b4b3b1e03867514ef7f2"
+    },
+    {
       "path": "experiments/run_glm52_layers52_60_63_64_input_capture_on_kossel.sh",
       "bytes": 7542,
       "sha256": "1c0c1f647dc44598d9a97263a7c4bc77277a71cc5843e47d88bcc7adfc27225e"
+    },
+    {
+      "path": "experiments/run_glm52_layers55_56_57_58_input_capture_after_source_download_on_kossel.sh",
+      "bytes": 9047,
+      "sha256": "8c9143955c5cef26c6a0fd4d0b52d874874b206d63aef5ed2101829af5dfbbab"
     },
     {
       "path": "experiments/run_glm52_layers60_64_52_63_down_refit_and_merge_on_kossel.sh",
@@ -577,6 +553,16 @@
       "path": "experiments/run_glm52_low_rank_down_slice_on_kossel.sh",
       "bytes": 5816,
       "sha256": "95eaaea3714292d14da6001f9a93e0366140e6e6b6eefb86993818be88c3ba5a"
+    },
+    {
+      "path": "experiments/run_glm52_rank4_low_rank_down_single_reference_screens_after_expert36_on_kossel.sh",
+      "bytes": 5101,
+      "sha256": "e22b39bb0841d50f953715b6a304bd3e37fed0c6b0c3fe82ad2ce646ffbd1690"
+    },
+    {
+      "path": "experiments/run_glm52_rank4_low_rank_down_singleton_selection_queue_on_kossel.sh",
+      "bytes": 1140,
+      "sha256": "8ea56de535c3ee9804b000c09b902bb9848246e496c27e3765694ae0bff9099c"
     },
     {
       "path": "experiments/run_glm52_reconstructed_activation_down_refit_slices_on_kossel.sh",
@@ -607,6 +593,16 @@
       "path": "experiments/run_glm52_uniform_k4_slices_on_kossel.sh",
       "bytes": 2856,
       "sha256": "1ee421560879dccbcd7d8d881e11c97863cb5509530dc83b6ec3c36ed5ed762b"
+    },
+    {
+      "path": "experiments/screen_glm52_layer63_k4_down_expert164_after_registered_pair_on_kossel.sh",
+      "bytes": 903,
+      "sha256": "017926bd59b89f3355ce3ae361d1b6a23da07bbcb53bb88df6747b153e57b0de"
+    },
+    {
+      "path": "experiments/screen_glm52_layer63_registered_k4_down_refits_after_active_composition_on_kossel.sh",
+      "bytes": 888,
+      "sha256": "1a2327c0130af7e0ca33a547d2e38583c4b7ac06693ea478e0eac8f56aef9884"
     },
     {
       "path": "experiments/start_glm52_per_expert_correctness_kld_control_container.sh",
@@ -765,8 +761,8 @@
     },
     {
       "path": "qsrt/glm52_down_refit_rate_pool.py",
-      "bytes": 45068,
-      "sha256": "bf2acf3a29704724687065488d78479d6ca3cdda2a5c1495586fd93e69a62818"
+      "bytes": 58816,
+      "sha256": "efbe766891b0bf0c5aba85b39508f9c7c5934a7ab1f4edda0c43c5819edc741a"
     },
     {
       "path": "qsrt/glm52_downstream_curvature.py",
@@ -785,8 +781,8 @@
     },
     {
       "path": "qsrt/glm52_expert_intervention_runtime.py",
-      "bytes": 38198,
-      "sha256": "388eac77df7765623c2de4220ef5775e2fd967b2ab96c1a85d368e66d0dbf270"
+      "bytes": 46184,
+      "sha256": "228ba87b84b84528b04d0fd70ba26ee45ca14234794c6ce8d1c1c1d0f4300db9"
     },
     {
       "path": "qsrt/glm52_k3_k4_allocation.py",
@@ -797,6 +793,11 @@
       "path": "qsrt/glm52_low_rank_down_adapter.py",
       "bytes": 21247,
       "sha256": "5db65f886789755f7442798d2337c36bb719d4fa59ea91d89da737340b104779"
+    },
+    {
+      "path": "qsrt/glm52_model_kld_candidate_selection.py",
+      "bytes": 8212,
+      "sha256": "dd1b19ee231d68489717d4aeb63001a060cdabaade474a45b9ca6109b947a56c"
     },
     {
       "path": "qsrt/glm52_paired_kld.py",
@@ -810,8 +811,8 @@
     },
     {
       "path": "qsrt/glm52_real_weight_benchmark.py",
-      "bytes": 30780,
-      "sha256": "59b4f6dbeba91a8527ff850bb3ae9915d19d9bf9b2c5ac9de39fb492f96ca5c8"
+      "bytes": 31084,
+      "sha256": "a8a9624593be1524536794623a83cbb2bf86ed308281a69f5ea8aa443984b8f4"
     },
     {
       "path": "qsrt/glm52_reporting_output.py",
@@ -1364,6 +1365,11 @@
       "sha256": "8cc9acf61562837f1aab31e39e2716e0fb9c8be654fdc93563cf317fdb5c91e6"
     },
     {
+      "path": "scripts/build_glm52_all_panel_k4_down_registration.py",
+      "bytes": 8550,
+      "sha256": "6967aacdc0d477350305e330d081d2ca6f355214f9f15e8a2ae535f85c8b4c4a"
+    },
+    {
       "path": "scripts/build_glm52_dense_expert_interventions.py",
       "bytes": 2582,
       "sha256": "6fb2eacdd9de89c23254b2ae3520b8bc39328c12da59fde9593c7347d9f3ecaa"
@@ -1382,6 +1388,11 @@
       "path": "scripts/build_glm52_downstream_curvature_factors.py",
       "bytes": 2157,
       "sha256": "f44d712b4cb9a0e80325d1bd060173c0cc4e167594929fefb0de108ba3a57dbf"
+    },
+    {
+      "path": "scripts/build_glm52_error_blind_candidate_subset_plan.py",
+      "bytes": 6080,
+      "sha256": "191bda866855161c69b49a5bcc80eb765d2f6cda3f2b8c977be9fa5ee3a4870e"
     },
     {
       "path": "scripts/build_glm52_low_rank_down_adapter.py",
@@ -1564,6 +1575,21 @@
       "sha256": "1a9d895cc2fa633787106d85f0d3a64420fdf43aea722299f31702dd8f0e62c7"
     },
     {
+      "path": "scripts/materialize_glm52_multi_layer_dense_intervention.py",
+      "bytes": 11089,
+      "sha256": "43019b9f9499eec6dc1b0d52a1679e9ca18d2d0b2226b7e189899de3be2510d3"
+    },
+    {
+      "path": "scripts/materialize_glm52_registered_partial_rate_map.py",
+      "bytes": 845,
+      "sha256": "cd8865a9e74640b3f6ddd5f945539e6ec35610ba8761b446f1af8341b68989d7"
+    },
+    {
+      "path": "scripts/materialize_glm52_single_layer_dense_intervention_composition.py",
+      "bytes": 13050,
+      "sha256": "285c88f99ea1c1f6eacb22c2014c8216372d26a994ae062b007ba730333ec096"
+    },
+    {
       "path": "scripts/materialize_kimi_router_biases.py",
       "bytes": 8907,
       "sha256": "8de623100845e7058f95ac1134fad6f5eead8c9f7f8b7977cc2eb9c0c05ac18d"
@@ -1679,9 +1705,14 @@
       "sha256": "d67f5d4d9f9bd9e5b54e3290ddd1ae9cade37a1fb78ddba9017873954aa28781"
     },
     {
+      "path": "scripts/run_glm52_document_disjoint_candidate_selection.py",
+      "bytes": 16672,
+      "sha256": "936d250310b749b6cca9f44b82fc73c0a664cf521fd5a6e72176749211b88cb5"
+    },
+    {
       "path": "scripts/run_glm52_document_disjoint_reference_confirmation.py",
-      "bytes": 20898,
-      "sha256": "53db3f03fbb1314a573b9fe5024fe925fc87eb904f87c3c9a8b3b1d2bcd733e5"
+      "bytes": 23019,
+      "sha256": "64642f767f9b043871c9a01964705828a3b00d118c5d6cd591012ff82876ff05"
     },
     {
       "path": "scripts/run_glm52_fp4_roundtrip_pilot.py",
@@ -1690,8 +1721,8 @@
     },
     {
       "path": "scripts/run_glm52_paired_expert_intervention_kld.py",
-      "bytes": 47613,
-      "sha256": "0dc707e6f02fbe68bc5a1eb5e100ddb59b4f7f4aba7747b599ed7cd0fd8a20dd"
+      "bytes": 50207,
+      "sha256": "2afc529451d876f65173e431d2894de9b8ad6c0e625f046005327a9653796be8"
     },
     {
       "path": "scripts/run_glm52_qsrt_codec_pilot.py",
@@ -1822,6 +1853,11 @@
       "path": "scripts/stream_k3_pytorch.py",
       "bytes": 69662,
       "sha256": "11adc9a4445fbafd8247d35668790beccbab19725aa715f22f46417a033eb995"
+    },
+    {
+      "path": "scripts/summarize_glm52_candidate_subset_selection.py",
+      "bytes": 1885,
+      "sha256": "a07cd0f14c44aa5c59f58e9b975453ec50befccc4a78977e36fec21af693daf7"
     },
     {
       "path": "scripts/summarize_k3_kld_gate.py",
@@ -2019,6 +2055,11 @@
       "sha256": "2756a817c70332564967769b0fa5b9d859d5fa2b52a932d24776141f0274f44f"
     },
     {
+      "path": "tests/test_glm52_capture_stopping_point.py",
+      "bytes": 1187,
+      "sha256": "153dcaee30c9596f48b290f49ffdbbacfa84dd26b3d3e569db695a3642bb161d"
+    },
+    {
       "path": "tests/test_glm52_document_disjoint_confirmation.py",
       "bytes": 6888,
       "sha256": "5f90d3a59d1a1232ce3daa0248949203cfe0068b931fc37b0d56e4024fe324e1"
@@ -2035,8 +2076,8 @@
     },
     {
       "path": "tests/test_glm52_down_refit_rate_pool.py",
-      "bytes": 7192,
-      "sha256": "5eb394697e895492694c1ec76c1f38cf83ecfc43ae08001d50acdb613fc9d42a"
+      "bytes": 15791,
+      "sha256": "0e8a11de4ad01020bad80df47b1a176690cbe4c466826fca9cc9bcaf3dca1beb"
     },
     {
       "path": "tests/test_glm52_downstream_curvature.py",
@@ -2055,8 +2096,18 @@
     },
     {
       "path": "tests/test_glm52_expert_intervention_runtime.py",
-      "bytes": 16821,
-      "sha256": "b2b541b93c1a44d26be3fa05ef2ac37fb0559c4373ec785422085b376ba2036c"
+      "bytes": 29199,
+      "sha256": "2a738b98f906376809d986a5919a9dbaa72f66153ca2055eb9d7568c2965cfb4"
+    },
+    {
+      "path": "tests/test_glm52_hot_layer_pipeline_contract.py",
+      "bytes": 4045,
+      "sha256": "2f0f3f1ec6ba60cd58c8546e80945fdadefc78827ab327cedb973d7e0e290177"
+    },
+    {
+      "path": "tests/test_glm52_hot_layer_single_reference_continuation.py",
+      "bytes": 2224,
+      "sha256": "6aa23304dabd2396b685445b93b1b0c494a16e336514a0afa78b5023a741edfa"
     },
     {
       "path": "tests/test_glm52_k3_k4_allocation.py",
@@ -2069,9 +2120,19 @@
       "sha256": "3c23aa58f0c26c2dc673621a56aa0ad824298974c50511d8be2eb6234acb59a9"
     },
     {
+      "path": "tests/test_glm52_k4_down_registration.py",
+      "bytes": 5574,
+      "sha256": "ee13159e4f814348c9b2dc2021ab959ace0988128e1a324743bbc69c708da69a"
+    },
+    {
       "path": "tests/test_glm52_low_rank_down_adapter.py",
       "bytes": 7341,
       "sha256": "a76b1fa86129e03404721c42924abbda9a81b4332e0f417e9689c538b9749d62"
+    },
+    {
+      "path": "tests/test_glm52_model_kld_candidate_selection.py",
+      "bytes": 14075,
+      "sha256": "b565ab919ea6409605cf73c7b0e61f90dfbd17a62e2389540e2ee669d806cc86"
     },
     {
       "path": "tests/test_glm52_paired_kld.py",
@@ -2085,8 +2146,8 @@
     },
     {
       "path": "tests/test_glm52_real_weight_benchmark.py",
-      "bytes": 6044,
-      "sha256": "f99b0019e650dd9a18da82f2c1a11ed982b6ea7eff3cbf71e11b51c39a4292e2"
+      "bytes": 6241,
+      "sha256": "7706dbcd631053fd89f6f69e5dae75dbe2f49a7e01f406b3669890fa84bd2a38"
     },
     {
       "path": "tests/test_glm52_reporting_output.py",
@@ -2097,6 +2158,11 @@
       "path": "tests/test_glm52_routed_input_curvature.py",
       "bytes": 1784,
       "sha256": "e96869cf41470584dbee1b4fac6f4eca3480449b9dcaa0c29e2a39bebffb8f61"
+    },
+    {
+      "path": "tests/test_glm52_single_reference_launch_contract.py",
+      "bytes": 1473,
+      "sha256": "3fecc7763d6a7bbafb894dc60ad32c63c38c49c8f0f23d04709550240d5cf459"
     },
     {
       "path": "tests/test_glm52_source_shard_manifest.py",
