@@ -1,0 +1,41 @@
+{
+  "schema": "qsrt_glm52_multi_layer_intervention_registration",
+  "schema_version": 1,
+  "frozen_at_utc": "2026-08-19T03:32:19Z",
+  "selection_rule": {
+    "description": "Combine two interventions at different model layers because each reduced forward KLD when measured alone. Freeze the pair before measuring its combined model effect. Cross-layer effects may be non-additive, so the component measurements do not predict the combined result.",
+    "component_measurement_reference": "the same published 2,048-token BF16 reference was used for both component-specific absolute-target screens",
+    "absolute_target_mean_forward_kld": 0.059,
+    "layer_3_public_document_report_sha256": "e15e7989b82ba0953ef31c2616580596b37a541b63b448d783a8723b71c142b8",
+    "layer_3_single_reference_report_sha256": "94a161eb507c3f0fbaf200bb969f11340f794f209eb42b45bf3c9c496439d1cb",
+    "layer_52_public_document_report_sha256": "e1030cd2cb90489dd1dad3fec2b197bdcddf0ac7fba749f17641f40444666be5",
+    "layer_52_single_reference_report_sha256": "5013b52448d1538147bfa5dcdf0263826f45c1b6d87800352e633ffed4863821"
+  },
+  "components": [
+    {
+      "model_layer": 3,
+      "source_artifact_name": "glm52-layer3-frozen8-low-rank-down-reconstructed_activation_down_refit-bf16-rank-4-merged",
+      "expert_ids": [
+        103
+      ],
+      "construction": "K3 gate, up, and down reconstruction with a BF16 rank-four activation-weighted correction added to the reconstructed down projection",
+      "logical_adapter_bytes": 65536,
+      "public_document_mean_forward_kld_change": -0.00016108078412014866,
+      "single_reference_baseline_mean_forward_kld": 0.06107434070309714,
+      "single_reference_candidate_mean_forward_kld": 0.05825746460698554
+    },
+    {
+      "model_layer": 52,
+      "source_artifact_name": "glm52-layer52-frozen8-reconstructed-activation-down-refit-merged",
+      "expert_ids": [
+        36
+      ],
+      "construction": "K3 gate and up reconstruction with a reconstructed-activation down target encoded at K3",
+      "logical_adapter_bytes": 0,
+      "public_document_mean_forward_kld_change": -0.000028980757692090558,
+      "single_reference_baseline_mean_forward_kld": 0.06107434070309714,
+      "single_reference_candidate_mean_forward_kld": 0.06090743172534485
+    }
+  ],
+  "evidence_boundary": "The registration freezes a two-layer composition before its combined measurement. The combined 2,048-token result is an exploratory interaction screen because that reference already informed both component choices. Independent document-level references must confirm any reduction. The dense endpoints are experiment representations. The layer-3 correction charges 65,536 logical BF16 factor bytes, while a complete GLM QSRT checkpoint byte ledger remains unimplemented."
+}
