@@ -856,6 +856,217 @@ backward pass. Its held-out KLD gain is the minimum-complexity recovery
 baseline. Every trainable suffix must improve over that baseline by more than
 its added bytes and runtime cost justify.
 
+### Correct the routed-expert aggregate with a shared low-rank network
+
+**Status:** Pre-registered and unimplemented. The machine-readable contract is
+[`experiments/glm52_layer_shared_routed_aggregate_corrector_pre_registration.json`](../experiments/glm52_layer_shared_routed_aggregate_corrector_pre_registration.json).
+The implementation and serving interfaces are specified in
+[GLM-5.2 layer-shared routed-aggregate corrector design](glm52-layer-shared-routed-aggregate-corrector-design.md).
+
+The first trainable expert correction operates on the weighted sum of routed
+expert outputs. It leaves the QSRT trellis payloads and the dense shared expert
+unchanged. Let `x_l` be the residual-stream input to mixture layer `l`, let
+`R_l` be the eight selected routed experts, and let `p_l,e` be their applied
+router coefficients. The quantized routed-expert contribution is
+
+```text
+y_q,l = sum over e in R_l of p_l,e * f_q,l,e(x_l).
+```
+
+The corrector uses a layer-specific rank-16 input projection `V_l`, output
+projection `U_l`, and one 16-value modulation vector `a_l,e` for each routed
+expert:
+
+```text
+z_l       = SiLU(V_l * RMSNorm(x_l))
+m_l       = 1 + sum over e in R_l of p_l,e * a_l,e
+delta_y_l = U_l * (z_l elementwise-multiplied by m_l)
+y_out,l   = y_q,l + delta_y_l.
+```
+
+The runtime adds `delta_y_l` to the routed-expert aggregate in its 32-bit
+floating-point accumulator. It performs the addition before the routed branch
+merges with the unchanged shared-expert contribution and before the final
+BF16 or FP16 cast. This location makes the expensive output projection run
+once per token and layer. Its arithmetic cost does not grow with the number of
+routed experts.
+
+For hidden width 6,144, 256 routed experts, and rank 16, one corrected layer
+contains 200,704 trainable values:
+
+```text
+2 * 6,144 * 16 shared projection values
+    + 256 * 16 expert-modulation values
+    = 200,704 values.
+```
+
+BF16 storage occupies 401,408 logical bytes per layer before headers,
+alignment, and container metadata. A 23-layer suffix occupies 9,232,384
+logical parameter bytes under the same assumptions. Every experiment charges
+the complete serialized size rather than these logical values alone.
+
+The disabled corrector takes a true execution bypass. The initial closure test
+must reproduce the uncorrected student's routed aggregate, logits, and routes
+bit for bit. Executing a nominally zero network and adding its output does not
+satisfy this closure test. The expert-modulation vectors start at the
+layer-average value and remain regularized toward it. Experts with inadequate
+routed support retain that value.
+
+#### Measure whether one output basis can represent the correction
+
+The rank-16 output projection limits every predicted correction to one shared
+16-dimensional output space. Measure that ceiling before optimizing the
+network. On activation-fit documents, construct the router-weighted aggregate
+error at the same boundary:
+
+```text
+epsilon_l(x) = sum over e in R_l of
+    p_l,e * (f_source,l,e(x) - f_q,l,e(x)).
+```
+
+Both expert functions receive the candidate's own input and route. Computing
+this target requires the bounded BF16 source tensors for the selected layer;
+the complete BF16 checkpoint is unnecessary.
+
+Fit the shared rank-16 output basis on activation-fit documents. Measure its
+captured aggregate-error energy on untouched candidate-selection documents.
+Fit a separate rank-two basis for each expert on the same activation-fit
+documents and evaluate those bases on the same candidate-selection documents.
+Report both production-weighted results and an expert-balanced result that
+gives every supported expert equal influence.
+
+The shared basis passes when it retains at least 80% of the held-out recovery
+obtained by the collection of per-expert rank-two bases. A passing ceiling is
+necessary before the rank-16 network trains. It does not establish that the
+input projection can predict the required coefficient for each token.
+
+The same rows measure cancellation among co-routed expert errors. For each
+token, record
+
+```text
+||sum over e of p_l,e * epsilon_l,e||^2
+------------------------------------------------- .
+sum over e of p_l,e^2 * ||epsilon_l,e||^2
+```
+
+A value below one indicates that cross-expert terms reduced aggregate error
+energy for that token. A value above one indicates reinforcing cross-expert
+terms. Report the pooled numerator and denominator, the distribution of
+per-token ratios when the denominator is nonzero, and results stratified by
+route-support level. This statistic supplies a within-layer prior for later
+experiments that measure whether interventions add, cancel, or compound across
+layers.
+
+If the shared basis fails the 80% requirement, increase the output rank or
+test several expert-clustered output bases. A wider input trunk or richer
+expert modulation cannot increase the span of a fixed `U_l`. If the basis
+passes but the trained warm start recovers less than 80% of that basis ceiling
+on candidate-selection documents, investigate the input projection and
+conditioning before increasing the output rank.
+
+#### Keep regression data and endpoint-training data separate
+
+The existing GLM layer-3 routed capture contains 62,148 activation-fit tokens
+and 15,625 candidate-selection tokens. Its experts receive 762 to 2,478 routed
+fit rows each. These counts describe token examples and routed support. The
+6,144 output coordinates are correlated and do not increase the statistical
+sample count.
+
+Each selected late layer must record its own routed-support distribution
+before training. Sixteen modulation values against the lowest observed support
+require shrinkage toward the layer-average value. Held-out recovery curves,
+rather than a parameter-to-coordinate ratio, determine whether rank 16 is
+supported.
+
+Two acquisition contracts serve different training objectives:
+
+| Training objective | Required stored inputs |
+|---|---|
+| Local aggregate-error regression | Candidate-native routed inputs, routes, applied router coefficients, and bounded BF16 source tensors for each corrected layer |
+| End-to-end endpoint-KLD training | Prefix-hash-bound suffix boundary states and matched canonical terminal endpoint targets for every recovery-training document |
+
+Additional routed-input capture can enlarge local regression data without a
+complete high-precision model forward. The offline label calculation still
+executes the bounded source and quantized experts. End-to-end KLD training also
+needs matched boundary states and terminal targets. Routed inputs alone cannot
+supply that loss.
+
+Every corpus expansion receives a document-level role and immutable manifest
+before capture begins. Recovery-training documents cannot enter candidate
+selection or confirmation. Increasing the network rank or number of corrected
+layers requires a support and held-out learning-curve review before the larger
+parameterization trains.
+
+#### Freeze the training and validation order
+
+Run the corrector experiment in this order:
+
+1. Prove the disabled true-bypass path is bit-identical to the incumbent.
+2. Fit the aggregate shared-basis and per-expert rank-two controls on
+   activation-fit documents, then apply the frozen 80% held-out ceiling gate.
+3. Train one rank-16 corrector on one bounded late layer by aggregate-error
+   regression. The layer and all data manifests must be frozen before its
+   labels or KLD are examined.
+4. Require the trained warm start to recover at least 80% of the shared-basis
+   ceiling on candidate-selection documents.
+5. Reproduce the accepted correction through the intended serving arithmetic.
+   Keep the bottleneck and routed-aggregate addition in FP32 and perform one
+   final output cast. The serving result is authoritative for KLD.
+6. Train correctors in a two-to-four-layer suffix against the canonical
+   terminal endpoint. Compare document-balanced mean KLD with a separately
+   registered smooth tail-risk arm. Small-minibatch CVaR cannot define the
+   training loss; the tail arm must use a running quantile or a sufficiently
+   large token buffer.
+7. Freeze and serialize the selected corrector before screening. Advance only
+   when its serving computation beats the final-hidden-state recovery baseline
+   by enough to justify its bytes and runtime, improves paired held-out mean
+   KLD, and satisfies the registered document-level CVaR1% constraint.
+
+The training-run registration must freeze the selected layer set, optimizer,
+learning-rate schedule, batch construction, tail-loss definition, running-
+quantile procedure, regularization, early-stopping rule, parameter dtype, and
+serialization before candidate-selection KLD is opened.
+
+#### Report routing effects without assigning them to one mechanism
+
+Compare routes with the initialization student on the same tokens. Report the
+number of scored positions and the paired KLD change in four mutually
+exclusive groups:
+
+- the current corrected layer's route is unchanged and every later route is
+  unchanged;
+- the current corrected layer's route is unchanged and at least one later
+  route changes;
+- the current corrected layer's route changes and every later route is
+  unchanged; and
+- the current corrected layer's route changes and at least one later route
+  also changes.
+
+For a single corrected layer whose prefix is unchanged, the last two groups
+should be empty because the corrector runs after that layer's routing choice.
+They can become populated when an earlier corrected layer changes the input to
+a later corrected layer. Retain group sizes beside group means and intervals.
+A small group's point estimate cannot support a headline conclusion.
+
+The corrector can compensate for the output consequence of a route change and
+can alter routes in later layers. A separate router-restoration experiment
+directly targets current-layer route selection. Report both interventions on
+the same routing groups before attributing KLD recovery to either channel.
+
+The registered escalation rules are:
+
+| Observed result | Authorized change |
+|---|---|
+| Shared rank 16 retains less than 80% of per-expert rank-two recovery | Increase output rank or test expert-clustered output bases |
+| Shared basis passes, but the warm start realizes less than 80% of its ceiling | Improve the input projection, normalization, or expert modulation while retaining the frozen output rank |
+| Local aggregate error improves and serving arithmetic closes, but held-out endpoint KLD does not improve | Use bounded suffix endpoint-KLD training; do not widen the local network from this result alone |
+| KLD damage concentrates where the current layer's route already differs because of an upstream correction | Measure a router-restoration intervention before expanding the corrector |
+| Training arithmetic improves but the serialized serving computation does not | Correct the fused FP32 execution path before another quality experiment |
+
+No wider or clustered network advances directly from local error. It must
+repeat the serving-path and document-disjoint KLD gates under a new frozen
+registration.
+
 ### Expand the suffix only after measuring memory and throughput
 
 Start with the last two to four decoder layers. Record peak memory, tokens per
@@ -917,7 +1128,7 @@ generalizes before either investment is considered.
 | Select and confirm one complete panel configuration | The frozen configuration beats EXL3 mean KLD, satisfies CVaR1% non-inferiority, and stays within its registered charged-byte cap |
 | Measure one-, two-, four-, and sixteen-layer compositions | Observed combined KLD, isolated sums, Fisher cross-terms, tails, and routes determine whether effects add, cancel, or compound |
 | Build the complete equal-byte checkpoint | The complete artifact does not exceed EXL3 bytes and passes paired KLD, task-quality, and serving checks |
-| Attempt bounded suffix recovery only for a material residual deficit | The final-hidden-state baseline runs first. A hash-boundary suffix advances only when its serialized serving computation improves held-out KLD enough to justify its bytes and runtime |
+| Attempt bounded suffix recovery only for a material residual deficit | The final-hidden-state baseline runs first. The layer-shared corrector must pass its 80% shared-basis and warm-start gates before two-to-four-layer endpoint-KLD training. A hash-boundary suffix advances only when its serialized serving computation improves held-out KLD enough to justify its bytes and runtime |
 | Pursue a smaller checkpoint after equal-byte quality closes | Remove or reallocate bytes under the same validation contract until the serialized artifact is smaller than EXL3 |
 
 Artifact forensics run alongside candidate construction when their inputs are

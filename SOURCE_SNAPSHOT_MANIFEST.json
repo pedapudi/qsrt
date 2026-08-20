@@ -1,6 +1,6 @@
 {
   "schema": "qsrt-source-snapshot-manifest-v1",
-  "snapshot_timestamp_utc": "2026-08-19T06:37:08Z",
+  "snapshot_timestamp_utc": "2026-08-20T05:01:56Z",
   "source_git": {
     "origin": "git@github.com:local-inference-lab/qsrt.git",
     "base_commit": "7902469f071a4f68089eaacfb59d41be0a674e41",
@@ -20,6 +20,7 @@
       " M tests/test_qsrt_codec_pilot.py",
       " M tests/test_sqg_quantizer.py",
       "?? docs/glm52-experiment-journal.md",
+      "?? docs/glm52-layer-shared-routed-aggregate-corrector-design.md",
       "?? docs/glm52-layer3-kld-results.md",
       "?? docs/qsrt-blockldlq-no-feedback-audit.md",
       "?? docs/qsrt-exl3-comparative-assessment.md",
@@ -91,6 +92,7 @@
       "?? tests/test_glm52_expert_intervention_runtime.py",
       "?? tests/test_glm52_k3_k4_allocation.py",
       "?? tests/test_glm52_k3_k4_allocation_pre_registration.py",
+      "?? tests/test_glm52_layer_shared_corrector_pre_registration.py",
       "?? tests/test_glm52_low_rank_down_adapter.py",
       "?? tests/test_glm52_model_kld_candidate_selection.py",
       "?? tests/test_glm52_paired_kld.py",
@@ -123,6 +125,7 @@
     ],
     "untracked_files": [
       "docs/glm52-experiment-journal.md",
+      "docs/glm52-layer-shared-routed-aggregate-corrector-design.md",
       "docs/glm52-layer3-kld-results.md",
       "docs/qsrt-blockldlq-no-feedback-audit.md",
       "docs/qsrt-exl3-comparative-assessment.md",
@@ -156,6 +159,7 @@
       "experiments/glm52_layer63_rate_pattern_panel.json",
       "experiments/glm52_layer64_rank4_expert253_low_rank_down_public_reference_registration.json",
       "experiments/glm52_layer64_rate_pattern_panel.json",
+      "experiments/glm52_layer_shared_routed_aggregate_corrector_pre_registration.json",
       "experiments/glm52_layers_52_60_63_64_source_shards.json",
       "experiments/glm52_public_reference_auxiliary_plan.json",
       "experiments/glm52_source_teacher_weight_identity.json",
@@ -251,6 +255,7 @@
       "tests/test_glm52_expert_intervention_runtime.py",
       "tests/test_glm52_k3_k4_allocation.py",
       "tests/test_glm52_k3_k4_allocation_pre_registration.py",
+      "tests/test_glm52_layer_shared_corrector_pre_registration.py",
       "tests/test_glm52_low_rank_down_adapter.py",
       "tests/test_glm52_model_kld_candidate_selection.py",
       "tests/test_glm52_paired_kld.py",
@@ -269,7 +274,7 @@
       "tests/test_validate_glm52_exl3_host_local_copy.py"
     ],
     "modified_tracked_count": 11,
-    "untracked_file_count": 145
+    "untracked_file_count": 148
   },
   "publication_additions": [
     "CONTINUATION_GUIDE.md",
@@ -294,8 +299,8 @@
     "SOURCE_SNAPSHOT_MANIFEST.sha256"
   ],
   "maximum_file_bytes": 10485760,
-  "file_count": 538,
-  "total_file_bytes": 9152846,
+  "file_count": 541,
+  "total_file_bytes": 9202190,
   "files": [
     {
       "path": ".gitignore",
@@ -338,6 +343,11 @@
       "sha256": "b78cbc1d6c622e61f08c74f906b9994782b2daa55ff8345caef059c925d6752e"
     },
     {
+      "path": "docs/glm52-layer-shared-routed-aggregate-corrector-design.md",
+      "bytes": 24441,
+      "sha256": "01943d1407a7918578095bcf704e95e7d23bbd891c118b59af27562b4cb50c53"
+    },
+    {
       "path": "docs/glm52-layer3-kld-results.md",
       "bytes": 31518,
       "sha256": "c65b010c5eab9b0ce1e59eb4864f442502c1dfef6b33db9fe24ef9d42022ee75"
@@ -374,8 +384,8 @@
     },
     {
       "path": "docs/qsrt-improvement-strategy.md",
-      "bytes": 81184,
-      "sha256": "89c09b05e1023b9ee609fe54909f8af5c1e7fae31be8f15789d53072a6cfe67c"
+      "bytes": 92374,
+      "sha256": "802c09813c2c53ccaafae1c7f517e55a303bff3f3a38397941611fc23b1e132e"
     },
     {
       "path": "docs/qsrt-technical-brief.md",
@@ -706,6 +716,11 @@
       "path": "experiments/glm52_layer64_rate_pattern_panel.json",
       "bytes": 1540,
       "sha256": "38f52f0a0b3ab152b4c7ea47c5cdfc05b3d104014eba7c2a1f64c05dd4b62928"
+    },
+    {
+      "path": "experiments/glm52_layer_shared_routed_aggregate_corrector_pre_registration.json",
+      "bytes": 10371,
+      "sha256": "fe6725f865a074aefd996d26f40f77b05bf575e0452b522cbbc07a78a0bcfd9b"
     },
     {
       "path": "experiments/glm52_layers3_52_cross_layer_recovery_composition.json",
@@ -2471,6 +2486,11 @@
       "path": "tests/test_glm52_k4_down_registration.py",
       "bytes": 5574,
       "sha256": "ee13159e4f814348c9b2dc2021ab959ace0988128e1a324743bbc69c708da69a"
+    },
+    {
+      "path": "tests/test_glm52_layer_shared_corrector_pre_registration.py",
+      "bytes": 3342,
+      "sha256": "d7e859bef5cc0a20341400d36af97caba85d488309d9cc35131e8f926e3f07a7"
     },
     {
       "path": "tests/test_glm52_low_rank_down_adapter.py",

@@ -1,0 +1,174 @@
+{
+  "schema": "qsrt_glm52_layer_shared_routed_aggregate_corrector_pre_registration",
+  "schema_version": 1,
+  "status": "frozen_before_corrector_implementation_and_measurement",
+  "objective": "Determine whether a layer-shared rank-16 network can predict and correct the router-weighted aggregate error of quantized GLM-5.2 routed experts, then improve held-out endpoint KLD through bounded suffix training under an exact serialized-byte and serving-arithmetic contract.",
+  "evidence_boundary": "The registration fixes the architecture, diagnostic gates, data roles, execution order, route reporting, and escalation rules. It does not select a development layer, freeze optimizer hyperparameters, claim that the shared basis is adequate, or claim a KLD improvement.",
+  "design_document": "docs/glm52-layer-shared-routed-aggregate-corrector-design.md",
+  "source_model": {
+    "model_id": "zai-org/GLM-5.2",
+    "weight_revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+    "complete_bf16_checkpoint_required": false,
+    "bounded_source_requirement": "Every locally regressed corrector requires the official BF16 routed-expert tensors for its selected layer. Every source shard must pass the immutable source hash inventory."
+  },
+  "student_model": {
+    "comparison_checkpoint": "brandonmusic/GLM-5.2-EXL3-TR3v4-3.5bpw-MTP78",
+    "comparison_revision": "9ab9579774cc432df91567a36f6e9e863e0d4c9f",
+    "quantized_payload_policy": "Keep every QSRT trellis payload frozen during corrector training.",
+    "hidden_width": 6144,
+    "routed_experts_per_layer": 256,
+    "routed_experts_per_token": 8
+  },
+  "correction_boundary": {
+    "input": "the residual-stream input shared by the routed experts in one mixture layer",
+    "target_branch": "the router-weighted aggregate of quantized routed-expert outputs",
+    "addition": "add the correction in the routed-aggregate FP32 accumulator before the routed branch merges with the unchanged shared-expert contribution and before the final BF16 or FP16 cast",
+    "shared_expert_changed": false,
+    "current_layer_route_changed_by_this_boundary": false
+  },
+  "architecture": {
+    "scope": "one independent corrector per corrected mixture layer",
+    "rank": 16,
+    "activation": "SiLU",
+    "input_normalization": "the frozen RMSNorm applied to the layer input",
+    "input_projection_shape": [16, 6144],
+    "output_projection_shape": [6144, 16],
+    "expert_modulation_shape": [256, 16],
+    "formula": {
+      "hidden": "z_l = SiLU(V_l * RMSNorm(x_l))",
+      "modulation": "m_l = 1 + sum_{e in routes_l} p_l,e * a_l,e",
+      "correction": "delta_y_l = U_l * (z_l elementwise-multiplied by m_l)",
+      "output": "y_out,l = y_q,l + delta_y_l"
+    },
+    "trainable_values_per_layer": 200704,
+    "logical_bf16_bytes_per_layer": 401408,
+    "logical_bf16_bytes_for_23_layers": 9232384,
+    "expert_modulation_prior": "initialize at the layer-average value, regularize toward that value, and retain it for experts with inadequate routed support",
+    "disabled_behavior": "bypass the corrector execution path rather than executing a nominally zero correction"
+  },
+  "existing_data_boundary": {
+    "layer3_activation_fit_tokens": 62148,
+    "layer3_candidate_selection_tokens": 15625,
+    "layer3_minimum_expert_fit_routes": 762,
+    "layer3_maximum_expert_fit_routes": 2478,
+    "sample_count_rule": "Output coordinates are correlated and do not count as independent training examples. Every selected late layer must record its own route-support distribution."
+  },
+  "local_regression_target": {
+    "formula": "epsilon_l(x) = sum_{e in routes_l} p_l,e * (f_source,l,e(x) - f_q,l,e(x))",
+    "input_policy": "Both expert functions receive the candidate's own input and candidate route.",
+    "fit_documents": "activation-fit documents only",
+    "evaluation_documents": "candidate-selection documents only"
+  },
+  "shared_basis_gate": {
+    "shared_basis_rank": 16,
+    "comparison_basis": "separate rank-two output-error basis for every supported expert",
+    "fit_partition": "activation-fit documents",
+    "evaluation_partition": "candidate-selection documents",
+    "required_shared_recovery_fraction": 0.8,
+    "report_weightings": [
+      "natural route and applied-router-coefficient weighting",
+      "expert-balanced weighting over supported experts"
+    ],
+    "warm_start_required_ceiling_fraction": 0.8,
+    "interpretation": "Failure of the shared output-space ceiling authorizes a higher output rank or expert-clustered output bases. Richer input conditioning alone cannot enlarge a fixed output span."
+  },
+  "cancellation_measurement": {
+    "per_token_numerator": "squared norm of sum_e p_l,e * epsilon_l,e",
+    "per_token_denominator": "sum_e p_l,e^2 * squared norm of epsilon_l,e",
+    "required_reports": [
+      "pooled numerator divided by pooled denominator",
+      "distribution of defined per-token ratios",
+      "results stratified by expert route support"
+    ],
+    "interpretation": "A ratio below one indicates net cancellation among weighted expert errors. A ratio above one indicates net reinforcement."
+  },
+  "data_acquisition_roles": {
+    "local_regression": [
+      "candidate-native routed inputs",
+      "routed expert identifiers",
+      "applied router coefficients",
+      "bounded BF16 source tensors for every corrected layer"
+    ],
+    "endpoint_kld_training": [
+      "prefix-artifact-hash-bound suffix boundary states",
+      "matched canonical terminal endpoint targets"
+    ],
+    "separation": "Recovery-training, candidate-selection, and confirmation documents remain disjoint at document level. Every corpus expansion receives an immutable manifest before capture."
+  },
+  "execution_order": [
+    "Prove bit-identical disabled-path closure through a true execution bypass.",
+    "Fit the aggregate shared-basis and per-expert rank-two controls on activation-fit documents and apply the 80% held-out shared-basis gate.",
+    "Freeze one bounded late layer and train its rank-16 corrector by aggregate-error regression.",
+    "Require the warm start to recover at least 80% of the shared-basis ceiling on candidate-selection documents.",
+    "Reproduce the correction through the intended FP32 serving arithmetic and one final output cast.",
+    "Train correctors in a separately frozen two-to-four-layer suffix against canonical terminal endpoint targets.",
+    "Serialize and freeze the selected serving computation before screening and confirmation."
+  ],
+  "endpoint_training": {
+    "primary_loss_arm": "document-balanced mean endpoint KLD",
+    "tail_loss_arm": "document-balanced mean endpoint KLD plus a smooth tail-risk penalty",
+    "tail_estimator_constraint": "Use a running quantile or a sufficiently large token buffer. Do not define training CVaR from a small minibatch.",
+    "training_run_fields_frozen_before_selection_kld": [
+      "corrected layer set",
+      "optimizer",
+      "learning-rate schedule",
+      "batch construction",
+      "tail-loss definition",
+      "running-quantile procedure",
+      "regularization",
+      "early-stopping rule",
+      "parameter dtype",
+      "serialization"
+    ]
+  },
+  "serving_contract": {
+    "disabled_path": "bit-identical routed aggregate, logits, and routes",
+    "enabled_arithmetic": "retain the bottleneck and routed-aggregate addition in FP32 and perform one final BF16 or FP16 output cast",
+    "authority": "KLD from the serialized serving computation overrides KLD from the shadow training state",
+    "byte_accounting": "Charge parameters, headers, alignment, container metadata, and every serving payload byte."
+  },
+  "route_report": {
+    "reference": "the initialization student on the same tokens",
+    "mutually_exclusive_strata": [
+      "current corrected-layer route unchanged and every later route unchanged",
+      "current corrected-layer route unchanged and at least one later route changed",
+      "current corrected-layer route changed and every later route unchanged",
+      "current corrected-layer route changed and at least one later route changed"
+    ],
+    "required_per_stratum_values": [
+      "scored-position count",
+      "document count",
+      "paired mean KLD change",
+      "uncertainty interval when support permits"
+    ],
+    "small_stratum_rule": "A sparse stratum's point estimate cannot support a headline conclusion."
+  },
+  "advance_rule": {
+    "required_local_result": "The shared basis passes its 80% gate and the trained warm start realizes at least 80% of that ceiling on candidate-selection documents.",
+    "required_serving_result": "The serialized serving computation closes numerically and supplies the authoritative screening KLD.",
+    "required_endpoint_result": "The corrector improves paired held-out mean KLD, satisfies the registered document-level CVaR1% constraint, and beats the final-hidden-state recovery baseline by enough to justify its charged bytes and measured runtime.",
+    "claim_boundary": "A suffix result establishes bounded recovery for the tested artifact and data distribution. It does not establish pure post-training-quantizer or complete-checkpoint superiority."
+  },
+  "escalation_rules": [
+    {
+      "observed_result": "Shared rank 16 retains less than 80% of per-expert rank-two recovery.",
+      "authorized_change": "Increase output rank or test expert-clustered output bases."
+    },
+    {
+      "observed_result": "The shared basis passes, but the warm start realizes less than 80% of its ceiling.",
+      "authorized_change": "Improve input projection, normalization, or expert modulation while retaining the frozen output rank."
+    },
+    {
+      "observed_result": "Local aggregate error improves and serving arithmetic closes, but held-out endpoint KLD does not improve.",
+      "authorized_change": "Use bounded suffix endpoint-KLD training without widening the local network from this result alone."
+    },
+    {
+      "observed_result": "KLD damage concentrates where the current layer route already differs because of an upstream correction.",
+      "authorized_change": "Measure a router-restoration intervention before expanding the corrector."
+    },
+    {
+      "observed_result": "Training arithmetic improves but the serialized serving computation does not.",
+      "authorized_change": "Correct the fused FP32 execution path before another quality experiment."
+    }
+  ]
+}
